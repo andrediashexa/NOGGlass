@@ -1,0 +1,13 @@
+[package]
+name = "looking-glass-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+regex = "1.10"
+ipnet = { version = "2.9", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
