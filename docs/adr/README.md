@@ -40,3 +40,4 @@ stateDiagram-v2
 | [0004](0004-web-interface-internationalisation.md) | Web interface internationalisation by URL prefix | Accepted |
 | [0005](0005-backend-implementation-language.md) | Backend implementation language | **Proposed** |
 | [0006](0006-structured-bgp-model-and-data-sources.md) | Structured BGP model, data sources and RIPE cross-check | Accepted |
+| [0007](0007-unified-rust-architecture-and-drivers.md) | Unified Rust architecture for backend, frontend and lightweight multi-vendor drivers | **Proposed** |
