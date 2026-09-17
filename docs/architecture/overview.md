@@ -2,11 +2,14 @@
 
 ## TL;DR
 
-A visitor picks a router and a query type in a Next.js page, the FastAPI backend
+A visitor picks a router and a query type in a Next.js page. The backend
 validates the request against a command catalogue, opens a read-only SSH session
-to that router and streams the output back over Server-Sent Events. Routers are
-described in a configuration file; credentials come from the environment. The
-only component exposed to the Internet is the Traefik proxy.
+to that router, and returns either streamed text (`ping`, `traceroute`) or a
+normalised BGP path model that feeds the AS-PATH topology graph, the route table
+and the attribute panels. Routers are described in a configuration file;
+credentials come from the environment. The only component exposed to the
+Internet is the Traefik proxy. The backend language is under decision in
+ADR-0005.
 
 ## 5W2H
 
@@ -17,7 +20,7 @@ only component exposed to the Internet is the Traefik proxy.
 | **Who** | Maintainers and contributors writing backend, frontend or vendor drivers. |
 | **Where** | Implemented under `backend/`, `frontend/` and `docker-compose.yml`, once those exist. |
 | **When** | Baseline for the `0.1.0` milestone; revised through ADRs. |
-| **How** | Typed queries, per-vendor command templates, direct SSH, streamed output. |
+| **How** | Typed queries, per-vendor command templates, direct SSH, streamed text and a normalised BGP path model. |
 | **How much** | Target footprint: under 1 GB RAM for the whole stack on a 2 vCPU VM. |
 
 ## Components
@@ -27,13 +30,15 @@ flowchart TB
     visitor([Visitor])
     cf[TLS termination<br/>Cloudflare or Traefik ACME]
     traefik[Traefik v3]
-    web[web — Next.js<br/>pt / en / es]
-    api[api — FastAPI]
+    web[web — Next.js<br/>pt / en / es<br/>AS-PATH graph]
+    api[api — query API<br/>see ADR-0005]
     rl[Rate limiter<br/>+ queue]
     cat[Command catalogue<br/>per vendor templates]
     exec[SSH executor pool]
     cfg[(routers.yml<br/>+ .env secrets)]
     routers[(Operator routers)]
+    norm[Path model normaliser]
+    enr[Enrichment<br/>RPKI · AS names · RIPEstat]
 
     visitor --> cf --> traefik
     traefik --> web
@@ -43,7 +48,13 @@ flowchart TB
     cfg -.-> cat
     cfg -.-> exec
     exec -->|SSH read-only| routers
+    exec --> norm --> api
+    norm -.->|cached, optional| enr
 ```
+
+Text queries stream straight through; BGP queries pass through the normaliser
+described in [ADR-0006](../adr/0006-structured-bgp-model-and-data-sources.md),
+which is what makes the topology graph possible.
 
 ## Request flow
 
@@ -96,8 +107,9 @@ MUST NOT require changes to the API layer.
 
 | Driver | Network OS | Priority |
 |---|---|---|
-| `routeros` | MikroTik RouterOS | 0.1.0 |
 | `vrp` | Huawei VRP | 0.1.0 |
+| `mock` | Fixtures on RFC 5737 and RFC 6996 ranges, for CI and the demo | 0.1.0 |
+| `routeros` | MikroTik RouterOS | 0.2.0 |
 | `dmos` | Datacom DmOS | 0.2.0 |
 | `iosxr`, `iosxe`, `nxos` | Cisco | 0.2.0 |
 | `junos` | Juniper Junos | 0.2.0 |
@@ -116,6 +128,9 @@ MUST NOT require changes to the API layer.
 ## Deferred decisions
 
 The following are deliberately out of scope for `0.1.0` and MUST be recorded as
-ADRs when they are decided: persistent query history, a BGP daemon as a
-route-lookup source, an administrative UI for the inventory, RPKI and IRR
-enrichment, and per-POP agents for segmented networks.
+ADRs when they are decided: persistent query history, a BGP daemon of our own as
+a route-lookup source, an administrative UI for the inventory, IRR enrichment,
+and per-POP agents for segmented networks.
+
+RPKI state, decoded communities, the AS-PATH topology graph and the RIPEstat
+cross-check are **no longer deferred**; they are part of `0.1.0` per ADR-0006.
