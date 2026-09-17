@@ -29,8 +29,11 @@ jobs:
             failed=1
           fi
 
-          # One branch per issue, named after it.
-          if [[ ! "$PR_BRANCH" =~ ^($types)/[0-9]+-[a-z0-9-]+$ ]]; then
+          # One branch per issue, named after it. release-please owns its own
+          # branch name, so it is the single exception.
+          if [[ "$PR_BRANCH" == release-please--* ]]; then
+            echo "Release branch, naming rules skipped."
+          elif [[ ! "$PR_BRANCH" =~ ^($types)/[0-9]+-[a-z0-9-]+$ ]]; then
             echo "::error::Branch must be '<type>/<issue-number>-<slug>', e.g. 'feat/12-ssh-executor'. Got: '$PR_BRANCH'"
             failed=1
           fi
