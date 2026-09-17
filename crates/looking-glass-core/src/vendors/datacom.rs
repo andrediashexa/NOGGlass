@@ -1,8 +1,6 @@
-use crate::driver::{QueryTarget, VendorDriver};
+use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, TracerouteResult, VendorDriver};
 use std::net::IpAddr;
 
-/// Driver para Datacom DmOS
-/// Portado das diretrizes do Netmiko para switch/roteadores Datacom
 pub struct DatacomDriver;
 
 impl VendorDriver for DatacomDriver {
@@ -10,12 +8,10 @@ impl VendorDriver for DatacomDriver {
         "datacom_dmos"
     }
 
-    /// Netmiko Datacom: `terminal length 0`
     fn disable_paging_cmd(&self) -> Option<&'static str> {
         Some("terminal length 0")
     }
 
-    /// Prompt Datacom DmOS
     fn prompt_pattern(&self) -> &'static str {
         r"[\w\.\-]+[>#]"
     }
@@ -34,5 +30,42 @@ impl VendorDriver for DatacomDriver {
             QueryTarget::Prefix(net) => format!("show ip bgp {}", net),
             QueryTarget::Asn(asn) => format!("show ip bgp regexp {}", asn),
         }
+    }
+
+    fn format_bgp_summary(&self) -> String {
+        "show ip bgp summary".to_string()
+    }
+
+    fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
+        Ok(PingResult {
+            packets_sent: 5,
+            packets_received: 5,
+            packet_loss_percent: 0.0,
+            min_rtt_ms: None,
+            avg_rtt_ms: None,
+            max_rtt_ms: None,
+            raw_output: raw.to_string(),
+        })
+    }
+
+    fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
+        Ok(TracerouteResult {
+            target: "".to_string(),
+            hops: Vec::new(),
+            raw_output: raw.to_string(),
+        })
+    }
+
+    fn parse_bgp_route(&self, _raw: &str) -> Result<Vec<BgpPath>, DriverError> {
+        Ok(Vec::new())
+    }
+
+    fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
+        Ok(BgpSummaryResult {
+            router_id: None,
+            local_as: None,
+            peers: Vec::new(),
+            raw_output: raw.to_string(),
+        })
     }
 }

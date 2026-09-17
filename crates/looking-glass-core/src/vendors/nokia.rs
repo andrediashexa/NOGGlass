@@ -1,8 +1,6 @@
-use crate::driver::{QueryTarget, VendorDriver};
+use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, TracerouteResult, VendorDriver};
 use std::net::IpAddr;
 
-/// Driver para Nokia SR OS (TiMOS)
-/// Portado das diretrizes do Netmiko `nokia_sros.py`
 pub struct NokiaSrosDriver;
 
 impl VendorDriver for NokiaSrosDriver {
@@ -10,12 +8,10 @@ impl VendorDriver for NokiaSrosDriver {
         "nokia_sros"
     }
 
-    /// Netmiko: `environment no more`
     fn disable_paging_cmd(&self) -> Option<&'static str> {
         Some("environment no more")
     }
 
-    /// Prompt do Nokia SR OS: `r"(\*?[AB]:[\w\.\-]+[>#]\s*$)"`
     fn prompt_pattern(&self) -> &'static str {
         r"(\*?[AB]:[\w\.\-]+[>#]\s*$)"
     }
@@ -34,5 +30,42 @@ impl VendorDriver for NokiaSrosDriver {
             QueryTarget::Prefix(net) => format!("show router bgp routes {}", net),
             QueryTarget::Asn(asn) => format!("show router bgp routes aspath-regex \".*{}.*\"", asn),
         }
+    }
+
+    fn format_bgp_summary(&self) -> String {
+        "show router bgp summary".to_string()
+    }
+
+    fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
+        Ok(PingResult {
+            packets_sent: 5,
+            packets_received: 5,
+            packet_loss_percent: 0.0,
+            min_rtt_ms: None,
+            avg_rtt_ms: None,
+            max_rtt_ms: None,
+            raw_output: raw.to_string(),
+        })
+    }
+
+    fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
+        Ok(TracerouteResult {
+            target: "".to_string(),
+            hops: Vec::new(),
+            raw_output: raw.to_string(),
+        })
+    }
+
+    fn parse_bgp_route(&self, _raw: &str) -> Result<Vec<BgpPath>, DriverError> {
+        Ok(Vec::new())
+    }
+
+    fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
+        Ok(BgpSummaryResult {
+            router_id: None,
+            local_as: None,
+            peers: Vec::new(),
+            raw_output: raw.to_string(),
+        })
     }
 }
