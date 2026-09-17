@@ -32,7 +32,10 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 ## 3. Branches
 
-- `main` is protected: direct pushes are rejected, history is never rewritten.
+- Work MUST NOT happen on `main`. Every change starts from a fresh branch off
+  `main`, one branch per issue, and reaches `main` only through a pull request.
+- History on `main` is never rewritten: no force pushes, no rebases of merged
+  work.
 - Branch names MUST follow `<type>/<issue-number>-<short-slug>`:
 
   ```text
@@ -74,6 +77,27 @@ docs(adr): record the direct-SSH decision
   green — with two maintainers, blocking every change on a review would stall
   the project more than it protects it.
 - Pull requests SHOULD stay under roughly 400 changed lines. Split larger work.
+
+### What enforces what
+
+Be honest about the guardrails, so nobody relies on one that is not there.
+
+| Rule | Enforced by |
+|---|---|
+| Conventional Commits title | CI (`pr-checks`), blocking |
+| Branch naming | CI (`pr-checks`), blocking |
+| Issue reference in the body | CI (`pr-checks`), blocking |
+| Documentation standard | CI (`docs-lint`), blocking |
+| Translation parity | CI (`docs-lint`), blocking |
+| No committed secret | CI (`secret-scan`), blocking |
+| Squash-only merges | Repository setting |
+| No direct push to `main` | **Convention only** |
+
+GitHub requires a paid plan to protect a branch in a private repository, and
+this repository is private for now. Branch protection — required checks, no
+direct pushes, linear history — SHALL be enabled as soon as the repository
+becomes public or the account gains that capability. Until then, pushing to
+`main` is technically possible and MUST NOT be done.
 
 ## 6. Releases
 
