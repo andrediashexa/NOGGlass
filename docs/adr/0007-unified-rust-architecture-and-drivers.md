@@ -1,4 +1,4 @@
-# ADR-0007 — Unified Rust architecture for backend, frontend and lightweight multi-vendor drivers
+# ADR-0007 — End-to-end Rust architecture with embedded web UI and native vendor drivers
 
 - **Status:** Proposed
 - **Date:** 2026-09-17
@@ -6,11 +6,11 @@
 
 ## TL;DR
 
-Proposes superseding the dual-stack architecture (FastAPI Python backend + Next.js Node frontend)
-with a unified, single-binary Rust architecture using Axum and native async SSH (`russh`).
-Vendor-specific terminal behavior (pagination disabling, prompt regexes and command templates)
-is ported from Netmiko directly into lightweight Rust modules, dropping RAM usage from ~1 GB to
-under 35 MB and eliminating runtime dependencies.
+Proposes an all-in-one, end-to-end Rust architecture that implements both the backend API
+and the frontend UI in Rust, eliminating external web servers (Nginx, Apache, Traefik),
+Node.js, and Python. Router communication replaces Netmiko with native asynchronous SSH (`russh`)
+tailored strictly to read-only diagnostics, embedding UI assets directly into a single static
+binary with built-in TLS, rate-limiting and under 35 MB of RAM footprint.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT",
 "RECOMMENDED", "MAY" and "OPTIONAL" in this document are to be interpreted as described in
@@ -20,97 +20,112 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 | Question | Answer |
 |---|---|
-| **What** | A unified Rust stack (Axum + native SSH driver + embedded UI) replacing FastAPI and Next.js. |
-| **Why** | Eliminate massive memory overhead, remove dual runtime dependencies (Node + Python), and prevent command injection at compile-time. |
-| **Who** | Maintainers and contributors. |
-| **Where** | `crates/looking-glass-core/` and `src/vendors/`. |
-| **When** | Proposed during the pre-alpha architecture validation phase. |
-| **How** | Direct async SSH with `russh` and Tokio, porting Netmiko vendor prompt/pagination rules into zero-cost Rust abstractions. |
-| **How much** | Footprint reduced from ~1 GB to under 35 MB RAM; single static binary deploy (~15 MB). |
+| **What** | Complete Rust stack (Axum HTTP/SSE server + embedded web UI + native SSH drivers). |
+| **Why** | Eliminate intermediate web servers (Nginx/Apache), remove Node and Python runtimes, and maximize security. |
+| **Who** | Maintainers, contributors, and ISP network operators. |
+| **Where** | Implemented under `crates/looking-glass-core/` and the main service binary. |
+| **When** | Proposed during the pre-alpha architecture decision phase. |
+| **How** | Pure Rust using Axum, `rustls` (built-in HTTPS/TLS), embedded UI templates, and `russh` async drivers. |
+| **How much** | Single static executable (~15-20 MB), RAM under 35 MB, zero external reverse proxy required. |
 
 ## Context
 
-ADR-0002 accepted Python 3.12 (FastAPI) for the backend based on the ecosystem maturity of Netmiko,
-and Next.js for the frontend. However, analyzing the actual requirements of a telecom Looking Glass
-reveals that:
+Previous documents considered a dual-runtime or multi-container architecture:
+- ADR-0002 adopted Python (FastAPI) and Next.js, relying on Traefik as reverse proxy.
+- ADR-0005 debated Python vs Go vs Rust for the backend, while keeping Next.js for frontend delivery.
 
-1. A Looking Glass performs strictly **read-only diagnostics** (`ping`, `traceroute`, `show route`, `show bgp`).
-2. Netmiko's large size stems from transactional configuration management (`config term`, rollback, commit,
-   interactive confirmation dialogs) which a Looking Glass MUST NOT execute.
-3. The mature vendor intelligence in Netmiko consists primarily of:
-   - Terminal pagination disable commands (e.g., `screen-length 0 temporary`, `terminal length 0`).
-   - Regular expressions identifying prompt boundaries (`check_prompt`).
-   - Command templates mapping query types to vendor syntax.
-4. The Python + Node stack requires maintaining two language runtimes, multi-stage Docker builds,
-   and incurs high idle/peak memory usage under load.
+In real-world ISP operations, managing multiple containers (Node.js for Next.js, Python for FastAPI,
+plus Nginx, Apache2 or Traefik for reverse proxy and TLS termination) creates operational friction:
+1. **Container & Web Server Sprawl:** Running separate containers for frontend, backend, and reverse proxy
+   consumes 500 MB to 1.5 GB of RAM just for orchestration and idle runtimes.
+2. **Reverse Proxy Redundancy:** Modern Rust HTTP engines (such as **Axum** on top of **Hyper** and **`rustls`**)
+   provide enterprise-grade, memory-safe HTTP/1.1, HTTP/2, and native TLS termination. Requiring Nginx or
+   Apache in front of an Axum binary is unnecessary overhead for a dedicated appliance.
+3. **The Netmiko Fallacy:** Netmiko's 10-year codebase is massive because it handles stateful write operations
+   (`config term`, rollback, syntax checks, confirmation prompts). A Looking Glass executes only
+   **read-only commands** (`ping`, `traceroute`, `show route`, `show bgp`). We only need the vendor-specific
+   pagination commands and prompt regular expressions.
 
 ## Decision
 
-1. The core engine and backend SHALL be implemented in Rust using the **Axum** web framework on top of the **Tokio** async runtime.
-2. The router SSH communication SHALL be handled natively using **`russh`** (pure asynchronous Rust SSH), eliminating Python and Paramiko.
-3. Vendor-specific terminal mechanics (disable paging, prompt regex, command formats) SHALL be ported from Netmiko into dedicated vendor driver modules under a unified `VendorDriver` trait.
-4. The initial core vendor modules SHALL cover:
-   - `mikrotik`: MikroTik RouterOS v6 / v7
-   - `huawei`: Huawei VRP
-   - `cisco`: Cisco IOS-XR / IOS-XE
-   - `juniper`: Juniper Junos (with optional native JSON output parsing)
-   - `datacom`: Datacom DmOS
-   - `nokia`: Nokia SR OS
-   - `bird`: Linux BIRD 2 (via Unix Domain Socket / SSH)
-5. The web frontend MAY be embedded directly into the Rust binary as static assets or compiled templates, yielding a single zero-dependency container or standalone binary.
+1. **100% Rust Backend & Frontend Delivery:**
+   - The entire Looking Glass application SHALL be compiled into a **single static binary** written in Rust.
+   - The HTTP and Server-Sent Events (SSE) server SHALL use **Axum** and **Tokio**.
+   - The web interface (HTML5, CSS Glassmorphism, Canvas 2D AS-PATH topology, and multilingual i18n)
+     SHALL be embedded directly into the binary using compiled templates (e.g., `askama`) or `include_str!`.
+   - Node.js, Next.js build steps, and Python runtimes SHALL NOT exist in the final deployment.
+
+2. **No Mandatory External Web Server (No Nginx / Apache Required):**
+   - The binary SHALL be capable of serving HTTP/HTTPS directly on ports 80/443 with built-in TLS termination
+     using **`rustls`** (or Let's Encrypt / ACME integration).
+   - Operators MAY still place an external proxy (Cloudflare, Traefik, HAProxy) in front if their corporate policy
+     dictates, but the Looking Glass MUST function standalone with zero external dependencies.
+
+3. **Rebuilding What We Need from Netmiko in Native Rust:**
+   - Router SSH communication SHALL use **`russh`** (asynchronous, memory-safe SSH in pure Rust).
+   - The vendor-specific intelligence of Netmiko (terminal pagination disabling, prompt regex detection,
+     and command formatting) SHALL be ported directly into Rust modules implementing the `VendorDriver` trait.
+   - The initial core drivers SHALL include:
+     - `mikrotik`: MikroTik RouterOS v6 / v7
+     - `huawei`: Huawei VRP (e.g. `screen-length 0 temporary`)
+     - `cisco`: Cisco IOS-XR and IOS-XE (`terminal length 0`)
+     - `juniper`: Juniper Junos (`set cli screen-length 0`, optional `| display json`)
+     - `datacom`: Datacom DmOS (`terminal length 0`)
+     - `nokia`: Nokia SR OS (`environment no more`)
+     - `bird`: BIRD 2 (via Unix Domain Socket / SSH)
 
 ```mermaid
 flowchart TB
-    subgraph client [Client / Browser]
-        ui[Modern Dark Web UI<br/>AS-PATH Topology + Streaming SSE]
-    end
-
-    subgraph rust_core [Unified Rust Engine - Axum + Tokio]
-        api[Axum HTTP & SSE API]
-        validator[Strict Input Validator<br/>ipnet + std::net]
-        sem[Concurrency Semaphore<br/>per-router concurrency cap]
-        trait_engine[Vendor Driver Trait]
-
-        subgraph vendor_drivers [Ported Netmiko Vendor Drivers]
+    visitor([Visitor Browser])
+    
+    subgraph appliance [Single Standalone Looking Glass Binary - Rust]
+        tls[Built-in TLS & HTTP/2 Engine<br/>rustls + Axum]
+        ui[Embedded Web UI<br/>HTML5 + CSS + Canvas AS-PATH Topology<br/>pt / en / es i18n]
+        api[Query API & SSE Streamer]
+        validator[Strict Input Validation<br/>ipnet + std::net]
+        limiter[Tokio Concurrency Semaphore<br/>per-router rate limiter]
+        
+        subgraph drivers [Native Lightweight Vendor Drivers]
             d_mtk[MikroTik Driver]
-            d_huawei[Huawei VRP Driver]
-            d_cisco[Cisco IOS-XR Driver]
-            d_juniper[Juniper Junos Driver]
-            d_datacom[Datacom DmOS Driver]
-            d_nokia[Nokia SR OS Driver]
-            d_bird[BIRD 2 Driver]
+            d_hw[Huawei Driver]
+            d_cs[Cisco Driver]
+            d_jn[Juniper Driver]
+            d_dc[Datacom Driver]
+            d_nk[Nokia Driver]
+            d_bd[BIRD Driver]
         end
-
-        ssh_pool[Native Async SSH Pool<br/>russh client]
+        
+        ssh_pool[Asynchronous russh Engine]
     end
 
     subgraph routers [Operator Network]
-        r_mtk[(MikroTik)]
-        r_hw[(Huawei)]
-        r_cs[(Cisco)]
-        r_jn[(Juniper)]
+        r1[(MikroTik)]
+        r2[(Huawei)]
+        r3[(Cisco)]
+        r4[(Juniper)]
     end
 
-    ui -->|HTTP POST / SSE Stream| api
+    visitor -->|HTTPS :443<br/>No Nginx/Apache needed| tls
+    tls --> ui
+    tls --> api
     api --> validator
-    validator --> sem
-    sem --> trait_engine
-    trait_engine --> vendor_drivers
-    vendor_drivers --> ssh_pool
-    ssh_pool -->|Async SSH| r_mtk
-    ssh_pool -->|Async SSH| r_hw
-    ssh_pool -->|Async SSH| r_cs
-    ssh_pool -->|Async SSH| r_jn
+    validator --> limiter
+    limiter --> drivers
+    drivers --> ssh_pool
+    ssh_pool -->|Direct Async SSH| r1
+    ssh_pool -->|Direct Async SSH| r2
+    ssh_pool -->|Direct Async SSH| r3
+    ssh_pool -->|Direct Async SSH| r4
 ```
 
 ## Consequences
 
 ### Positive
-- **Dramatic Resource Reduction:** The entire stack operates comfortably under 35 MB of RAM on a minimal 1 vCPU / 512 MB VPS.
-- **Single Artifact Deploy:** One static binary without Python or Node.js runtime baggage.
-- **Safety by Construction:** Type-safe query parameters (`IpNetwork`, `IpAddr`, `AsNumber`) prevent command injection before any SSH session is opened.
-- **Ultra-low latency streaming:** Native Tokio async channels feed Server-Sent Events directly as output chunks arrive from routers.
+- **Truly Boring Infrastructure:** One executable, one config file, zero external runtimes (no Node, no Python, no Nginx, no Apache).
+- **Extreme Efficiency:** Total RAM footprint under 35 MB under heavy load. Boots in milliseconds.
+- **Enterprise Security:** Memory-safety by design. Immunity to Python dependency supply-chain attacks and zero shell-escape injection vulnerabilities.
+- **Direct Streaming:** Real-time Server-Sent Events (SSE) fed directly from router SSH buffers to the visitor browser with sub-millisecond dispatch latency.
 
 ### Negative / Trade-offs
-- Adding exotic or rare legacy vendors requires contributing a Rust driver struct rather than importing an existing Netmiko Python class.
-- The development team must write and maintain Rust code for the core daemon instead of Python scripts.
+- The project maintainers write and maintain the Rust vendor drivers and web templates rather than relying on off-the-shelf Python libraries.
+- Adding a new vendor requires implementing the Rust `VendorDriver` trait instead of dropping in an unvetted Python script.
