@@ -1,0 +1,17 @@
+name: docs-lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  docs:
+    name: Documentation standard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check documentation rules
+        run: ./scripts/check-docs.sh
+      - name: Check translation parity
+        run: ./scripts/check-i18n.sh

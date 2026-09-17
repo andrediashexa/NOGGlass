@@ -1,0 +1,41 @@
+name: Bug
+description: Something behaves incorrectly
+title: "fix: "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do NOT report security vulnerabilities here. Use a private security
+        advisory instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the web footer or at /api/version.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include error output. Redact addresses and credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: vendor
+    attributes:
+      label: Vendor and OS version
+      description: "For example: MikroTik RouterOS 7.14, Huawei VRP V800R021."

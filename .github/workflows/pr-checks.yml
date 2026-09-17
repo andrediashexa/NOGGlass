@@ -1,0 +1,46 @@
+name: pr-checks
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  conventions:
+    name: Title, branch and issue link
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pull request conventions
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -uo pipefail
+          types='feat|fix|docs|chore|refactor|test|perf|ci|build|style|revert'
+          failed=0
+
+          # Conventional Commits: the squashed title drives the release.
+          if [[ ! "$PR_TITLE" =~ ^($types)(\([a-z0-9,\ -]+\))?!?:\ .+ ]]; then
+            echo "::error::Title must follow Conventional Commits, e.g. 'feat(executor): add MikroTik driver'. Got: '$PR_TITLE'"
+            failed=1
+          fi
+
+          # One branch per issue, named after it.
+          if [[ ! "$PR_BRANCH" =~ ^($types)/[0-9]+-[a-z0-9-]+$ ]]; then
+            echo "::error::Branch must be '<type>/<issue-number>-<slug>', e.g. 'feat/12-ssh-executor'. Got: '$PR_BRANCH'"
+            failed=1
+          fi
+
+          # Trivial chores and docs may skip the issue; everything else may not.
+          if [[ "$PR_TITLE" =~ ^(docs|chore|ci|style)(\(|!|:) ]]; then
+            echo "Issue reference not required for this change type."
+          elif [[ ! "$PR_BODY" =~ (Closes|Fixes|Resolves)\ #[0-9]+ ]]; then
+            echo "::error::Body must reference the issue, e.g. 'Closes #12'."
+            failed=1
+          fi
+
+          exit $failed

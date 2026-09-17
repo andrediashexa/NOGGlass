@@ -1,0 +1,19 @@
+name: Documentation
+description: Something to write, fix or clarify in the documentation
+title: "docs: "
+labels: ["type:docs"]
+body:
+  - type: input
+    id: document
+    attributes:
+      label: Document
+      description: Path under docs/, or "new document".
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change
+      description: Remember the standard — English, TL;DR, 5W2H, RFC 2119, Mermaid.
+    validations:
+      required: true

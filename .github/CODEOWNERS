@@ -1,0 +1,8 @@
+# Review is required from the other maintainer on anything that can reach a
+# router or change how the project is built and released.
+
+/backend/            @andrediashexa @gondimcodes
+/frontend/src/lib/   @andrediashexa @gondimcodes
+/.github/            @andrediashexa @gondimcodes
+/scripts/            @andrediashexa @gondimcodes
+/docker-compose.yml  @andrediashexa @gondimcodes
