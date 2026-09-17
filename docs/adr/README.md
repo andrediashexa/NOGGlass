@@ -35,6 +35,8 @@ stateDiagram-v2
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
-| [0002](0002-fastapi-backend-and-direct-ssh.md) | FastAPI backend with direct SSH to routers | Accepted |
+| [0002](0002-fastapi-backend-and-direct-ssh.md) | FastAPI backend with direct SSH to routers | Partially superseded |
 | [0003](0003-conventional-commits-and-automated-releases.md) | Conventional Commits and automated releases | Accepted |
 | [0004](0004-web-interface-internationalisation.md) | Web interface internationalisation by URL prefix | Accepted |
+| [0005](0005-backend-implementation-language.md) | Backend implementation language | **Proposed** |
+| [0006](0006-structured-bgp-model-and-data-sources.md) | Structured BGP model, data sources and RIPE cross-check | Accepted |
