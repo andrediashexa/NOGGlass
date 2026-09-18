@@ -43,3 +43,4 @@ stateDiagram-v2
 | [0007](0007-unified-rust-architecture-and-drivers.md) | End-to-end Rust architecture with embedded web UI and native vendor drivers | **Proposed** |
 | [0008](0008-frontend-design-system-and-topology-graph.md) | Frontend design system, dark NOC aesthetic and interactive topology graph | **Proposed** |
 | [0009](0009-alpine-container-packaging-and-volumes.md) | Hardened Alpine container packaging, multi-stage compilation and persistent volume management | **Proposed** |
+| [0010](0010-tiered-rpki-validation-and-ripestat-fallback.md) | Tiered RPKI validation with router-first state and external RIPEstat fallback | **Proposed** |
