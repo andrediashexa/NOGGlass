@@ -9,7 +9,9 @@
 Defines the container packaging strategy using multi-stage builds on hardened Alpine Linux.
 The build stage fetches the codebase and compiles a static Rust binary with `musl`,
 while the final runtime image is a minimal Alpine container (~15-20 MB) running as an
-unprivileged service user. Operational configuration (`routers.yml`, credentials, certificates)
+unprivileged service user. The container MUST operate in host network mode (`network_mode: host`)
+to directly inherit the host's native dual-stack (IPv4/IPv6) networking without Docker NAT/bridge overhead.
+Operational configuration (`routers.yml`, credentials, certificates)
 MUST be stored in named persistent Docker volumes accessible on the host under `/var/lib/docker/volumes/`.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT",
@@ -20,12 +22,12 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 | Question | Answer |
 |---|---|
-| **What** | Container deployment strategy using Alpine Linux, multi-stage build, and named volumes. |
-| **Why** | Minimize attack surface, eliminate build tools from runtime, and decouple config from container lifecycle. |
+| **What** | Container deployment strategy using Alpine Linux, multi-stage build, host networking, and named volumes. |
+| **Why** | Minimize attack surface, provide native dual-stack IPv4/IPv6 source IPs for router ACLs, and decouple config from container lifecycle. |
 | **Who** | System administrators, DevOps engineers, and ISP operators deploying the Looking Glass. |
 | **Where** | `Dockerfile`, `docker-compose.yml`, and host storage under `/var/lib/docker/volumes/`. |
 | **When** | Baseline packaging for milestone `0.1.0`. |
-| **How** | Multi-stage `cargo build --release` producing a static binary copied to an Alpine runtime image. |
+| **How** | Multi-stage `cargo build --release` producing a static binary in an Alpine runtime with `network_mode: host`. |
 | **How much** | Final image size under 25 MB; runtime RAM consumption under 35 MB; zero build tool baggage. |
 
 ## Context
@@ -84,7 +86,23 @@ The container entrypoint MUST NOT run as `root`.
 To ensure configuration persists across upgrades and remains easily administrable by host operators:
 - All runtime configurations (`routers.yml`, custom branding, SSH keys, TLS certificates)
   SHALL reside in a dedicated directory inside the container (`/etc/looking-glass/`).
-- The `docker-compose.yml` SHALL mount a named volume (e.g. `looking_glass_config`) to this path:
+- The `docker-compose.yml` SHALL mount a named volume (e.g. `looking_glass_config`) to this path.
+- This configuration is physically stored and directly accessible on Linux hosts at:
+  `/var/lib/docker/volumes/looking_glass_config/_data/`
+  allowing operators to edit `routers.yml` or drop SSH private keys directly from the host filesystem
+  without entering the container.
+
+### 4. Host Network Mode (`network_mode: host`)
+
+The container deployment SHALL operate with `network_mode: host`:
+- **Dual-Stack IPv4/IPv6 Parity:** Running with host networking ensures direct inheritance of the
+  host's public and private IPv4/IPv6 interfaces, completely avoiding Docker bridge NAT limitations,
+  `ip6tables` masquerading bugs, and proxy daemon latency.
+- **Predictable Source IP for Router ACLs:** Probing production routers via SSH (`russh`) MUST originate
+  from the host's actual network interface IP. This allows network administrators to enforce strict
+  firewall filter rules and control-plane protections (CoPP/ACLs) on routers (e.g., Huawei, Juniper, Cisco)
+  based on the server's known static IP rather than dynamic Docker bridge subnets (`172.17.0.0/16`).
+- **Compose Definition:**
   ```yaml
   services:
     looking-glass:
@@ -92,28 +110,26 @@ To ensure configuration persists across upgrades and remains easily administrabl
         context: .
         dockerfile: Dockerfile
       restart: unless-stopped
-      ports:
-        - "80:80"
-        - "443:443"
+      network_mode: host
       volumes:
         - looking_glass_config:/etc/looking-glass
       environment:
         - LG_CONFIG_DIR=/etc/looking-glass
+        - LG_HTTP_PORT=80
+        - LG_HTTPS_PORT=443
 
   volumes:
     looking_glass_config:
       name: looking_glass_config
   ```
-- This configuration is physically stored and directly accessible on Linux hosts at:
-  `/var/lib/docker/volumes/looking_glass_config/_data/`
-  allowing operators to edit `routers.yml` or drop SSH private keys directly from the host filesystem
-  without entering the container.
 
 ## Consequences
 
 ### Positive
 - **Extreme Hardening:** Alpine Linux has minimal binaries and zero compilers in the runtime stage,
   drastically mitigating vulnerability scan alerts (CVEs) and container breakout risks.
+- **Native Dual-Stack Networking:** Direct binding to the host's IPv4 and IPv6 stack without Docker NAT,
+  guaranteeing clean router ACL filtering and optimal network diagnostic performance.
 - **Microscopic Footprint:** The complete image is ~20 MB and uses under 35 MB of RAM in production.
 - **Clean Upgrades:** Operators run `docker compose pull && docker compose up -d` without risking
   overwriting their inventory, credentials, or certificates stored in the persistent volume.
@@ -121,6 +137,8 @@ To ensure configuration persists across upgrades and remains easily administrabl
   directly into `/var/lib/docker/volumes/looking_glass_config/_data/`.
 
 ### Negative / Trade-offs
+- `network_mode: host` binds ports (80/443 or custom ports) directly to the host interface. Port collisions
+  with existing web servers on the host MUST be managed via environment variables (`LG_HTTP_PORT`, `LG_HTTPS_PORT`).
 - Building directly from source via `docker compose build` requires several minutes during the initial
   compilation on low-power 1 vCPU hosts. Pre-built images published to GHCR (GitHub Container Registry)
   SHOULD be provided for production deployments as stated in ADR-0003.
