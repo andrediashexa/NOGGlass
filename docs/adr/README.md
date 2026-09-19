@@ -44,3 +44,4 @@ stateDiagram-v2
 | [0008](0008-frontend-design-system-and-topology-graph.md) | Frontend design system, dark NOC aesthetic and interactive topology graph | **Proposed** |
 | [0009](0009-alpine-container-packaging-and-volumes.md) | Hardened Alpine container packaging, multi-stage compilation and persistent volume management | **Proposed** |
 | [0010](0010-tiered-rpki-validation-and-ripestat-fallback.md) | Tiered RPKI validation with router-first state and external RIPEstat fallback | **Proposed** |
+| [0011](0011-authenticated-collaborative-multitenant-looking-glass.md) | Authenticated collaborative multi-tenant platform with PeeringDB/RDAP verification and encrypted router vault | **Proposed** |
