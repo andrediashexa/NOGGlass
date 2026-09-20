@@ -104,6 +104,22 @@ username and the credential variable never reach the browser, and a transport
 failure renders as "could not reach the router" rather than as anything that
 would describe your management network.
 
+## Publishing the manual with it
+
+These pages are a container too, and it costs one command:
+
+```bash
+docker run -d --name nogglass-docs --restart unless-stopped \
+  -p 8081:8081 ghcr.io/andrediashexa/nogglass-docs:latest
+```
+
+Link it from wherever you announce your looking glass and the people using it
+can read why an RPKI badge says what it says without asking you. It serves
+nothing but files, makes no outbound connection, and works on a management
+network with no route to the Internet. Pin the same version as your server so
+the manual matches what you are running:
+[running the documentation site](../operations/documentation-site.md).
+
 ## Next
 
 [When something looks wrong](9-when-something-looks-wrong.md).
