@@ -39,12 +39,20 @@ jobs:
         if: steps.release.outputs.release_created == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This job never checks the repository out, so gh has no git
+          # directory to infer the repository from and has to be told.
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.release.outputs.tag_name }}
           PATCH: ${{ steps.release.outputs.patch }}
+        # A release that is published with the wrong flag is still published;
+        # failing the job here would also skip the image build, which is how
+        # v0.4.1 ended up with no image at all. Report loudly, carry on.
+        continue-on-error: true
         run: |
           if [ "$PATCH" != "0" ]; then
             echo "$TAG is a patch release; marking it as a pre-release."
-            gh release edit "$TAG" --prerelease --latest=false
+            gh release edit "$TAG" --prerelease --latest=false \
+              || echo "::error::could not flag $TAG as a pre-release; fix it by hand"
           else
             echo "$TAG is a minor or major release; leaving it as a full release."
           fi
