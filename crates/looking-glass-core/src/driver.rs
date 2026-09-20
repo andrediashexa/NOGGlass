@@ -40,7 +40,12 @@ pub enum QueryType {
     BgpSummary,
 }
 
-#[derive(Debug, Clone)]
+/// What a visitor asked about.
+///
+/// Build one with [`crate::target::parse_target`] — it is the only validated
+/// path from text to this type. Constructing a variant directly is fine for
+/// values the program already holds as typed data.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueryTarget {
     Ip(IpAddr),
     Prefix(IpNet),
