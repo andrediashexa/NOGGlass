@@ -48,7 +48,7 @@ flowchart LR
 
 | Document | Purpose |
 |---|---|
-| [Using NOGGlass](wiki/) | Ten pages: reading an answer, and running an instance |
+| [Using NOGGlass](wiki/README.md) | Ten pages: reading an answer, and running an instance |
 | [Wiki outline](wiki-outline.md) | What each page is meant to achieve, and when it is done |
 
 ## Operations
@@ -57,17 +57,18 @@ flowchart LR
 |---|---|
 | [Deployment](operations/deployment.md) | Installing, configuring, exposing and upgrading an instance |
 | [Read-only router users](operations/router-users.md) | The account NOGGlass authenticates with, per vendor |
+| [Running this site](operations/documentation-site.md) | Serving these documents as a searchable site, in a container |
 
 ## Design
 
 | Document | Purpose |
 |---|---|
 | [Interface brief](design/interface-brief.md) | What the product does, every screen, every state, and the rules a design cannot break |
-| [Captured payloads](design/payloads/) | Real API responses, one per state, to design and check against |
+| [Captured payloads](design/payloads/README.md) | Real API responses, one per state, to design and check against |
 
 ## Decisions
 
-Architecture Decision Records live in [`adr/`](adr/). Each ADR states the
+Architecture Decision Records live in [`adr/`](adr/README.md). Each ADR states the
 context, the decision and the consequences, and is immutable once accepted: a
 change of mind becomes a new ADR that supersedes the old one.
 

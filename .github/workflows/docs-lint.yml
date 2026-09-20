@@ -15,3 +15,8 @@ jobs:
         run: ./scripts/check-docs.sh
       - name: Check translation parity
         run: ./scripts/check-i18n.sh crates/nogglass-server/ui/messages
+
+      # The site is built in strict mode, so a link to a page that does not
+      # exist fails here rather than 404ing for a reader.
+      - name: Build the documentation site
+        run: docker build -f Dockerfile.docs -t nogglass-docs:ci .

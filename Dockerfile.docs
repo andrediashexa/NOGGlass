@@ -1,0 +1,66 @@
+# The documentation site.
+#
+# Builds docs/ into a static site and serves it. Two stages so the runtime image
+# carries no Python and no build tools: what ships is HTML and a web server.
+#
+# The site is built from the repository, so it cannot drift from the documents
+# under review. To change a page, change the Markdown.
+
+# The site is HTML: the same bytes whatever the runtime architecture. Building
+# it on the build host rather than the target one keeps a multi-architecture
+# build from running pip under emulation for no gain.
+FROM --platform=$BUILDPLATFORM python:3.12-alpine AS builder
+
+# Pinned: an unpinned theme changes the site on an unrelated rebuild, and a
+# rebuild that changes the output without a commit is a rebuild nobody can
+# review.
+ARG MKDOCS_MATERIAL_VERSION=9.5.44
+ARG MERMAID_VERSION=11.4.0
+
+RUN pip install --no-cache-dir "mkdocs-material==${MKDOCS_MATERIAL_VERSION}"
+
+WORKDIR /build
+COPY mkdocs.yml ./
+COPY docs/ ./docs/
+
+# Mermaid is vendored rather than loaded from a CDN: this container is meant to
+# run on an operator's own network, and a diagram that only renders when the
+# browser can reach unpkg.com is a diagram that fails in exactly the outage the
+# documentation is being read during.
+ADD https://cdn.jsdelivr.net/npm/mermaid@${MERMAID_VERSION}/dist/mermaid.min.js \
+    ./docs/assets/mermaid.min.js
+
+RUN mkdocs build --strict
+
+# Point the theme's diagram loader at the vendored copy. The build fails if the
+# URL is not there any more, because an upgraded theme that silently went back
+# to the CDN would only be noticed by a reader with no Internet — which is the
+# reader this is for.
+RUN set -eu; \
+    bundle="$(ls site/assets/javascripts/bundle.*.min.js)"; \
+    grep -q 'https://unpkg.com/mermaid@11/dist/mermaid.min.js' "$bundle"; \
+    sed -i 's#https://unpkg.com/mermaid@11/dist/mermaid.min.js#/assets/mermaid.min.js#g' "$bundle"; \
+    ! grep -q 'unpkg.com/mermaid' "$bundle"
+
+FROM nginx:alpine-slim
+
+LABEL org.opencontainers.image.title="NOGGlass documentation" \
+      org.opencontainers.image.description="The NOGGlass documentation set, served as a site" \
+      org.opencontainers.image.source="https://github.com/andrediashexa/looking-glass" \
+      org.opencontainers.image.licenses="MIT"
+
+COPY --from=builder /build/site /usr/share/nginx/html
+COPY deploy/docs-nginx.conf /etc/nginx/conf.d/default.conf
+
+# Non-root, like the NOGGlass image: the same uid, so a volume or a log
+# directory shared between the two behaves the same way.
+RUN sed -i '/^user /d' /etc/nginx/nginx.conf \
+ && sed -i 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
+ && grep -q '^pid /tmp/nginx.pid;$' /etc/nginx/nginx.conf \
+ && chown -R 10001:10001 /var/cache/nginx /usr/share/nginx/html
+
+USER 10001:10001
+EXPOSE 8081
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8081/ || exit 1

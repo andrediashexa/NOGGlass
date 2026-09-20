@@ -1,0 +1,9 @@
+# The context for Dockerfile.docs. BuildKit reads <dockerfile>.dockerignore in
+# preference to .dockerignore, which exists to keep docs/ out of the *server*
+# image — exactly what this build needs.
+target/
+.git/
+.github/
+crates/
+scripts/
+Cargo.lock

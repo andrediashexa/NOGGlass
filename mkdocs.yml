@@ -1,0 +1,114 @@
+# The documentation site.
+#
+# Same content as the repository: docs/ is the source, this only decides how it
+# is presented. Built and served by Dockerfile.docs; see docs/operations for how
+# to run it.
+
+site_name: NOGGlass
+site_description: Multi-vendor looking glass for ISPs
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: en
+  # System fonts rather than Google's: the site is meant to work on an
+  # operator's own network, and a page that waits on fonts.googleapis.com is a
+  # page that loads slowly exactly when the Internet is the thing being
+  # debugged. Nothing here is loaded from outside the container.
+  font: false
+  palette:
+    # Dark first, like the product: a looking glass is often opened at 3 a.m.
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+extra_css:
+  - assets/site.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+
+# MkDocs excludes a top-level templates/ directory by default, to avoid
+# confusion with a theme's Jinja templates. Ours holds the document template
+# contributors copy, which belongs on the site.
+exclude_docs: |
+  !/templates/
+
+nav:
+  - Home: README.md
+  - Using NOGGlass:
+      - Index: wiki/README.md
+      - 1. What is a looking glass?: wiki/1-what-is-a-looking-glass.md
+      - 2. Your first query: wiki/2-your-first-query.md
+      - 3. Reading a BGP result: wiki/3-reading-a-bgp-result.md
+      - 4. RPKI, four states: wiki/4-rpki-four-states.md
+      - 5. Router versus Internet: wiki/5-router-versus-internet.md
+      - 6. A traceroute that stops: wiki/6-traceroute-that-stops.md
+      - 7. Connecting a router: wiki/7-connecting-a-router.md
+      - 8. Publishing it: wiki/8-publishing-it.md
+      - 9. When something looks wrong: wiki/9-when-something-looks-wrong.md
+      - 10. Adding a vendor: wiki/10-adding-a-vendor.md
+  - Operations:
+      - Deployment: operations/deployment.md
+      - Read-only router users: operations/router-users.md
+      - Running this site: operations/documentation-site.md
+  - Architecture:
+      - Overview: architecture/overview.md
+  - Design:
+      - Interface brief: design/interface-brief.md
+      - Screens: design/screens/README.md
+      - Payloads: design/payloads/README.md
+  - Process:
+      - Documentation standard: process/documentation-standard.md
+      - Versioning and releases: process/versioning-and-releases.md
+      - Wiki outline: wiki-outline.md
+      - Document template: templates/document-template.md
+  - Decisions:
+      - Index: adr/README.md
+      - ADR-0001 Record architecture decisions: adr/0001-record-architecture-decisions.md
+      - ADR-0002 FastAPI and direct SSH: adr/0002-fastapi-backend-and-direct-ssh.md
+      - ADR-0003 Conventional Commits and releases: adr/0003-conventional-commits-and-automated-releases.md
+      - ADR-0004 Internationalisation: adr/0004-web-interface-internationalisation.md
+      - ADR-0005 Backend language: adr/0005-backend-implementation-language.md
+      - ADR-0006 BGP model and data sources: adr/0006-structured-bgp-model-and-data-sources.md
+      - ADR-0007 Rust architecture: adr/0007-unified-rust-architecture-and-drivers.md
+      - ADR-0008 Design system and graph: adr/0008-frontend-design-system-and-topology-graph.md
+      - ADR-0009 Alpine packaging: adr/0009-alpine-container-packaging-and-volumes.md
+      - ADR-0010 Tiered RPKI validation: adr/0010-tiered-rpki-validation-and-ripestat-fallback.md
+      - ADR-0011 Federated platform: adr/0011-authenticated-collaborative-multitenant-looking-glass.md
+      - ADR-0012 Exposure and packaging: adr/0012-standalone-binary-exposure-and-packaging.md
+      - ADR-0013 Product name: adr/0013-product-name-and-branding.md
+      - ADR-0014 Release every change: adr/0014-release-every-change-with-patch-prereleases.md
+  - Reference:
+      - Imported infrastructure standard (pt-BR): reference/previous-project-infra-standard.pt-BR.md

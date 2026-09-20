@@ -64,7 +64,7 @@ catalogue are inside the binary.
 
 ## Configuration
 
-Copy [`nogglass.example.toml`](../../nogglass.example.toml). Router passwords are
+Copy [`nogglass.example.toml`](https://github.com/andrediashexa/looking-glass/blob/main/nogglass.example.toml). Router passwords are
 **named** in that file and **read from the environment**, so the file is safe to
 keep in version control:
 
