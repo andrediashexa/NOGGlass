@@ -14,11 +14,12 @@ parsed into a normalised path model and drawn as an AS-PATH topology graph with
 RPKI state, route attributes and decoded communities. It is free software
 (Apache-2.0) and ships as a single Rust binary, or as one container.
 
-> **Status: alpha.** The binary runs: it serves the interface in three
-> languages, validates queries, opens read-only SSH sessions and parses BGP
-> output into the path model behind the AS-PATH graph. Huawei VRP is the vendor
-> with real coverage, and a mock router serves fabricated data for trying it
-> out. Not yet recommended in front of the Internet.
+> **Status: beta.** Every vendor in the catalogue answers every query with a
+> parsed result — no raw-text fallbacks left. What has **not** happened: no
+> query has ever run against real hardware. Every parser was written from
+> documented output and proven against fixtures, so the first thing to do with
+> a real router is compare what NOGGlass shows with what the CLI says, and open
+> an issue with the raw output when they differ.
 
 ## Why another looking glass
 
@@ -72,6 +73,19 @@ flowchart TB
     norm -.-> enrich
 ```
 
+## What it does
+
+| | |
+|---|---|
+| **Queries** | `ping`, `traceroute`, BGP route lookup, BGP session summary — all parsed, none returned as raw text |
+| **Vendors** | Huawei VRP, Cisco IOS-XE and IOS-XR, Juniper Junos, Nokia SR OS, MikroTik RouterOS, Datacom DmOS, BIRD, plus a mock router with fabricated data |
+| **BGP results** | AS-PATH graph, route table with attributes, decoded communities, and the router output always kept |
+| **RPKI** | The router's own state first; an operator's validator or RIPEstat fills the gaps, with the source shown |
+| **Global view** | What the Internet announces beside what the router answered, so a leak, a hijack or an announcement that never propagated is visible |
+| **Protection** | Per-visitor rate limiting counted per /64 on IPv6, per-router concurrency caps, command timeouts, output caps |
+| **Languages** | Portuguese, English and Spanish, by URL prefix |
+| **Deployment** | One binary, or one container for amd64 and arm64 |
+
 ## Stack
 
 | Layer | Choice | Decision |
@@ -82,7 +96,7 @@ flowchart TB
 | Router access | Direct SSH, read-only user, per-vendor drivers | [ADR-0007](docs/adr/0007-unified-rust-architecture-and-drivers.md) |
 | BGP results | Normalised path model, never raw text only | [ADR-0006](docs/adr/0006-structured-bgp-model-and-data-sources.md) |
 | Deployment | Binary on a high port; reverse proxy optional | [ADR-0012](docs/adr/0012-standalone-binary-exposure-and-packaging.md) |
-| Releases | Conventional Commits, SemVer, release-please | [ADR-0003](docs/adr/0003-conventional-commits-and-automated-releases.md) |
+| Releases | Conventional Commits, SemVer, every merge tagged; patch releases are pre-releases | [ADR-0003](docs/adr/0003-conventional-commits-and-automated-releases.md), [ADR-0014](docs/adr/0014-release-every-change-with-patch-prereleases.md) |
 
 ## Documentation
 
