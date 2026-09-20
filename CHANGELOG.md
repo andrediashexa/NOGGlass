@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/andrediashexa/looking-glass/compare/v0.4.1...v0.4.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* **ci:** give the pre-release step a repository to act on ([#92](https://github.com/andrediashexa/looking-glass/issues/92)) ([2ffd5f4](https://github.com/andrediashexa/looking-glass/commit/2ffd5f4df6e776d1393f1c10ffb359948fdc891e))
+
 ## [0.4.1](https://github.com/andrediashexa/looking-glass/compare/v0.4.0...v0.4.1) (2026-09-20)
 
 
