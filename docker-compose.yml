@@ -2,8 +2,9 @@
 #
 #   docker compose up -d
 #
-# The image is published to GHCR, so nothing is compiled here. To build from
-# source instead, uncomment the build section.
+# Brings up two containers: the looking glass on 8080 and its documentation on
+# 8081. Both images are published to GHCR, so nothing is compiled here. To build
+# from source instead, uncomment the build sections.
 
 services:
   nogglass:
@@ -36,6 +37,34 @@ services:
       # Set when a proxy terminates TLS, so the startup warning stays quiet and
       # forwarded headers are honoured from it.
       # NOGGLASS_BEHIND_PROXY: "true"
+    networks:
+      - default
+
+  # The manual, beside the tool. Remove this block, or run
+  # `docker compose up -d nogglass`, if you do not want it: nothing else
+  # depends on it.
+  docs:
+    # The same tag as the server above, deliberately: both images are published
+    # by one release with one version number, so following `latest` on both
+    # keeps the manual describing the binary beside it. An operator who pins the
+    # server MUST pin this to the same number, or the pages will drift ahead of
+    # what their binary does.
+    image: ghcr.io/andrediashexa/nogglass-docs:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.docs
+    container_name: nogglass-docs
+    restart: unless-stopped
+    # Measured at 7.4 MB of RSS serving the built site. nginx allocates per
+    # worker and the site is static, so the number barely moves under load; the
+    # ceiling is room for the workers a larger host starts, not for growth.
+    mem_limit: 64m
+    memswap_limit: 64m
+    # Read-only files and nothing else: no volume, no configuration, no
+    # secrets. Put it behind the same proxy as the looking glass, on its own
+    # name (docs.example.net), and serve it over TLS.
+    ports:
+      - "127.0.0.1:8081:8081"
     networks:
       - default
 
