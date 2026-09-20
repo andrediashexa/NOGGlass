@@ -1,0 +1,34 @@
+# Using NOGGlass
+
+## TL;DR
+
+Ten pages: six for someone reading an answer, four for someone running the
+instance. Start at the top if you were handed a link; skip to page 7 if you are
+the operator. The [outline](../wiki-outline.md) says what each page is meant to
+achieve and how to tell when it is finished.
+
+## For a visitor
+
+| Page | The question |
+|---|---|
+| [1. What is a looking glass?](1-what-is-a-looking-glass.md) | What is this, and what can it not do? |
+| [2. Running your first query](2-your-first-query.md) | Which of the four questions do I want? |
+| [3. Reading a BGP result](3-reading-a-bgp-result.md) | What do the columns mean, and why is the best path not the shortest? |
+| [4. RPKI: four states](4-rpki-four-states.md) | Is this announcement authorised, and who says so? |
+| [5. Router versus Internet](5-router-versus-internet.md) | My prefix is missing — where? |
+| [6. A traceroute that stops](6-traceroute-that-stops.md) | Why are there stars, and are they the problem? |
+
+## For an operator
+
+| Page | The question |
+|---|---|
+| [7. Connecting a router](7-connecting-a-router.md) | How do I point this at something real, and prove it works? |
+| [8. Publishing it](8-publishing-it.md) | What can a stranger make my routers do? |
+| [9. When something looks wrong](9-when-something-looks-wrong.md) | Is this the software, the instance, or the network? |
+| [10. Adding a vendor](10-adding-a-vendor.md) | How do I teach it a platform it does not know? |
+
+## Elsewhere
+
+Installing and configuring is in [operations](../operations/deployment.md); the
+reasoning behind the product is in the [decisions](../adr/). Neither is repeated
+here — a fact kept in two places becomes wrong in one of them.

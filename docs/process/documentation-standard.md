@@ -45,6 +45,15 @@ Every document under `docs/` MUST contain a `## 5W2H` section covering **What**,
 RECOMMENDED. "How much" means cost, effort or resource impact — write "no cost"
 when that is the honest answer, never omit the row.
 
+**Exception: `docs/wiki/`.** Pages written for a visitor or an operator learning
+to use the product keep R1 and R2 and are exempt from R3, R4 and R5. 5W2H is the
+shape of a decision record — it forces a writer to say who is affected and what
+it costs — and a page teaching someone to read a BGP table is not a decision
+record. "Who: the reader. How much: no cost." is noise, and noise in the first
+screen of a teaching page is how people stop reading. English and a TL;DR still
+apply, because a reader who stops after two lines should still have the
+answer.
+
 ### R4 — RFC 2119
 
 Requirements MUST be expressed with RFC 2119 keywords in uppercase, and each

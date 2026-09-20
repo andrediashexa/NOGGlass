@@ -36,6 +36,10 @@ check_file() {
   CHECKED=$((CHECKED + 1))
   local in_docs=0
   [[ "$file" == docs/* ]] && in_docs=1
+  # Pages written for a visitor keep R1 and R2 and skip the rest: 5W2H is the
+  # shape of a decision record, and a reader learning to read a BGP table is
+  # not reading one (R3 note in the standard).
+  [[ "$file" == docs/wiki/* ]] && in_docs=0
 
   # R2 — TL;DR
   if ! has_marker "$file" "no-tldr" && ! grep -qE '^#{2,3} TL;DR' "$file"; then

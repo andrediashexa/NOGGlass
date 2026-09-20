@@ -111,7 +111,7 @@ All documentation lives in [`docs/`](docs/), in English, following the
 | [Architecture overview](docs/architecture/overview.md) | Components, request flow and trust boundaries |
 | [Architecture decisions](docs/adr/) | Why the project looks like this |
 | [Versioning and releases](docs/process/versioning-and-releases.md) | How a merge becomes a release |
-| [Using NOGGlass](docs/wiki-outline.md) | What to do with it, once it runs |
+| [Using NOGGlass](docs/wiki/) | Reading an answer, and running an instance |
 | [Contributing](CONTRIBUTING.md) | Issue, branch, commit and review rules |
 | [Security policy](SECURITY.md) | How to report a vulnerability |
 
