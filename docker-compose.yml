@@ -7,6 +7,8 @@
 
 services:
   nogglass:
+    # Published for linux/amd64. On arm64, uncomment the build section below
+    # and build from source until an arm64 image is published.
     image: ghcr.io/andrediashexa/nogglass:latest
     # build:
     #   context: .
