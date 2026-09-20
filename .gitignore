@@ -36,3 +36,7 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# Captures from the lab. What gets committed is the driver test written from
+# a capture, not the raw text: fixtures live beside the parser they exercise.
+lab/captured/
