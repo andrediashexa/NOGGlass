@@ -1,4 +1,6 @@
-use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, TracerouteResult, VendorDriver};
+use crate::driver::{
+    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, TracerouteResult, VendorDriver,
+};
 use std::net::IpAddr;
 
 pub struct NokiaSrosDriver;

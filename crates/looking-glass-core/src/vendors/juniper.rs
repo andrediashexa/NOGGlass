@@ -1,4 +1,7 @@
-use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult, VendorDriver};
+use crate::driver::{
+    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
+    VendorDriver,
+};
 use serde::Deserialize;
 use std::net::IpAddr;
 
@@ -85,7 +88,10 @@ impl VendorDriver for JuniperDriver {
         match target {
             QueryTarget::Ip(ip) => format!("show route {} detail | display json", ip),
             QueryTarget::Prefix(net) => format!("show route {} detail | display json", net),
-            QueryTarget::Asn(asn) => format!("show route aspath-regex \".*{}.*\" detail | display json", asn),
+            QueryTarget::Asn(asn) => format!(
+                "show route aspath-regex \".*{}.*\" detail | display json",
+                asn
+            ),
         }
     }
 
@@ -106,7 +112,7 @@ impl VendorDriver for JuniperDriver {
         for line in raw.lines() {
             if line.contains("packets transmitted") {
                 let parts: Vec<&str> = line.split(',').collect();
-                if let Some(p) = parts.get(0) {
+                if let Some(p) = parts.first() {
                     if let Some(num) = p.split_whitespace().next() {
                         sent = num.parse().unwrap_or(0);
                     }
@@ -128,7 +134,10 @@ impl VendorDriver for JuniperDriver {
                     if parts.len() >= 3 {
                         min = parts[0].trim().parse().ok();
                         avg = parts[1].trim().parse().ok();
-                        max = parts[2].trim().split_whitespace().next().and_then(|s| s.parse().ok());
+                        max = parts[2]
+                            .split_whitespace()
+                            .next()
+                            .and_then(|s| s.parse().ok());
                     }
                 }
             }
@@ -166,7 +175,8 @@ impl VendorDriver for JuniperDriver {
                     for table in tables {
                         if let Some(rts) = table.rt {
                             for rt in rts {
-                                let network = rt.rt_destination
+                                let network = rt
+                                    .rt_destination
                                     .and_then(|d| d.into_iter().next())
                                     .map(|t| t.data)
                                     .unwrap_or_default();
@@ -174,19 +184,24 @@ impl VendorDriver for JuniperDriver {
                                 if let Some(entries) = rt.rt_entry {
                                     for entry in entries {
                                         let is_best = entry.active_tag.is_some();
-                                        
+
                                         // RPKI validation nativo do JunOS
-                                        let rpki_status = match entry.validation_state
+                                        let rpki_status = match entry
+                                            .validation_state
                                             .and_then(|v| v.into_iter().next())
                                             .map(|t| t.data.to_lowercase())
-                                            .as_deref() {
+                                            .as_deref()
+                                        {
                                             Some("valid") => RpkiStatus::Valid,
                                             Some("invalid") => RpkiStatus::Invalid,
-                                            Some("unknown") | Some("not-found") => RpkiStatus::NotFound,
+                                            Some("unknown") | Some("not-found") => {
+                                                RpkiStatus::NotFound
+                                            }
                                             _ => RpkiStatus::NotChecked,
                                         };
 
-                                        let next_hop = entry.nh
+                                        let next_hop = entry
+                                            .nh
                                             .and_then(|n| n.into_iter().next())
                                             .and_then(|n| n.to)
                                             .and_then(|t| t.into_iter().next())
@@ -204,11 +219,13 @@ impl VendorDriver for JuniperDriver {
                                             }
                                         }
 
-                                        let local_pref = entry.local_preference
+                                        let local_pref = entry
+                                            .local_preference
                                             .and_then(|lp| lp.into_iter().next())
                                             .and_then(|t| t.data.parse().ok());
 
-                                        let med = entry.metric
+                                        let med = entry
+                                            .metric
                                             .and_then(|m| m.into_iter().next())
                                             .and_then(|t| t.data.parse().ok());
 

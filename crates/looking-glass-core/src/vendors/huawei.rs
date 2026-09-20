@@ -1,4 +1,7 @@
-use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult, VendorDriver};
+use crate::driver::{
+    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
+    VendorDriver,
+};
 use std::net::IpAddr;
 
 /// Driver para Huawei VRP (NE40E, NE8000, etc.)
@@ -38,7 +41,11 @@ impl VendorDriver for HuaweiVrpDriver {
                 if net.addr().is_ipv4() {
                     format!("display bgp routing-table {} {}", net.addr(), net.netmask())
                 } else {
-                    format!("display bgp ipv6 routing-table {}/{}", net.addr(), net.prefix_len())
+                    format!(
+                        "display bgp ipv6 routing-table {}/{}",
+                        net.addr(),
+                        net.prefix_len()
+                    )
                 }
             }
             QueryTarget::Asn(asn) => format!("display bgp routing-table as-path-filter {}", asn),
@@ -63,7 +70,7 @@ impl VendorDriver for HuaweiVrpDriver {
         for line in raw.lines() {
             if line.contains("transmitted") && line.contains("received") {
                 let parts: Vec<&str> = line.split(',').collect();
-                if let Some(p) = parts.get(0) {
+                if let Some(p) = parts.first() {
                     if let Some(num) = p.split_whitespace().next() {
                         sent = num.parse().unwrap_or(0);
                     }
@@ -126,12 +133,21 @@ impl VendorDriver for HuaweiVrpDriver {
 
         for line in raw.lines() {
             let line = line.trim_end();
-            if line.is_empty() || line.starts_with("Total") || line.starts_with("BGP") || line.starts_with("Status") || line.starts_with("Network") {
+            if line.is_empty()
+                || line.starts_with("Total")
+                || line.starts_with("BGP")
+                || line.starts_with("Status")
+                || line.starts_with("Network")
+            {
                 continue;
             }
 
             // Checar se a linha começa com status de rota (*, *>, etc.)
-            if line.starts_with('*') || line.starts_with('>') || line.starts_with(" *") || line.starts_with(" *>") {
+            if line.starts_with('*')
+                || line.starts_with('>')
+                || line.starts_with(" *")
+                || line.starts_with(" *>")
+            {
                 let is_best = line.contains('>');
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() < 3 {

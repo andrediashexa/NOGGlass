@@ -1,0 +1,4 @@
+# Pinned so CI, contributors and the release build agree on one compiler.
+[toolchain]
+channel = "1.90.0"
+components = ["rustfmt", "clippy"]

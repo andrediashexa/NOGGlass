@@ -1,4 +1,7 @@
-use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult, VendorDriver};
+use crate::driver::{
+    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
+    VendorDriver,
+};
 use std::net::IpAddr;
 
 pub struct BirdDriver;
@@ -109,7 +112,11 @@ impl VendorDriver for BirdDriver {
                     }
                 }
             } else if line.starts_with("BGP.local_pref:") {
-                local_pref = line.trim_start_matches("BGP.local_pref:").trim().parse().ok();
+                local_pref = line
+                    .trim_start_matches("BGP.local_pref:")
+                    .trim()
+                    .parse()
+                    .ok();
             } else if line.starts_with("BGP.med:") {
                 med = line.trim_start_matches("BGP.med:").trim().parse().ok();
             } else if line.starts_with("BGP.community:") {

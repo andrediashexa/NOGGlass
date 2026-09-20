@@ -2,6 +2,8 @@
 name = "looking-glass-core"
 version = "0.1.0"
 edition = "2021"
+# LazyLock (lib.rs) requires 1.80; CI pins the exact toolchain.
+rust-version = "1.80"
 
 [dependencies]
 async-trait = "0.1"

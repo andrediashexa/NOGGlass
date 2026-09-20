@@ -1,4 +1,7 @@
-use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult, VendorDriver};
+use crate::driver::{
+    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
+    VendorDriver,
+};
 use std::net::IpAddr;
 
 pub struct MikrotikDriver {
@@ -40,14 +43,27 @@ impl VendorDriver for MikrotikDriver {
         if self.is_v7 {
             match target {
                 QueryTarget::Ip(ip) => format!("/routing/bgp/route/print detail where dst={}", ip),
-                QueryTarget::Prefix(net) => format!("/routing/bgp/route/print detail where dst={}", net),
-                QueryTarget::Asn(asn) => format!("/routing/bgp/route/print detail where as-path~\"{}\"", asn),
+                QueryTarget::Prefix(net) => {
+                    format!("/routing/bgp/route/print detail where dst={}", net)
+                }
+                QueryTarget::Asn(asn) => {
+                    format!("/routing/bgp/route/print detail where as-path~\"{}\"", asn)
+                }
             }
         } else {
             match target {
-                QueryTarget::Ip(ip) => format!("/routing bgp advertisements print detail where dst-address={}", ip),
-                QueryTarget::Prefix(net) => format!("/routing bgp advertisements print detail where dst-address={}", net),
-                QueryTarget::Asn(asn) => format!("/routing bgp advertisements print detail where as-path~\"{}\"", asn),
+                QueryTarget::Ip(ip) => format!(
+                    "/routing bgp advertisements print detail where dst-address={}",
+                    ip
+                ),
+                QueryTarget::Prefix(net) => format!(
+                    "/routing bgp advertisements print detail where dst-address={}",
+                    net
+                ),
+                QueryTarget::Asn(asn) => format!(
+                    "/routing bgp advertisements print detail where as-path~\"{}\"",
+                    asn
+                ),
             }
         }
     }
@@ -174,9 +190,15 @@ fn parse_mikrotik_time(s: &str) -> Option<f64> {
     if s.contains("ms") {
         let parts: Vec<&str> = s.split("ms").collect();
         let ms: f64 = parts[0].parse().unwrap_or(0.0);
-        let us: f64 = parts.get(1).and_then(|u| u.trim_end_matches("us").parse().ok()).unwrap_or(0.0);
+        let us: f64 = parts
+            .get(1)
+            .and_then(|u| u.trim_end_matches("us").parse().ok())
+            .unwrap_or(0.0);
         Some(ms + (us / 1000.0))
     } else {
-        s.replace("us", "").parse::<f64>().ok().map(|us| us / 1000.0)
+        s.replace("us", "")
+            .parse::<f64>()
+            .ok()
+            .map(|us| us / 1000.0)
     }
 }

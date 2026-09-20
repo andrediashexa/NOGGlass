@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 jobs:
   conventions:
@@ -18,6 +19,9 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           types='feat|fix|docs|chore|refactor|test|perf|ci|build|style|revert'
@@ -41,9 +45,25 @@ jobs:
           # Trivial chores and docs may skip the issue; everything else may not.
           if [[ "$PR_TITLE" =~ ^(docs|chore|ci|style)(\(|!|:) ]]; then
             echo "Issue reference not required for this change type."
-          elif [[ ! "$PR_BODY" =~ (Closes|Fixes|Resolves)\ #[0-9]+ ]]; then
+          elif [[ ! "$PR_BODY" =~ (Closes|Fixes|Resolves)[[:space:]]#([0-9]+) ]]; then
             echo "::error::Body must reference the issue, e.g. 'Closes #12'."
             failed=1
+          else
+            ref="${BASH_REMATCH[2]}"
+            # The pattern alone is not enough: a pull request can close its own
+            # number, which looks valid and tracks nothing.
+            if [[ "$ref" == "$PR_NUMBER" ]]; then
+              echo "::error::'Closes #$ref' points at this pull request, not an issue."
+              failed=1
+            elif ! gh api "repos/$GH_REPO/issues/$ref" --jq '.number' >/dev/null 2>&1; then
+              echo "::error::Issue #$ref does not exist in $GH_REPO."
+              failed=1
+            elif [[ "$(gh api "repos/$GH_REPO/issues/$ref" --jq '.pull_request.url // empty')" != "" ]]; then
+              echo "::error::#$ref is a pull request, not an issue."
+              failed=1
+            else
+              echo "Linked to issue #$ref."
+            fi
           fi
 
           exit $failed
