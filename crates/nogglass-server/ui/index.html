@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-locale="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>NOGGlass</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">NOGGlass</span>
+        <span class="brand-tagline" data-i18n="app.tagline"></span>
+      </div>
+      <nav class="locales" aria-label="Language">
+        <a href="/pt/" hreflang="pt-BR" data-locale-link="pt">PT</a>
+        <a href="/en/" hreflang="en" data-locale-link="en">EN</a>
+        <a href="/es/" hreflang="es" data-locale-link="es">ES</a>
+      </nav>
+    </header>
+
+    <main>
+      <form id="query-form" class="query">
+        <label class="field">
+          <span data-i18n="form.router"></span>
+          <select id="router" name="router" required></select>
+        </label>
+
+        <label class="field">
+          <span data-i18n="form.query"></span>
+          <select id="query-type" name="type" required></select>
+        </label>
+
+        <label class="field field-grow">
+          <span data-i18n="form.target"></span>
+          <input
+            id="target"
+            name="target"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+        </label>
+
+        <button type="submit" id="submit"><span data-i18n="form.submit"></span></button>
+      </form>
+
+      <p id="mock-warning" class="notice notice-mock" hidden data-i18n="mock.warning"></p>
+      <p id="error" class="notice notice-error" hidden role="alert"></p>
+
+      <section id="graph-panel" class="panel" hidden>
+        <h2 data-i18n="result.best_path"></h2>
+        <!-- The graph is decorative on its own; the table below carries the
+             same information for anyone who cannot see it. -->
+        <div id="graph" role="img" aria-describedby="paths-table"></div>
+      </section>
+
+      <section id="paths-panel" class="panel" hidden>
+        <h2 data-i18n="result.paths"></h2>
+        <div class="table-scroll">
+          <table id="paths-table">
+            <thead>
+              <tr>
+                <th data-i18n="table.prefix"></th>
+                <th data-i18n="table.next_hop"></th>
+                <th data-i18n="table.as_path"></th>
+                <th data-i18n="table.local_pref"></th>
+                <th data-i18n="table.med"></th>
+                <th data-i18n="table.origin"></th>
+                <th data-i18n="table.rpki"></th>
+                <th data-i18n="table.communities"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="raw-panel" class="panel" hidden>
+        <h2 data-i18n="result.raw"></h2>
+        <p id="result-meta" class="meta"></p>
+        <pre id="raw"></pre>
+      </section>
+    </main>
+
+    <footer>
+      <span data-i18n="footer.version"></span>
+      <a id="version-link" href="#"><span id="version">dev</span></a>
+      <span id="build-meta" class="meta"></span>
+    </footer>
+
+    <script src="/assets/app.js" type="module"></script>
+  </body>
+</html>

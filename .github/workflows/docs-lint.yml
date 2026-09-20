@@ -14,4 +14,4 @@ jobs:
       - name: Check documentation rules
         run: ./scripts/check-docs.sh
       - name: Check translation parity
-        run: ./scripts/check-i18n.sh
+        run: ./scripts/check-i18n.sh crates/nogglass-server/ui/messages
