@@ -13,8 +13,9 @@ services:
     #   dockerfile: Dockerfile
     container_name: nogglass
     restart: unless-stopped
-    # Measured at 24 MB serving the mock; the ceiling leaves room for a few
-    # concurrent SSH sessions and their output buffers.
+    # Measured at 16 MB of RSS serving the mock in a debug build; the ceiling
+    # leaves room for concurrent SSH sessions and their output buffers, which
+    # is where the memory actually goes under load.
     mem_limit: 128m
     memswap_limit: 128m
     # Only the HTTP port is published. Put a reverse proxy in front for TLS

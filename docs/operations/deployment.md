@@ -18,7 +18,7 @@ behaviour you want from something that reaches production routers.
 | **Where** | Any Linux host with Docker, or a single binary on a host with none. |
 | **When** | From the first release onwards. |
 | **How** | Published image, Compose file, `nogglass.toml`, secrets in the environment. |
-| **How much** | Measured at 24 MB of RAM serving the mock router; the image is around 20 MB. |
+| **How much** | Measured at 16 MB of RSS serving the mock router, in a debug build; a release build is smaller. |
 
 ## What you need first
 
