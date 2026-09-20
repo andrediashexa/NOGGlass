@@ -3,6 +3,14 @@ name: release
 on:
   push:
     branches: [main]
+  # Lets the image be rebuilt for a release that already exists, which is how
+  # an image is recovered when its build failed or was cancelled.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build an image for, such as v0.2.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -44,13 +52,15 @@ jobs:
   image:
     name: Build and publish the container image
     needs: release-please
-    if: needs.release-please.outputs.released == 'true'
+    if: needs.release-please.outputs.released == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -68,24 +78,56 @@ jobs:
         env:
           VERSION: ${{ needs.release-please.outputs.version }}
           PATCH: ${{ needs.release-please.outputs.patch }}
+          MANUAL_TAG: ${{ github.event.inputs.tag }}
         run: |
           image=ghcr.io/${{ github.repository_owner }}/nogglass
-          minor=${VERSION%.*}
-          tags="$image:$VERSION,$image:$minor"
-          if [ "$PATCH" = "0" ]; then
+          version="${VERSION:-${MANUAL_TAG#v}}"
+          patch="${PATCH:-${version##*.}}"
+          minor=${version%.*}
+          tags="$image:$version,$image:$minor"
+          if [ "$patch" = "0" ]; then
             tags="$tags,$image:latest"
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
+      # amd64 only. Building arm64 here means QEMU emulating a Rust compile of
+      # ring, rustls and russh, which ran past 30 minutes on the first release
+      # before being cancelled. arm64 comes back through cross-compilation or a
+      # native runner, tracked separately, rather than by making every release
+      # wait half an hour.
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            NOGGLASS_VERSION=${{ needs.release-please.outputs.version }}
+            NOGGLASS_VERSION=${{ steps.tags.outputs.version }}
             NOGGLASS_COMMIT=${{ github.sha }}
             NOGGLASS_BUILT_AT=${{ github.event.repository.updated_at }}
+
+      # An image that was pushed but cannot start is worse than no image: the
+      # operator finds out, not us.
+      - name: Start the image and check it answers
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/nogglass:${{ steps.tags.outputs.version }}
+        run: |
+          printf '[[router]]\nid = "demo"\nname = "Demo"\nvendor = "mock"\nhost = "127.0.0.1"\n' > nogglass.toml
+          docker run -d --name smoke -p 8080:8080 \
+            -v "$PWD/nogglass.toml:/etc/nogglass/nogglass.toml:ro" "$IMAGE"
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+              echo "The image starts and answers."
+              curl -fsS http://127.0.0.1:8080/api/version
+              docker rm -f smoke >/dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The image did not answer within a minute."
+          docker logs smoke || true
+          docker rm -f smoke >/dev/null || true
+          exit 1

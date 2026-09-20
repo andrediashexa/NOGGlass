@@ -132,6 +132,15 @@ Image tags follow the release rules
 | `X.Y` | Latest patch of that minor version |
 | `latest` | Latest **full** release; patch releases are pre-releases and do not move it |
 
+Images are published for **linux/amd64** only for now. Building arm64 by
+emulation made every release wait more than half an hour, so it was removed
+until it can be cross-compiled or built on a native runner. On arm64, build from
+source in the meantime:
+
+```bash
+docker build -t nogglass .
+```
+
 An operator who wants only blessed versions follows `latest`. An operator who
 wants the newest fix pins the exact `X.Y.Z` of a pre-release, knowingly.
 
