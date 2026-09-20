@@ -3,8 +3,9 @@ pub mod target;
 pub mod vendors;
 
 pub use driver::{
-    BgpPath, BgpPeerSummary, BgpSummaryResult, DriverError, PingResult, QueryTarget, QueryType,
-    RpkiStatus, TracerouteHop, TracerouteResult, VendorDriver,
+    BgpPath, BgpPeerSummary, BgpRouteResult, BgpSummaryResult, Community, CommunityKind,
+    Completeness, DriverError, Origin, PingResult, QueryTarget, QueryType, RpkiSource, RpkiStatus,
+    RpkiValidation, TracerouteHop, TracerouteResult, VendorDriver,
 };
 pub use target::{parse_target, QueryLimits, TargetError, MAX_TARGET_LEN};
 pub use vendors::*;
@@ -37,19 +38,29 @@ mod tests {
 *>  198.51.100.0/24    192.0.2.254    10         150       0       65100 65500i
 *                      198.51.100.254 50         100       0       65200 65500i
 "#;
-        let paths = driver
+        let result = driver
             .parse_bgp_route(raw_bgp)
-            .expect("Falha no parse do Huawei VRP");
+            .expect("Huawei VRP output should parse");
+        assert_eq!(
+            result.completeness,
+            Completeness::Complete,
+            "every line of this fixture is a route or a header"
+        );
+        assert_eq!(
+            result.raw_output, raw_bgp,
+            "raw output must always be preserved"
+        );
+        let paths = &result.paths;
         assert_eq!(paths.len(), 2);
         assert!(paths[0].is_best);
-        assert_eq!(paths[0].network, "198.51.100.0/24");
-        assert_eq!(paths[0].next_hop, "192.0.2.254");
+        assert_eq!(paths[0].prefix.unwrap().to_string(), "198.51.100.0/24");
+        assert_eq!(paths[0].next_hop.unwrap().to_string(), "192.0.2.254");
         assert_eq!(paths[0].as_path, vec![65100, 65500]);
         assert_eq!(paths[0].local_pref, Some(150));
         assert_eq!(paths[0].med, Some(10));
 
         assert!(!paths[1].is_best);
-        assert_eq!(paths[1].next_hop, "198.51.100.254");
+        assert_eq!(paths[1].next_hop.unwrap().to_string(), "198.51.100.254");
         assert_eq!(paths[1].as_path, vec![65200, 65500]);
     }
 
@@ -81,30 +92,42 @@ mod tests {
             }]
         }"#;
 
-        let paths = driver
+        let result = driver
             .parse_bgp_route(raw_json)
-            .expect("Falha ao parsear JSON nativo do JunOS");
+            .expect("Junos JSON should parse");
+        let paths = &result.paths;
         assert_eq!(paths.len(), 1);
         let p = &paths[0];
         assert!(p.is_best);
-        assert_eq!(p.network, "198.51.100.0/24");
-        assert_eq!(p.next_hop, "192.0.2.254");
+        assert_eq!(p.prefix.unwrap().to_string(), "198.51.100.0/24");
+        assert_eq!(p.next_hop.unwrap().to_string(), "192.0.2.254");
         assert_eq!(p.as_path, vec![65100, 65500]);
         assert_eq!(p.local_pref, Some(150));
-        assert_eq!(p.rpki_status, RpkiStatus::Valid);
-        assert_eq!(p.communities, vec!["65001:100", "65100:500"]);
+        assert_eq!(p.rpki.status, RpkiStatus::Valid);
+        assert_eq!(
+            p.rpki.source,
+            RpkiSource::Router,
+            "Junos reported it, so the source is the router"
+        );
+        let raw_communities: Vec<&str> = p.communities.iter().map(|c| c.raw.as_str()).collect();
+        assert_eq!(raw_communities, vec!["65001:100", "65100:500"]);
+        assert!(p
+            .communities
+            .iter()
+            .all(|c| c.kind == CommunityKind::Standard));
     }
 
     #[test]
     fn test_mikrotik_parsing() {
         let driver = MikrotikDriver::new(true);
         let raw = "0 ADb dst=198.51.100.0/24 gateway=192.0.2.254 as-path=65100,65500 local-pref=150 med=10";
-        let paths = driver
+        let result = driver
             .parse_bgp_route(raw)
-            .expect("Falha no parse MikroTik");
+            .expect("RouterOS output should parse");
+        let paths = &result.paths;
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].network, "198.51.100.0/24");
-        assert_eq!(paths[0].next_hop, "192.0.2.254");
+        assert_eq!(paths[0].prefix.unwrap().to_string(), "198.51.100.0/24");
+        assert_eq!(paths[0].next_hop.unwrap().to_string(), "192.0.2.254");
         assert_eq!(paths[0].as_path, vec![65100, 65500]);
         assert_eq!(paths[0].local_pref, Some(150));
     }
@@ -120,14 +143,23 @@ mod tests {
     BGP.local_pref: 150
     BGP.community: (65001,100) (65100,500)
 "#;
-        let paths = driver.parse_bgp_route(raw).expect("Falha no parse BIRD");
+        let result = driver
+            .parse_bgp_route(raw)
+            .expect("BIRD output should parse");
+        let paths = &result.paths;
         assert_eq!(paths.len(), 1);
         assert!(paths[0].is_best);
-        assert_eq!(paths[0].network, "198.51.100.0/24");
-        assert_eq!(paths[0].next_hop, "192.0.2.254");
+        assert_eq!(paths[0].prefix.unwrap().to_string(), "198.51.100.0/24");
+        assert_eq!(paths[0].next_hop.unwrap().to_string(), "192.0.2.254");
         assert_eq!(paths[0].as_path, vec![65100, 65500]);
         assert_eq!(paths[0].local_pref, Some(150));
-        assert_eq!(paths[0].communities, vec!["(65001,100)", "(65100,500)"]);
+        let raw_communities: Vec<&str> = paths[0]
+            .communities
+            .iter()
+            .map(|c| c.raw.as_str())
+            .collect();
+        assert_eq!(raw_communities, vec!["(65001,100)", "(65100,500)"]);
+        assert_eq!(paths[0].origin, Some(Origin::Igp), "BIRD prints [AS65500i]");
     }
 
     /// A driver that cannot parse something MUST say so. Returning a default
@@ -192,8 +224,9 @@ mod tests {
 "#;
         let paths = driver
             .parse_bgp_route(with_marker)
-            .expect("VRP output with an origin marker should parse");
-        assert_eq!(paths[0].origin.as_deref(), Some("IGP"));
+            .expect("VRP output with an origin marker should parse")
+            .paths;
+        assert_eq!(paths[0].origin, Some(Origin::Igp));
 
         let without_marker = r#"
    Network            NextHop        MED        LocPrf    PrefVal Path/Ogn
@@ -201,10 +234,68 @@ mod tests {
 "#;
         let paths = driver
             .parse_bgp_route(without_marker)
-            .expect("VRP output without an origin marker should still parse");
+            .expect("VRP output without an origin marker should still parse")
+            .paths;
         assert_eq!(
             paths[0].origin, None,
             "origin must not be assumed when the router does not report it"
         );
+    }
+
+    /// ADR-0006: an empty path list means "no route", and MUST be
+    /// distinguishable from "the parser could not read this".
+    #[test]
+    fn empty_result_is_not_the_same_as_a_parse_failure() {
+        let driver = HuaweiVrpDriver;
+
+        let no_route = " Total Number of Routes: 0\n";
+        let result = driver
+            .parse_bgp_route(no_route)
+            .expect("a table with no routes is a valid answer");
+        assert!(result.paths.is_empty());
+        assert_eq!(result.completeness, Completeness::Complete);
+
+        let garbled = "*>  this line is not a route at all\n";
+        let result = driver
+            .parse_bgp_route(garbled)
+            .expect("unreadable output still returns the raw text");
+        assert!(result.paths.is_empty());
+        assert!(
+            matches!(result.completeness, Completeness::Partial { .. }),
+            "unreadable lines must be reported, got {:?}",
+            result.completeness
+        );
+        assert_eq!(result.raw_output, garbled);
+    }
+
+    #[test]
+    fn origin_as_is_the_last_hop_of_the_as_path() {
+        let path = BgpPath {
+            as_path: vec![65100, 65200, 65500],
+            ..BgpPath::default()
+        };
+        assert_eq!(path.origin_as(), Some(65500));
+
+        // A locally originated route has an empty AS path and therefore no
+        // origin AS to report.
+        assert_eq!(BgpPath::default().origin_as(), None);
+    }
+
+    #[test]
+    fn communities_are_classified_without_inventing_meaning() {
+        assert_eq!(Community::parse("65001:100").kind, CommunityKind::Standard);
+        assert_eq!(Community::parse("65001:100:200").kind, CommunityKind::Large);
+        assert_eq!(
+            Community::parse("target:65001:100").kind,
+            CommunityKind::Extended
+        );
+
+        let well_known = Community::parse("65535:666");
+        assert_eq!(well_known.kind, CommunityKind::WellKnown);
+        assert_eq!(well_known.name.as_deref(), Some("blackhole"));
+
+        // An operator-defined value carries no name: we do not know what their
+        // policy assigns to it, and guessing would mislead.
+        assert_eq!(Community::parse("65001:100").name, None);
     }
 }

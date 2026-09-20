@@ -1,6 +1,6 @@
 use crate::driver::{
-    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
-    VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
+    Origin, PingResult, QueryTarget, TracerouteResult, VendorDriver,
 };
 use std::net::IpAddr;
 
@@ -59,88 +59,79 @@ impl VendorDriver for BirdDriver {
     }
 
     /// Parser de Bloco BIRD (show route for <ip> all)
-    fn parse_bgp_route(&self, raw: &str) -> Result<Vec<BgpPath>, DriverError> {
-        let mut paths = Vec::new();
-        // BIRD 2 formato:
+    fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
+        // BIRD 2 prints one route as a header line plus indented attributes:
+        //
         // 198.51.100.0/24 unicast [upstream1 12:00:00] * (100) [AS65500i]
         //     via 192.0.2.254 on eth0
-        //     Type: BGP univ
         //     BGP.as_path: 65100 65500
         //     BGP.local_pref: 150
         //     BGP.community: (65001,100) (65100,500)
-        let mut is_best = false;
-        let mut network = String::new();
-        let mut next_hop = String::new();
-        let mut as_path = Vec::new();
-        let mut local_pref = None;
-        let mut med = None;
-        let mut communities = Vec::new();
+        //
+        // Every attribute belongs to the header above it, so the accumulator is
+        // replaced wholesale on each header. Clearing only some fields used to
+        // leak the previous route's next hop and metrics into the next one.
+        let mut paths: Vec<BgpPath> = Vec::new();
+        let mut current: Option<BgpPath> = None;
 
         for line in raw.lines() {
             let line = line.trim();
-            if line.contains("unicast") {
-                if !network.is_empty() {
-                    paths.push(BgpPath {
-                        is_best,
-                        network: network.clone(),
-                        next_hop: next_hop.clone(),
-                        as_path: as_path.clone(),
-                        local_pref,
-                        med,
-                        weight: None,
-                        origin: None, // not parsed from this vendor output yet
-                        communities: communities.clone(),
-                        rpki_status: RpkiStatus::NotChecked,
-                    });
-                    as_path.clear();
-                    communities.clear();
-                }
+            if line.is_empty() {
+                continue;
+            }
 
+            if line.contains("unicast") || line.contains("unreachable") {
+                if let Some(path) = current.take() {
+                    paths.push(path);
+                }
+                let mut path = BgpPath {
+                    is_best: line.contains('*'),
+                    ..BgpPath::default()
+                };
                 if let Some(prefix) = line.split_whitespace().next() {
-                    network = prefix.to_string();
+                    path.prefix = parse_network(prefix);
                 }
-                is_best = line.contains('*');
-            } else if line.starts_with("via ") {
-                if let Some(ip) = line.split_whitespace().nth(1) {
-                    next_hop = ip.to_string();
-                }
-            } else if line.starts_with("BGP.as_path:") {
-                for token in line.trim_start_matches("BGP.as_path:").split_whitespace() {
-                    if let Ok(asn) = token.parse::<u32>() {
-                        as_path.push(asn);
+                // The trailing [AS65500i] carries the origin marker.
+                if let Some(tail) = line.rsplit('[').next() {
+                    let tail = tail.trim_end_matches(']');
+                    if let Some(marker) = tail.chars().last() {
+                        path.origin = Origin::from_marker(marker);
                     }
                 }
-            } else if line.starts_with("BGP.local_pref:") {
-                local_pref = line
-                    .trim_start_matches("BGP.local_pref:")
-                    .trim()
-                    .parse()
-                    .ok();
-            } else if line.starts_with("BGP.med:") {
-                med = line.trim_start_matches("BGP.med:").trim().parse().ok();
-            } else if line.starts_with("BGP.community:") {
-                for comm in line.trim_start_matches("BGP.community:").split_whitespace() {
-                    communities.push(comm.to_string());
-                }
+                current = Some(path);
+                continue;
+            }
+
+            let Some(path) = current.as_mut() else {
+                continue;
+            };
+
+            if let Some(rest) = line.strip_prefix("via ") {
+                path.next_hop = rest.split_whitespace().next().and_then(parse_hop);
+            } else if let Some(rest) = line.strip_prefix("BGP.as_path:") {
+                path.as_path = rest
+                    .split_whitespace()
+                    .filter_map(|token| token.parse::<u32>().ok())
+                    .collect();
+            } else if let Some(rest) = line.strip_prefix("BGP.local_pref:") {
+                path.local_pref = rest.trim().parse().ok();
+            } else if let Some(rest) = line.strip_prefix("BGP.med:") {
+                path.med = rest.trim().parse().ok();
+            } else if let Some(rest) = line.strip_prefix("BGP.community:") {
+                path.communities = rest.split_whitespace().map(Community::parse).collect();
+            } else if let Some(rest) = line.strip_prefix("BGP.large_community:") {
+                path.communities
+                    .extend(rest.split_whitespace().map(Community::parse));
+            } else if let Some(rest) = line.strip_prefix("BGP.next_hop:") {
+                path.next_hop = rest.split_whitespace().next().and_then(parse_hop);
             }
         }
 
-        if !network.is_empty() {
-            paths.push(BgpPath {
-                is_best,
-                network,
-                next_hop,
-                as_path,
-                local_pref,
-                med,
-                weight: None,
-                origin: None, // not parsed from this vendor output yet
-                communities,
-                rpki_status: RpkiStatus::NotChecked,
-            });
+        if let Some(path) = current.take() {
+            paths.push(path);
         }
 
-        Ok(paths)
+        Ok(BgpRouteResult::new(paths, raw))
     }
 
     fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {

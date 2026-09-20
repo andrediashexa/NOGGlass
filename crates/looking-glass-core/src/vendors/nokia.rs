@@ -1,5 +1,6 @@
 use crate::driver::{
-    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, TracerouteResult, VendorDriver,
+    BgpRouteResult, BgpSummaryResult, DriverError, PingResult, QueryTarget, TracerouteResult,
+    VendorDriver,
 };
 use std::net::IpAddr;
 
@@ -57,7 +58,7 @@ impl VendorDriver for NokiaSrosDriver {
         })
     }
 
-    fn parse_bgp_route(&self, _raw: &str) -> Result<Vec<BgpPath>, DriverError> {
+    fn parse_bgp_route(&self, _raw: &str) -> Result<BgpRouteResult, DriverError> {
         // An empty path list means "this router has no route for that prefix",
         // which is a real and useful answer. It MUST NOT double as "we did not
         // implement this".

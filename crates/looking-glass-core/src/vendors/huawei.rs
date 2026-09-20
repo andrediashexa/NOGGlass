@@ -1,6 +1,6 @@
 use crate::driver::{
-    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
-    VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, DriverError, Origin,
+    PingResult, QueryTarget, RpkiValidation, TracerouteResult, VendorDriver,
 };
 use std::net::IpAddr;
 
@@ -120,8 +120,11 @@ impl VendorDriver for HuaweiVrpDriver {
     }
 
     /// Parser de Texto BGP do Huawei VRP (Extrai Best Path '*' e '>' + Next-Hop + MED + LocPrf + AS-Path)
-    fn parse_bgp_route(&self, raw: &str) -> Result<Vec<BgpPath>, DriverError> {
+    fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
         let mut paths = Vec::new();
+        // Lines that look like routes but could not be read. Reported as a
+        // partial result rather than silently dropped (ADR-0006).
+        let mut unreadable = 0usize;
         // Huawei display bgp routing-table formato:
         // Total Number of Routes: 2
         // BGP Local router ID is 192.0.2.1
@@ -134,11 +137,14 @@ impl VendorDriver for HuaweiVrpDriver {
 
         for line in raw.lines() {
             let line = line.trim_end();
-            if line.is_empty()
-                || line.starts_with("Total")
-                || line.starts_with("BGP")
-                || line.starts_with("Status")
-                || line.starts_with("Network")
+            let header = line.trim_start();
+            if header.is_empty()
+                || header.starts_with("Total")
+                || header.starts_with("BGP")
+                || header.starts_with("Status")
+                || header.starts_with("Network")
+                || header.starts_with("Route Flag")
+                || header.starts_with("Paths:")
             {
                 continue;
             }
@@ -169,7 +175,7 @@ impl VendorDriver for HuaweiVrpDriver {
                 }
 
                 if parts.len() > idx {
-                    let next_hop = parts[idx].to_string();
+                    let next_hop_text = parts[idx];
                     idx += 1;
 
                     let med = parts.get(idx).and_then(|v| v.parse().ok());
@@ -184,40 +190,56 @@ impl VendorDriver for HuaweiVrpDriver {
                     // no marker is present the router did not tell us, so the
                     // origin stays None instead of being assumed to be IGP.
                     let mut as_path = Vec::new();
-                    let mut origin: Option<String> = None;
+                    let mut origin: Option<Origin> = None;
 
                     for &token in &parts[idx.min(parts.len())..] {
-                        let (marker, clean) = match token.chars().last() {
-                            Some('i') => (Some("IGP"), token.trim_end_matches('i')),
-                            Some('e') => (Some("EGP"), token.trim_end_matches('e')),
-                            Some('?') => (Some("Incomplete"), token.trim_end_matches('?')),
-                            _ => (None, token),
+                        let last = token.chars().last();
+                        let marker = last.and_then(Origin::from_marker);
+                        let clean = match marker {
+                            Some(_) => &token[..token.len() - last.map_or(0, |c| c.len_utf8())],
+                            None => token,
                         };
                         if let Some(m) = marker {
-                            origin = Some(m.to_string());
+                            origin = Some(m);
                         }
                         if let Ok(asn) = clean.parse::<u32>() {
                             as_path.push(asn);
                         }
                     }
 
+                    let prefix = parse_network(&current_network);
+                    let next_hop = parse_hop(next_hop_text);
+                    if prefix.is_none() && next_hop.is_none() {
+                        // Looked like a route line but carried neither a
+                        // network nor a next hop: report it as unreadable
+                        // instead of emitting an empty path.
+                        unreadable += 1;
+                        continue;
+                    }
+
                     paths.push(BgpPath {
                         is_best,
-                        network: current_network.clone(),
+                        is_valid: Some(line.trim_start().starts_with('*')),
+                        prefix,
                         next_hop,
+                        peer: None,
                         as_path,
                         local_pref,
                         med,
                         weight: None,
                         origin,
                         communities: Vec::new(),
-                        rpki_status: RpkiStatus::NotChecked,
+                        rpki: RpkiValidation::default(),
                     });
+                } else {
+                    unreadable += 1;
                 }
+            } else {
+                unreadable += 1;
             }
         }
 
-        Ok(paths)
+        Ok(BgpRouteResult::new(paths, raw).partial(unreadable))
     }
 
     fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {
