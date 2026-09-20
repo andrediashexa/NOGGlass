@@ -1,42 +1,13 @@
 use crate::driver::{
     parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
-    Origin, PingResult, QueryTarget, TracerouteResult, VendorDriver,
+    Origin, PingResult, TracerouteResult, VendorDriver,
 };
-use std::net::IpAddr;
 
 pub struct BirdDriver;
 
 impl VendorDriver for BirdDriver {
     fn vendor_name(&self) -> &'static str {
         "bird_routing_daemon"
-    }
-
-    fn disable_paging_cmd(&self) -> Option<&'static str> {
-        None
-    }
-
-    fn prompt_pattern(&self) -> &'static str {
-        r"bird>\s*$"
-    }
-
-    fn format_ping(&self, target: &IpAddr, count: u8) -> String {
-        format!("ping -c {} {}", count.clamp(1, 20), target)
-    }
-
-    fn format_traceroute(&self, target: &IpAddr) -> String {
-        format!("traceroute -n {}", target)
-    }
-
-    fn format_bgp_route(&self, target: &QueryTarget) -> String {
-        match target {
-            QueryTarget::Ip(ip) => format!("show route for {} all", ip),
-            QueryTarget::Prefix(net) => format!("show route for {} all", net),
-            QueryTarget::Asn(asn) => format!("show route where bgp_path ~ [= * {} * =] all", asn),
-        }
-    }
-
-    fn format_bgp_summary(&self) -> String {
-        "show protocols all".to_string()
     }
 
     fn parse_ping(&self, _raw: &str) -> Result<PingResult, DriverError> {

@@ -1,0 +1,124 @@
+# Command catalogue.
+#
+# Every command NOGGlass can send to a router lives here, and nowhere else. The
+# binary embeds this file at compile time and refuses to start if it does not
+# load (ADR-0006, section 2.2).
+#
+# Rules for editing:
+#
+# * Only read-only commands. Anything that changes router state does not belong
+#   in this product, not even "just for testing".
+# * Placeholders are substituted with values the program already holds as typed
+#   data — never with text a visitor typed. Known placeholders:
+#     {target}      address, or prefix in CIDR form
+#     {network}     network address of a prefix
+#     {netmask}     dotted-quad mask, IPv4 only
+#     {prefix_len}  prefix length
+#     {count}       number of ping probes
+#     {asn}         AS number
+# * The loader rejects unknown placeholders and shell metacharacters, so a typo
+#   here fails at startup rather than on a production router.
+# * A missing entry means the vendor cannot answer that query. That is reported
+#   to the visitor as unsupported — it is never approximated with another
+#   command.
+
+[huawei_vrp]
+display_name = "Huawei VRP"
+disable_paging = "screen-length 0 temporary"
+prompt = '<[\w\.\-]+>|\[[\w\.\-]+\]'
+ping_v4 = "ping -c {count} {target}"
+ping_v6 = "ping ipv6 -c {count} {target}"
+traceroute_v4 = "tracert {target}"
+traceroute_v6 = "tracert ipv6 {target}"
+# VRP takes address and mask as separate arguments for IPv4.
+bgp_route_v4 = "display bgp routing-table {network} {netmask}"
+bgp_route_v6 = "display bgp ipv6 routing-table {network}/{prefix_len}"
+bgp_route_asn = "display bgp routing-table regular-expression _{asn}_"
+bgp_summary = "display bgp peer"
+
+[cisco_iosxe]
+display_name = "Cisco IOS-XE"
+disable_paging = "terminal length 0"
+prompt = '[\w\.\-]+[>#]'
+ping_v4 = "ping {target} repeat {count}"
+ping_v6 = "ping ipv6 {target} repeat {count}"
+traceroute_v4 = "traceroute {target} numeric"
+traceroute_v6 = "traceroute ipv6 {target} numeric"
+bgp_route_v4 = "show bgp ipv4 unicast {target}"
+bgp_route_v6 = "show bgp ipv6 unicast {target}"
+bgp_route_asn = "show bgp ipv4 unicast regexp _{asn}_"
+bgp_summary = "show bgp ipv4 unicast summary"
+
+[cisco_iosxr]
+display_name = "Cisco IOS-XR"
+disable_paging = "terminal length 0"
+prompt = 'RP/\d+/\w+/CPU\d+:[\w\.\-]+#'
+ping_v4 = "ping {target} count {count}"
+ping_v6 = "ping ipv6 {target} count {count}"
+traceroute_v4 = "traceroute {target} numeric"
+traceroute_v6 = "traceroute ipv6 {target} numeric"
+bgp_route_v4 = "show bgp ipv4 unicast {target}"
+bgp_route_v6 = "show bgp ipv6 unicast {target}"
+bgp_route_asn = "show bgp ipv4 unicast regexp _{asn}_"
+bgp_summary = "show bgp ipv4 unicast summary"
+
+[juniper_junos]
+display_name = "Juniper Junos"
+disable_paging = "set cli screen-length 0"
+prompt = '[\w\.\-]+[>#]'
+ping_v4 = "ping {target} count {count} no-resolve"
+ping_v6 = "ping inet6 {target} count {count} no-resolve"
+traceroute_v4 = "traceroute {target} no-resolve"
+traceroute_v6 = "traceroute inet6 {target} no-resolve"
+# Junos returns structured output, which is why it needs no text parser.
+bgp_route_v4 = "show route protocol bgp {target} detail | display json"
+bgp_route_v6 = "show route protocol bgp {target} detail | display json"
+bgp_route_asn = "show route aspath-regex \".* {asn} .*\" | display json"
+bgp_summary = "show bgp summary | display json"
+
+[nokia_sros]
+display_name = "Nokia SR OS"
+disable_paging = "environment no more"
+prompt = '\*?[AB]:[\w\.\-]+[>#]'
+ping_v4 = "ping {target} count {count}"
+ping_v6 = "ping {target} count {count}"
+traceroute_v4 = "traceroute {target}"
+traceroute_v6 = "traceroute {target}"
+bgp_route_v4 = "show router bgp routes {target}"
+bgp_route_v6 = "show router bgp routes {target} ipv6"
+bgp_route_asn = "show router bgp routes aspath-regex \".*{asn}.*\""
+bgp_summary = "show router bgp summary"
+
+[mikrotik_routeros]
+display_name = "MikroTik RouterOS"
+prompt = '\[[\w\.\-]+@[\w\.\-]+\] >'
+ping_v4 = "/ping address={target} count={count}"
+ping_v6 = "/ping address={target} count={count}"
+traceroute_v4 = "/tool traceroute address={target} count=1"
+traceroute_v6 = "/tool traceroute address={target} count=1"
+bgp_route_v4 = "/routing/route/print detail where dst-address={target}"
+bgp_route_v6 = "/routing/route/print detail where dst-address={target}"
+bgp_summary = "/routing/bgp/session/print detail"
+
+[datacom_dmos]
+display_name = "Datacom DmOS"
+disable_paging = "terminal length 0"
+prompt = '[\w\.\-]+[>#]'
+ping_v4 = "ping {target} count {count}"
+ping_v6 = "ping ipv6 {target} count {count}"
+traceroute_v4 = "traceroute {target}"
+traceroute_v6 = "traceroute ipv6 {target}"
+bgp_route_v4 = "show ip bgp {target}"
+bgp_route_v6 = "show ipv6 bgp {target}"
+bgp_summary = "show ip bgp summary"
+
+[bird_routing_daemon]
+display_name = "BIRD 2"
+prompt = 'bird>'
+ping_v4 = "ping -c {count} {target}"
+ping_v6 = "ping6 -c {count} {target}"
+traceroute_v4 = "traceroute -n {target}"
+traceroute_v6 = "traceroute6 -n {target}"
+bgp_route_v4 = "birdc show route for {target} all"
+bgp_route_v6 = "birdc show route for {target} all"
+bgp_summary = "birdc show protocols all"

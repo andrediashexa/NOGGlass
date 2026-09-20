@@ -1,8 +1,7 @@
 use crate::driver::{
     parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
-    Origin, PingResult, QueryTarget, TracerouteResult, VendorDriver,
+    Origin, PingResult, TracerouteResult, VendorDriver,
 };
-use std::net::IpAddr;
 
 pub struct MikrotikDriver {
     pub is_v7: bool,
@@ -20,59 +19,6 @@ impl VendorDriver for MikrotikDriver {
             "mikrotik_routeros_v7"
         } else {
             "mikrotik_routeros_v6"
-        }
-    }
-
-    fn disable_paging_cmd(&self) -> Option<&'static str> {
-        None
-    }
-
-    fn prompt_pattern(&self) -> &'static str {
-        r"\[[\w\.\-]+@[\w\.\-]+\]\s*[>#]"
-    }
-
-    fn format_ping(&self, target: &IpAddr, count: u8) -> String {
-        format!("/ping address={} count={}", target, count.clamp(1, 20))
-    }
-
-    fn format_traceroute(&self, target: &IpAddr) -> String {
-        format!("/tool traceroute address={} count=1 use-dns=no", target)
-    }
-
-    fn format_bgp_route(&self, target: &QueryTarget) -> String {
-        if self.is_v7 {
-            match target {
-                QueryTarget::Ip(ip) => format!("/routing/bgp/route/print detail where dst={}", ip),
-                QueryTarget::Prefix(net) => {
-                    format!("/routing/bgp/route/print detail where dst={}", net)
-                }
-                QueryTarget::Asn(asn) => {
-                    format!("/routing/bgp/route/print detail where as-path~\"{}\"", asn)
-                }
-            }
-        } else {
-            match target {
-                QueryTarget::Ip(ip) => format!(
-                    "/routing bgp advertisements print detail where dst-address={}",
-                    ip
-                ),
-                QueryTarget::Prefix(net) => format!(
-                    "/routing bgp advertisements print detail where dst-address={}",
-                    net
-                ),
-                QueryTarget::Asn(asn) => format!(
-                    "/routing bgp advertisements print detail where as-path~\"{}\"",
-                    asn
-                ),
-            }
-        }
-    }
-
-    fn format_bgp_summary(&self) -> String {
-        if self.is_v7 {
-            "/routing/bgp/session/print detail".to_string()
-        } else {
-            "/routing bgp peer print detail".to_string()
         }
     }
 

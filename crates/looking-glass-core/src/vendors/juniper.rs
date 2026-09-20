@@ -1,9 +1,8 @@
 use crate::driver::{
     parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
-    Origin, PingResult, QueryTarget, RpkiStatus, RpkiValidation, TracerouteResult, VendorDriver,
+    Origin, PingResult, RpkiStatus, RpkiValidation, TracerouteResult, VendorDriver,
 };
 use serde::Deserialize;
-use std::net::IpAddr;
 
 pub struct JuniperDriver;
 
@@ -66,37 +65,6 @@ struct JunosText {
 impl VendorDriver for JuniperDriver {
     fn vendor_name(&self) -> &'static str {
         "juniper_junos"
-    }
-
-    fn disable_paging_cmd(&self) -> Option<&'static str> {
-        Some("set cli screen-length 0")
-    }
-
-    fn prompt_pattern(&self) -> &'static str {
-        r"[\w\.\-]+[>#%]\s*$"
-    }
-
-    fn format_ping(&self, target: &IpAddr, count: u8) -> String {
-        format!("ping {} count {} no-resolve", target, count.clamp(1, 20))
-    }
-
-    fn format_traceroute(&self, target: &IpAddr) -> String {
-        format!("traceroute {} no-resolve", target)
-    }
-
-    fn format_bgp_route(&self, target: &QueryTarget) -> String {
-        match target {
-            QueryTarget::Ip(ip) => format!("show route {} detail | display json", ip),
-            QueryTarget::Prefix(net) => format!("show route {} detail | display json", net),
-            QueryTarget::Asn(asn) => format!(
-                "show route aspath-regex \".*{}.*\" detail | display json",
-                asn
-            ),
-        }
-    }
-
-    fn format_bgp_summary(&self) -> String {
-        "show bgp summary | display json".to_string()
     }
 
     fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {

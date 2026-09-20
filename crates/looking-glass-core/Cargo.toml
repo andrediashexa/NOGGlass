@@ -11,5 +11,6 @@ regex = "1.10"
 ipnet = { version = "2.9", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 thiserror = "1.0"
 tracing = "0.1"

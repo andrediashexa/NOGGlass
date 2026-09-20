@@ -1,7 +1,9 @@
+pub mod catalogue;
 pub mod driver;
 pub mod target;
 pub mod vendors;
 
+pub use catalogue::{Catalogue, CatalogueError, BUILTIN};
 pub use driver::{
     BgpPath, BgpPeerSummary, BgpRouteResult, BgpSummaryResult, Community, CommunityKind,
     Completeness, DriverError, Origin, PingResult, QueryTarget, QueryType, RpkiSource, RpkiStatus,
@@ -24,11 +26,19 @@ mod tests {
     #[test]
     fn test_huawei_commands_and_parsing() {
         let driver = HuaweiVrpDriver;
+        // Commands now come from the catalogue, not from the driver.
         assert_eq!(
-            driver.disable_paging_cmd(),
+            BUILTIN
+                .vendor("huawei_vrp")
+                .unwrap()
+                .disable_paging
+                .as_deref(),
             Some("screen-length 0 temporary")
         );
-        assert_eq!(driver.format_bgp_summary(), "display bgp peer");
+        assert_eq!(
+            BUILTIN.bgp_summary("huawei_vrp").unwrap(),
+            "display bgp peer"
+        );
 
         let raw_bgp = r#"
  Total Number of Routes: 2
@@ -68,7 +78,7 @@ mod tests {
     fn test_juniper_json_parsing_with_rpki() {
         let driver = JuniperDriver;
         assert_eq!(
-            driver.format_bgp_summary(),
+            BUILTIN.bgp_summary("juniper_junos").unwrap(),
             "show bgp summary | display json"
         );
 
