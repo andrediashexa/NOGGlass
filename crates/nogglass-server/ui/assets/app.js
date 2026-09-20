@@ -148,8 +148,51 @@ function hidePanels() {
   }
 }
 
+/**
+ * Reflects the query in the address bar, so copying the URL shares what is on
+ * screen. `replaceState` rather than `pushState`: a visitor trying three
+ * prefixes wants Back to leave the page, not to walk their own attempts.
+ */
+function rememberInUrl(payload) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("router", payload.router);
+  url.searchParams.set("type", payload.type);
+  url.searchParams.set("target", payload.target);
+  window.history.replaceState(null, "", url);
+}
+
+/**
+ * Runs the query a link asked for.
+ *
+ * Everything here is untrusted: a URL is as much visitor input as the form is.
+ * The router and query type are checked against what this instance offers, and
+ * the target goes to the server, which validates it exactly as it validates
+ * typed input.
+ */
+function applyQueryFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const target = params.get("target");
+  if (!target) return false;
+
+  const routerField = document.getElementById("router");
+  const wanted = params.get("router");
+  if (wanted && state.routers.some((router) => router.id === wanted)) {
+    routerField.value = wanted;
+    onRouterChange();
+  }
+
+  const queryField = document.getElementById("query-type");
+  const type = params.get("type");
+  if (type && [...queryField.options].some((option) => option.value === type)) {
+    queryField.value = type;
+  }
+
+  document.getElementById("target").value = target;
+  return true;
+}
+
 async function onSubmit(event) {
-  event.preventDefault();
+  event?.preventDefault();
   hidePanels();
 
   const button = document.getElementById("submit");
@@ -162,6 +205,7 @@ async function onSubmit(event) {
     type: document.getElementById("query-type").value,
     target: document.getElementById("target").value,
   };
+  rememberInUrl(payload);
 
   try {
     const response = await fetch("/api/query", {
@@ -574,6 +618,11 @@ async function start() {
   loadVersion();
 
   document.getElementById("query-form").addEventListener("submit", onSubmit);
+
+  // A link that carries a query runs it, so a result can be shared.
+  if (applyQueryFromUrl()) {
+    await onSubmit();
+  }
 }
 
 start();
