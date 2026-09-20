@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/andrediashexa/looking-glass/compare/v0.2.0...v0.3.0) (2026-09-20)
+
+
+### Features
+
+* **api:** compare the router answer with what the Internet announces ([#74](https://github.com/andrediashexa/looking-glass/issues/74)) ([19f4326](https://github.com/andrediashexa/looking-glass/commit/19f4326458dfe55f4d7e3e815c11da7854729912))
+* **api:** limit how many queries one visitor may run ([#69](https://github.com/andrediashexa/looking-glass/issues/69)) ([6e08600](https://github.com/andrediashexa/looking-glass/commit/6e086004520bb01ea789a70b3d59d66a6fda851b))
+
+
+### Bug Fixes
+
+* **vendor:** mark only the active RouterOS route as best ([#73](https://github.com/andrediashexa/looking-glass/issues/73)) ([bb4bd04](https://github.com/andrediashexa/looking-glass/commit/bb4bd041489ebb8517308ddbd6dd3c88100a44fd))
+* **vendor:** populate Cisco attributes and stop losing the AS path ([#70](https://github.com/andrediashexa/looking-glass/issues/70)) ([b6a45d7](https://github.com/andrediashexa/looking-glass/commit/b6a45d7d832e50de4627c3f0d32c7efdc34d7374))
+
+
+### CI
+
+* publish an amd64 image and smoke-test it before calling it published ([#72](https://github.com/andrediashexa/looking-glass/issues/72)) ([74405a5](https://github.com/andrediashexa/looking-glass/commit/74405a52af90f11b4c1f714b7e9885f9f9c6ec03))
+* skip the Rust build when no Rust changed ([#67](https://github.com/andrediashexa/looking-glass/issues/67)) ([666c20b](https://github.com/andrediashexa/looking-glass/commit/666c20bd00f3436a6cb0af04be1dcbcd7816fdf5))
+
 ## [0.2.0](https://github.com/andrediashexa/looking-glass/compare/v0.1.0...v0.2.0) (2026-09-20)
 
 
