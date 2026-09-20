@@ -27,6 +27,24 @@ achieve and how to tell when it is finished.
 | [9. When something looks wrong](9-when-something-looks-wrong.md) | Is this the software, the instance, or the network? |
 | [10. Adding a vendor](10-adding-a-vendor.md) | How do I teach it a platform it does not know? |
 
+## Publishing this to the GitHub wiki
+
+These pages are the source. `scripts/publish-wiki.sh` generates the GitHub wiki
+from them — renaming files to the wiki convention, rewriting links and carrying
+the screenshots across — so the wiki is a mirror and an edit made there is
+replaced on the next run. That is deliberate: a page edited in the wiki skips
+the documentation linter and the review rules.
+
+It does not run yet. GitHub allows wikis in a private repository only on a paid
+plan, and the API accepts the setting while silently leaving it off. Making the
+repository public enables it, and also enables the branch protection this
+project has been doing by discipline.
+
+```bash
+scripts/publish-wiki.sh --dry-run   # see what would be published
+scripts/publish-wiki.sh             # publish, once the wiki exists
+```
+
 ## Elsewhere
 
 Installing and configuring is in [operations](../operations/deployment.md); the
