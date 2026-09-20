@@ -154,11 +154,12 @@ impl VendorDriver for JuniperDriver {
         })
     }
 
-    fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
-        Ok(TracerouteResult {
-            target: "".to_string(),
-            hops: Vec::new(),
-            raw_output: raw.to_string(),
+    fn parse_traceroute(&self, _raw: &str) -> Result<TracerouteResult, DriverError> {
+        // No hop parser yet. An empty hop list would be indistinguishable from
+        // a traceroute that legitimately returned nothing.
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "traceroute",
         })
     }
 
@@ -248,7 +249,7 @@ impl VendorDriver for JuniperDriver {
                                             local_pref,
                                             med,
                                             weight: None,
-                                            origin: "IGP".to_string(),
+                                            origin: None, // not parsed from this vendor output yet
                                             communities,
                                             rpki_status,
                                         });
@@ -264,12 +265,11 @@ impl VendorDriver for JuniperDriver {
         Ok(paths)
     }
 
-    fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
-        Ok(BgpSummaryResult {
-            router_id: None,
-            local_as: None,
-            peers: Vec::new(),
-            raw_output: raw.to_string(),
+    fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {
+        // An empty peer list would read as "this router has no BGP sessions".
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "bgp_summary",
         })
     }
 }

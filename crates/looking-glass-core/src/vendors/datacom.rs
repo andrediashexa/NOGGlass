@@ -38,36 +38,40 @@ impl VendorDriver for DatacomDriver {
         "show ip bgp summary".to_string()
     }
 
-    fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
-        Ok(PingResult {
-            packets_sent: 5,
-            packets_received: 5,
-            packet_loss_percent: 0.0,
-            min_rtt_ms: None,
-            avg_rtt_ms: None,
-            max_rtt_ms: None,
-            raw_output: raw.to_string(),
+    fn parse_ping(&self, _raw: &str) -> Result<PingResult, DriverError> {
+        // Previously returned a hardcoded 5/5 with 0% loss for any input, so a
+        // fully failing ping rendered as a perfect one. Until a real parser
+        // exists, say so.
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "ping",
         })
     }
 
-    fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
-        Ok(TracerouteResult {
-            target: "".to_string(),
-            hops: Vec::new(),
-            raw_output: raw.to_string(),
+    fn parse_traceroute(&self, _raw: &str) -> Result<TracerouteResult, DriverError> {
+        // No hop parser yet. An empty hop list would be indistinguishable from
+        // a traceroute that legitimately returned nothing.
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "traceroute",
         })
     }
 
     fn parse_bgp_route(&self, _raw: &str) -> Result<Vec<BgpPath>, DriverError> {
-        Ok(Vec::new())
+        // An empty path list means "this router has no route for that prefix",
+        // which is a real and useful answer. It MUST NOT double as "we did not
+        // implement this".
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "bgp_route",
+        })
     }
 
-    fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
-        Ok(BgpSummaryResult {
-            router_id: None,
-            local_as: None,
-            peers: Vec::new(),
-            raw_output: raw.to_string(),
+    fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {
+        // An empty peer list would read as "this router has no BGP sessions".
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "bgp_summary",
         })
     }
 }
