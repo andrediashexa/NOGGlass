@@ -1,16 +1,17 @@
 # ADR-0002 — FastAPI backend with direct SSH to routers
 
-- **Status:** Partially superseded by [ADR-0005](0005-backend-implementation-language.md) (language, under decision) and [ADR-0006](0006-structured-bgp-model-and-data-sources.md) (data model and sources)
+- **Status:** Superseded by [ADR-0007](0007-unified-rust-architecture-and-drivers.md)
 - **Date:** 2026-09-17
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
 
-> **Superseded in part.** The language commitment is reopened by ADR-0005, and
-> the deferral of RPKI, of the topology graph and of native vendor APIs is
-> reversed by ADR-0006. What still holds: direct SSH to routers with a read-only
-> user, a per-vendor driver abstraction, and a frontend that never talks to a
-> router.
+> **Superseded.** The language decision went to Rust (ADR-0005) and the
+> architecture to a single binary with an embedded interface (ADR-0007). The
+> deferral of RPKI, of the topology graph and of native vendor APIs was already
+> reversed by ADR-0006. What survives from this document, and is carried by
+> ADR-0007: direct SSH to routers with a read-only user, a per-vendor driver
+> abstraction, and an interface that never talks to a router.
 
 The backend is Python 3.12 with FastAPI, and it reaches routers by opening an
 SSH session directly from the container, using a read-only user. No per-POP

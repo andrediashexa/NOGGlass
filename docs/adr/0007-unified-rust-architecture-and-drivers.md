@@ -1,7 +1,7 @@
 # ADR-0007 — End-to-end Rust architecture with embedded web UI and native vendor drivers
 
-- **Status:** Proposed
-- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Date:** 2026-09-17 (accepted 2026-09-20)
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
@@ -118,7 +118,44 @@ flowchart TB
     ssh_pool -->|Direct Async SSH| r4
 ```
 
+### 4. Internationalisation inside the binary
+
+ADR-0004 required three languages and a locale prefix in the URL. Removing
+Next.js does not remove that requirement, so it is restated here in terms of
+this architecture:
+
+1. Locales SHALL remain `pt-BR`, `en` and `es`, served under `/pt`, `/en` and
+   `/es` by Axum routes. A request without a prefix SHALL be redirected using
+   `Accept-Language`, falling back to the operator's configured default.
+2. Message catalogues SHALL live in versioned files (one per locale) and SHALL
+   be embedded at compile time. Strings MUST NOT be hardcoded in templates or
+   in Rust.
+3. `scripts/check-i18n.sh` SHALL be pointed at those catalogues, so a key that
+   exists in one locale and not the others fails CI, exactly as before.
+4. English is the source locale; a missing translation SHALL fall back to
+   English rather than rendering a raw key.
+5. Router output, router names, POP names and technical identifiers MUST NOT be
+   translated.
+
+### 5. Building the interface
+
+1. The interface MAY be authored with a front-end toolchain, but the published
+   artefact SHALL be static files embedded in the binary. Node MUST NOT be
+   required to run NOGGlass, and MUST NOT appear in the runtime image.
+2. The topology graph and the design tokens follow
+   [ADR-0008](0008-frontend-design-system-and-topology-graph.md).
+3. Templates and assets SHALL be embedded with `include_str!`, `rust-embed` or
+   `askama`, so a single binary remains the deliverable.
+
 ## Consequences
+
+> Accepted on 2026-09-20 together with [ADR-0005](0005-backend-implementation-language.md).
+> [ADR-0002](0002-fastapi-backend-and-direct-ssh.md) is fully superseded by this
+> document; [ADR-0004](0004-web-interface-internationalisation.md) is superseded
+> only in how the interface is delivered — its locale rules are restated above
+> and still apply. Exposure and packaging follow
+> [ADR-0012](0012-standalone-binary-exposure-and-packaging.md), not the ports
+> described here.
 
 ### Positive
 - **Truly Boring Infrastructure:** One executable, one config file, zero external runtimes (no Node, no Python, no Nginx, no Apache).

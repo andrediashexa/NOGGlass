@@ -1,10 +1,16 @@
 # ADR-0005 — Backend implementation language
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-17
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
+
+> **Decided: Rust.** The maintainers chose the Rust option on 2026-09-20, after
+> a working parser crate existed and the prototype's design was adopted.
+> [ADR-0007](0007-unified-rust-architecture-and-drivers.md) records the
+> resulting architecture. The comparison below is kept because it states what
+> the choice costs, and those costs are now commitments.
 
 Three candidates: Go with `scrapligo`, Python with `scrapli`/`netmiko`, and Rust
 as in the existing NOGGlass prototype. The work that dominates this project is
@@ -200,7 +206,8 @@ for every vendor, where Go and Python inherit them from a maintained library.
 
 ## Decision
 
-**Pending.** The options are:
+**Rust**, with the consequences accepted deliberately. The options considered
+were:
 
 1. **Go with `scrapligo`** — RECOMMENDED. Single binary, native concurrency,
    embedded YAML platform definitions for the priority vendors, `ntc-templates`
@@ -210,9 +217,16 @@ for every vendor, where Go and Python inherit them from a maintained library.
 3. **Rust** — reuses the prototype and the experience already paid for, at the
    cost of writing every transport and parser in the project.
 
-The maintainers SHALL fill in the familiarity row of the criteria table and
-record the choice by flipping this ADR to `Accepted` in a follow-up pull
-request. Product code MUST NOT be merged before that.
+Option 3 was chosen. The deciding factors were maintainer familiarity — the
+maintainer who writes the vendor drivers works in Rust — and the existence of a
+working prototype and parser crate. The ecosystem cost is real and is now a
+project commitment: this project OWNS every transport, prompt handler and
+parser it uses, and each one MUST be covered by fixture-based tests, because
+there is no upstream library absorbing that risk.
+
+Because the drivers are ours, the project SHALL treat parser correctness as a
+first-class concern: a parser that cannot read a field MUST report that it
+could not, and MUST NOT emit a plausible value.
 
 ## Consequences
 

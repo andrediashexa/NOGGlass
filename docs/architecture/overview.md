@@ -2,14 +2,14 @@
 
 ## TL;DR
 
-A visitor picks a router and a query type in a Next.js page. The backend
-validates the request against a command catalogue, opens a read-only SSH session
-to that router, and returns either streamed text (`ping`, `traceroute`) or a
-normalised BGP path model that feeds the AS-PATH topology graph, the route table
-and the attribute panels. Routers are described in a configuration file;
-credentials come from the environment. The only component exposed to the
-Internet is the Traefik proxy. The backend language is under decision in
-ADR-0005.
+A visitor picks a router and a query type in the embedded web interface. The
+binary validates the request against a command catalogue, opens a read-only SSH
+session to that router, and returns either streamed text (`ping`, `traceroute`)
+or a normalised BGP path model that feeds the AS-PATH topology graph, the route
+table and the attribute panels. Routers are described in a configuration file;
+credentials come from the environment. NOGGlass is one Rust binary listening on
+a high port, with a reverse proxy optional in front (ADR-0005, ADR-0007,
+ADR-0012).
 
 ## 5W2H
 
@@ -20,18 +20,18 @@ ADR-0005.
 | **Who** | Maintainers and contributors writing backend, frontend or vendor drivers. |
 | **Where** | Implemented under `backend/`, `frontend/` and `docker-compose.yml`, once those exist. |
 | **When** | Baseline for the `0.1.0` milestone; revised through ADRs. |
-| **How** | Typed queries, per-vendor command templates, direct SSH, streamed text and a normalised BGP path model. |
-| **How much** | Target footprint: under 1 GB RAM for the whole stack on a 2 vCPU VM. |
+| **How** | Typed queries, per-vendor command templates, direct SSH, streamed text and a normalised BGP path model, all inside one binary. |
+| **How much** | Target footprint: one process, tens of MB of RAM, on a 1 vCPU VM. |
 
 ## Components
 
 ```mermaid
 flowchart TB
     visitor([Visitor])
-    cf[TLS termination<br/>Cloudflare or Traefik ACME]
-    traefik[Traefik v3]
-    web[web — Next.js<br/>pt / en / es<br/>AS-PATH graph]
-    api[api — query API<br/>see ADR-0005]
+    cf["TLS termination — optional<br/>Cloudflare, Traefik, HAProxy"]
+    traefik["Reverse proxy — optional"]
+    web[Embedded UI<br/>pt / en / es<br/>AS-PATH graph]
+    api[Axum query API<br/>:8080]
     rl[Rate limiter<br/>+ queue]
     cat[Command catalogue<br/>per vendor templates]
     exec[SSH executor pool]
@@ -82,8 +82,8 @@ sequenceDiagram
 
 | Boundary | Rule |
 |---|---|
-| Internet to proxy | Only ports 80/443 are published. Everything else is internal to the Compose network. |
-| Proxy to backend | The backend MUST NOT be reachable directly from the Internet. |
+| Internet to the process | Only the HTTP port is published. The process runs as a non-root user on a high port (ADR-0012). |
+| Proxy to the process | When a proxy is declared, `X-Forwarded-For` is honoured only from configured trusted addresses, and ignored otherwise. |
 | Backend to router | One read-only user per vendor, credentials from the environment, never from the request. |
 | Request to command | The visitor chooses a query type from a fixed catalogue. Free-form command input MUST NOT exist. |
 
@@ -121,9 +121,9 @@ MUST NOT require changes to the API layer.
 
 | Item | Location | Versioned |
 |---|---|---|
-| Router inventory, groups, enabled queries | `routers.yml` | Operator's choice; example file in the repository |
-| Credentials, tokens, CAPTCHA keys | `.env` | Never |
-| Branding, default language, limits | `.env` | Never |
+| Router inventory, groups, enabled queries | `/etc/nogglass/routers.yml` | Operator's choice; example file in the repository |
+| Credentials, tokens, CAPTCHA keys | environment (`NOGGLASS_*`) | Never |
+| Branding, default language, limits | environment (`NOGGLASS_*`) | Never |
 
 ## Deferred decisions
 
