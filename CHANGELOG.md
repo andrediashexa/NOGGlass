@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/andrediashexa/looking-glass/compare/v0.3.0...v0.4.0) (2026-09-20)
+
+
+### Features
+
+* **infra:** cross-compile the arm64 image instead of emulating it ([#85](https://github.com/andrediashexa/looking-glass/issues/85)) ([901c97c](https://github.com/andrediashexa/looking-glass/commit/901c97c4a0c3402b9a8a79ec45f49d6cfdfde7cd))
+* **vendor:** implement the Nokia SR OS and Datacom DmOS drivers ([#84](https://github.com/andrediashexa/looking-glass/issues/84)) ([2d9fea9](https://github.com/andrediashexa/looking-glass/commit/2d9fea998a275f54a8de1f8323fd9a7ca5e18f35))
+* **vendor:** read BGP session summaries into peer rows ([#83](https://github.com/andrediashexa/looking-glass/issues/83)) ([6083f66](https://github.com/andrediashexa/looking-glass/commit/6083f6699233550b429df78ab13e18be493723b8))
+* **vendor:** read traceroute hops for every vendor ([#82](https://github.com/andrediashexa/looking-glass/issues/82)) ([5952583](https://github.com/andrediashexa/looking-glass/commit/59525832adad45f6b484d5702c52b07bf9ae9169))
+
+
+### Bug Fixes
+
+* **api:** compare the global view even when the router has no route ([#80](https://github.com/andrediashexa/looking-glass/issues/80)) ([ec29b8b](https://github.com/andrediashexa/looking-glass/commit/ec29b8b7d7b572fb1642df593498f4e5806ecc9e))
+
 ## [0.3.0](https://github.com/andrediashexa/looking-glass/compare/v0.2.0...v0.3.0) (2026-09-20)
 
 
