@@ -21,8 +21,12 @@ line, and never invent a value a router did not report.
 - Do not edit `version.txt` or `CHANGELOG.md`; `release-please` owns them.
 - Run `scripts/check-docs.sh` and `scripts/check-i18n.sh` before pushing, plus
   `cargo fmt`, `cargo clippy -- -D warnings` and `cargo test` when Rust changed.
-- This machine has no C linker and no sudo. Build with zig as the linker:
-  `CC=zig-cc cargo test --config 'target.x86_64-unknown-linux-gnu.linker="zig-cc"'`.
+- This machine has no C toolchain and no sudo, but `russh` pulls in `ring`,
+  which needs one. zig provides it: `~/.local/bin/zig-cc` and `zig-ar` wrap
+  `zig cc` and `zig ar`, rewriting only the target triple (rewriting every
+  occurrence mangles the sysroot paths). Build with:
+  `CC=zig-cc AR=zig-ar cargo test --config 'target.x86_64-unknown-linux-gnu.linker="zig-cc"'`.
+  CI has a normal toolchain and needs none of this.
 
 ## Documentation rules
 
