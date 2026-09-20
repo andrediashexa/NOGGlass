@@ -357,20 +357,10 @@ pub struct BgpSummaryResult {
 /// Contract every vendor driver implements: build read-only commands and parse
 /// their output into the normalised model.
 pub trait VendorDriver: Send + Sync {
-    /// Identifier of the network operating system this driver speaks.
+    /// Identifier of the network operating system this driver speaks. It MUST
+    /// match a key in the command catalogue, which owns the commands, the
+    /// paging behaviour and the prompt pattern for this vendor.
     fn vendor_name(&self) -> &'static str;
-
-    /// Command that disables output paging (the `--More--` prompt), if any.
-    fn disable_paging_cmd(&self) -> Option<&'static str>;
-
-    /// Regex matching the router prompt, used to detect end of output.
-    fn prompt_pattern(&self) -> &'static str;
-
-    // --- Command builders. Arguments are typed, never raw user text. ---
-    fn format_ping(&self, target: &IpAddr, count: u8) -> String;
-    fn format_traceroute(&self, target: &IpAddr) -> String;
-    fn format_bgp_route(&self, target: &QueryTarget) -> String;
-    fn format_bgp_summary(&self) -> String;
 
     // --- Parsers. A parser that cannot read the output returns an error. ---
     fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError>;

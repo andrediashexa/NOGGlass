@@ -1,8 +1,7 @@
 use crate::driver::{
     parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, DriverError, Origin,
-    PingResult, QueryTarget, RpkiValidation, TracerouteResult, VendorDriver,
+    PingResult, RpkiValidation, TracerouteResult, VendorDriver,
 };
-use std::net::IpAddr;
 
 /// Driver para Huawei VRP (NE40E, NE8000, etc.)
 pub struct HuaweiVrpDriver;
@@ -10,50 +9,6 @@ pub struct HuaweiVrpDriver;
 impl VendorDriver for HuaweiVrpDriver {
     fn vendor_name(&self) -> &'static str {
         "huawei_vrp"
-    }
-
-    fn disable_paging_cmd(&self) -> Option<&'static str> {
-        Some("screen-length 0 temporary")
-    }
-
-    fn prompt_pattern(&self) -> &'static str {
-        r"<[\w\.\-]+>|\[[\w\.\-]+\]"
-    }
-
-    fn format_ping(&self, target: &IpAddr, count: u8) -> String {
-        format!("ping -c {} {}", count.clamp(1, 20), target)
-    }
-
-    fn format_traceroute(&self, target: &IpAddr) -> String {
-        format!("tracert {}", target)
-    }
-
-    fn format_bgp_route(&self, target: &QueryTarget) -> String {
-        match target {
-            QueryTarget::Ip(ip) => {
-                if ip.is_ipv4() {
-                    format!("display bgp routing-table {}", ip)
-                } else {
-                    format!("display bgp ipv6 routing-table {}", ip)
-                }
-            }
-            QueryTarget::Prefix(net) => {
-                if net.addr().is_ipv4() {
-                    format!("display bgp routing-table {} {}", net.addr(), net.netmask())
-                } else {
-                    format!(
-                        "display bgp ipv6 routing-table {}/{}",
-                        net.addr(),
-                        net.prefix_len()
-                    )
-                }
-            }
-            QueryTarget::Asn(asn) => format!("display bgp routing-table as-path-filter {}", asn),
-        }
-    }
-
-    fn format_bgp_summary(&self) -> String {
-        "display bgp peer".to_string()
     }
 
     fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
