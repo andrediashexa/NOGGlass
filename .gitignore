@@ -43,4 +43,4 @@ lab/captured/
 
 # containerlab runtime state: generated on deploy, and it contains a CA key
 # and authorized_keys. Nothing here is source.
-lab/clab-nogglass/
+lab/clab-*/

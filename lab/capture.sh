@@ -83,8 +83,10 @@ CMDS
 # what the product would send — including the paging command, which changes the
 # output more than anything else here.
 catalogue_commands() {
+  TARGET_V4="$TARGET_V4" TARGET_V6="$TARGET_V6" PREFIX_V4="$PREFIX_V4" \
+  PREFIX_V6="$PREFIX_V6" PREFIX_ASSET="$PREFIX_ASSET" ASN="$ASN" COUNT="$COUNT" \
   python3 - "$CATALOGUE" "$VENDOR" <<'PY'
-import sys, tomllib
+import os, sys, tomllib
 
 path, vendor = sys.argv[1], sys.argv[2]
 with open(path, "rb") as handle:
@@ -96,18 +98,21 @@ if vendor not in catalogue:
 entry = catalogue[vendor]
 values = {
     "target": None,          # filled per query below
-    "count": "4",
-    "asn": "64496",
+    "count": os.environ["COUNT"],
+    "asn": os.environ["ASN"],
 }
 
+# From the environment, so the targets are declared once at the top of this
+# script. Declaring them twice is how the capture ended up pinging an address
+# in the old topology.
 targets = {
-    "ping_v4": "203.0.113.3",
-    "ping_v6": "2001:db8:beef::3",
-    "traceroute_v4": "203.0.113.3",
-    "traceroute_v6": "2001:db8:beef::3",
-    "bgp_route_v4": "203.0.113.0/24",
-    "bgp_route_asset": "198.51.100.0/24",
-    "bgp_route_v6": "2001:db8:beef::/48",
+    "ping_v4": os.environ["TARGET_V4"],
+    "ping_v6": os.environ["TARGET_V6"],
+    "traceroute_v4": os.environ["TARGET_V4"],
+    "traceroute_v6": os.environ["TARGET_V6"],
+    "bgp_route_v4": os.environ["PREFIX_V4"],
+    "bgp_route_asset": os.environ["PREFIX_ASSET"],
+    "bgp_route_v6": os.environ["PREFIX_V6"],
 }
 
 # bgp_route_asset is not a catalogue key: it reuses the v4 template against the
@@ -152,6 +157,10 @@ run_docker() {
 
 run_ssh() {
   local command="$1"
+  # -n is not optional: ssh reads standard input, and this runs inside a
+  # `while read` loop, so without it the first command swallows the rest and
+  # the capture silently stops after one file.
+  #
   # BatchMode so a node that wants a password fails loudly instead of hanging
   # on a prompt nobody is there to answer.
   if [[ -n "${NOGGLASS_LAB_PASSWORD:-}" ]]; then
@@ -159,11 +168,11 @@ run_ssh() {
       echo "NOGGLASS_LAB_PASSWORD is set but sshpass is not installed" >&2
       exit 3
     }
-    sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
+    sshpass -e ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      -o LogLevel=ERROR -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
   else
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -o BatchMode=yes -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
+    ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
   fi
 }
 
