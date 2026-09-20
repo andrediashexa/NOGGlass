@@ -1,0 +1,22 @@
+# Workspace root. One lockfile and one target directory for every crate, so a
+# release build and CI agree on the exact dependency versions.
+[workspace]
+resolver = "2"
+members = ["crates/looking-glass-core", "crates/nogglass-server"]
+
+[workspace.package]
+edition = "2021"
+# LazyLock (core) requires 1.80; CI pins the exact toolchain.
+rust-version = "1.80"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+looking-glass-core = { path = "crates/looking-glass-core" }
+async-trait = "0.1"
+ipnet = { version = "2.9", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "signal"] }
+toml = "0.8"
+tracing = "0.1"

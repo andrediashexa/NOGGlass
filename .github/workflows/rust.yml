@@ -13,9 +13,6 @@ jobs:
   check:
     name: Build, lint and test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: crates/looking-glass-core
     steps:
       - uses: actions/checkout@v4
 
@@ -28,18 +25,18 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            crates/looking-glass-core/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('crates/looking-glass-core/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Formatting
         run: cargo fmt --all --check
 
       - name: Lints
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Tests
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets
 
       - name: Release build
-        run: cargo build --release
+        run: cargo build --workspace --release
