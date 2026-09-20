@@ -1,10 +1,12 @@
 pub mod driver;
+pub mod target;
 pub mod vendors;
 
 pub use driver::{
     BgpPath, BgpPeerSummary, BgpSummaryResult, DriverError, PingResult, QueryTarget, QueryType,
     RpkiStatus, TracerouteHop, TracerouteResult, VendorDriver,
 };
+pub use target::{parse_target, QueryLimits, TargetError, MAX_TARGET_LEN};
 pub use vendors::*;
 
 use regex::Regex;
