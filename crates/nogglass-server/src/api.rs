@@ -6,7 +6,7 @@
 //! browser is allowed to learn, and turning an internal error into something a
 //! visitor can act on without it doubling as a map of the operator's network.
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -15,9 +15,11 @@ use axum::{Json, Router as AxumRouter};
 use looking_glass_core::driver::QueryType;
 use looking_glass_core::executor::{Execution, ExecutionError, Executor, QueryOutcome};
 use looking_glass_core::inventory::{Inventory, PublicRouter};
+use looking_glass_core::ratelimit::{ClientAddress, ClientKey, Decision, RateLimiter};
 use looking_glass_core::target::{parse_target, TargetError};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::StreamExt;
@@ -28,6 +30,33 @@ pub struct AppState {
     pub executor: Arc<Executor>,
     pub inventory: Arc<Inventory>,
     pub version: VersionInfo,
+    /// Absent when the operator turned rate limiting off.
+    pub limiter: Option<Arc<RateLimiter>>,
+    /// Decides which address a request is counted against.
+    pub client_address: Arc<ClientAddress>,
+}
+
+impl AppState {
+    /// Counts one query against the visitor, if limiting is on.
+    ///
+    /// Only query endpoints are limited: the router list, the version and the
+    /// health check are cheap, cached by the browser, and blocking them would
+    /// break the page without protecting a router.
+    fn check_rate_limit(&self, peer: SocketAddr, forwarded_for: Option<&str>) -> Option<ApiError> {
+        let limiter = self.limiter.as_ref()?;
+        let client = self.client_address.resolve(peer.ip(), forwarded_for);
+        match limiter.check(ClientKey::from_ip(client)) {
+            Decision::Allow { .. } => None,
+            Decision::Deny { retry_after } => Some(ApiError {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                code: "rate_limited",
+                message: format!(
+                    "too many queries from your address; try again in {} seconds",
+                    retry_after.as_secs().max(1)
+                ),
+            }),
+        }
+    }
 }
 
 /// Build identity, shown in the footer and on the About page.
@@ -190,8 +219,17 @@ impl From<Execution> for QueryResponse {
 
 async fn run_query(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<QueryRequest>,
 ) -> Result<Json<QueryResponse>, ApiError> {
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok());
+    if let Some(refusal) = state.check_rate_limit(peer, forwarded) {
+        return Err(refusal);
+    }
+
     let target = parse_target(&request.target)?;
     let execution = state
         .executor
@@ -208,11 +246,29 @@ async fn run_query(
 /// a lie about what is happening.
 async fn stream_query(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
     Query(request): Query<QueryRequest>,
 ) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
     let (sender, receiver) = tokio::sync::mpsc::channel::<Event>(8);
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
 
     tokio::spawn(async move {
+        if let Some(refusal) = state.check_rate_limit(peer, forwarded.as_deref()) {
+            let _ = sender
+                .send(
+                    Event::default()
+                        .event("error")
+                        .json_data(refusal.body())
+                        .unwrap_or_else(|_| Event::default().event("error").data("rate limited")),
+                )
+                .await;
+            return;
+        }
+
         let _ = sender
             .send(Event::default().event("accepted").data("{}"))
             .await;
@@ -367,17 +423,48 @@ queries = ["bgp_route"]
 "#;
 
     fn app() -> AxumRouter {
-        let inventory = Arc::new(Inventory::from_toml(INVENTORY).expect("test inventory"));
+        app_from(INVENTORY)
+    }
+
+    fn app_from(config: &str) -> AxumRouter {
+        let inventory = Arc::new(Inventory::from_toml(config).expect("test inventory"));
         let executor = Arc::new(Executor::new(
             inventory.clone(),
             Arc::new(BUILTIN.clone()),
             Arc::new(NoTransport),
         ));
+        let (client_address, _) = inventory.rate_limit.to_client_address();
+        let limiter = inventory
+            .rate_limit
+            .enabled
+            .then(|| Arc::new(RateLimiter::new(inventory.rate_limit.to_limit())));
+
         routes(AppState {
             executor,
             inventory,
             version: VersionInfo::from_build(),
+            limiter,
+            client_address: Arc::new(client_address),
         })
+    }
+
+    /// Requests in tests carry no peer address unless one is attached, and the
+    /// rate-limited handlers need one.
+    fn from_peer(request: Request<Body>, peer: &str) -> Request<Body> {
+        let mut request = request;
+        request.extensions_mut().insert(axum::extract::ConnectInfo(
+            peer.parse::<SocketAddr>().expect("test peer address"),
+        ));
+        request
+    }
+
+    fn query_request(target: &str) -> Request<Body> {
+        Request::post("/api/query")
+            .header("content-type", "application/json")
+            .body(Body::from(format!(
+                r#"{{"router":"demo","type":"bgp_route","target":"{target}"}}"#
+            )))
+            .unwrap()
     }
 
     async fn body_json(response: axum::response::Response) -> serde_json::Value {
@@ -420,12 +507,7 @@ queries = ["bgp_route"]
 
     #[tokio::test]
     async fn a_query_against_the_mock_returns_a_parsed_result() {
-        let request = Request::post("/api/query")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                r#"{"router":"demo","type":"bgp_route","target":"198.51.100.0/24"}"#,
-            ))
-            .unwrap();
+        let request = from_peer(query_request("198.51.100.0/24"), "198.51.100.77:5000");
 
         let response = app().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -441,12 +523,15 @@ queries = ["bgp_route"]
 
     #[tokio::test]
     async fn a_hostile_target_is_refused_with_a_code_the_interface_can_translate() {
-        let request = Request::post("/api/query")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                r#"{"router":"demo","type":"ping","target":"198.51.100.1; reload"}"#,
-            ))
-            .unwrap();
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"demo","type":"ping","target":"198.51.100.1; reload"}"#,
+                ))
+                .unwrap(),
+            "198.51.100.78:5000",
+        );
 
         let response = app().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -455,12 +540,15 @@ queries = ["bgp_route"]
 
     #[tokio::test]
     async fn an_unknown_router_is_a_404() {
-        let request = Request::post("/api/query")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                r#"{"router":"nope","type":"bgp_route","target":"198.51.100.0/24"}"#,
-            ))
-            .unwrap();
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"nope","type":"bgp_route","target":"198.51.100.0/24"}"#,
+                ))
+                .unwrap(),
+            "198.51.100.79:5000",
+        );
 
         let response = app().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -469,12 +557,15 @@ queries = ["bgp_route"]
 
     #[tokio::test]
     async fn a_query_the_router_does_not_offer_is_refused() {
-        let request = Request::post("/api/query")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                r#"{"router":"edge-01","type":"ping","target":"198.51.100.1"}"#,
-            ))
-            .unwrap();
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"edge-01","type":"ping","target":"198.51.100.1"}"#,
+                ))
+                .unwrap(),
+            "198.51.100.80:5000",
+        );
 
         let response = app().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -495,5 +586,108 @@ queries = ["bgp_route"]
         let body = body_json(response).await;
         assert_eq!(body["disable_paging"], "screen-length 0 temporary");
         assert_eq!(body["bgp_summary"], "display bgp peer");
+    }
+
+    const LIMITED: &str = r#"
+[rate_limit]
+max_requests = 2
+window_secs = 60
+burst = 0
+
+[[router]]
+id = "demo"
+name = "Demo router"
+vendor = "mock"
+host = "192.0.2.200"
+"#;
+
+    #[tokio::test]
+    async fn a_visitor_past_their_allowance_is_refused_with_a_retry_after() {
+        let app = app_from(LIMITED);
+
+        for attempt in 1..=2 {
+            let response = app
+                .clone()
+                .oneshot(from_peer(
+                    query_request("198.51.100.0/24"),
+                    "203.0.113.5:4000",
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "attempt {attempt}");
+        }
+
+        let response = app
+            .clone()
+            .oneshot(from_peer(
+                query_request("198.51.100.0/24"),
+                "203.0.113.5:4000",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(response.headers().contains_key("retry-after"));
+        assert_eq!(body_json(response).await["code"], "rate_limited");
+
+        // A different visitor is unaffected.
+        let response = app
+            .oneshot(from_peer(
+                query_request("198.51.100.0/24"),
+                "203.0.113.6:4000",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// Without this, anyone could spoof a header and get an unlimited
+    /// allowance, which is worse than having no limiter at all because it looks
+    /// like there is one.
+    #[tokio::test]
+    async fn a_forwarded_header_from_a_stranger_does_not_reset_the_allowance() {
+        let app = app_from(LIMITED);
+
+        for _ in 0..2 {
+            let response = app
+                .clone()
+                .oneshot(from_peer(
+                    query_request("198.51.100.0/24"),
+                    "203.0.113.7:4000",
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let mut request = from_peer(query_request("198.51.100.0/24"), "203.0.113.7:4000");
+        request.headers_mut().insert(
+            "x-forwarded-for",
+            "198.51.100.200".parse().expect("test header"),
+        );
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "the header came from an address that is not a configured proxy"
+        );
+    }
+
+    /// The page has to load even for a visitor who is being rate limited, or
+    /// they cannot read the message telling them to wait.
+    #[tokio::test]
+    async fn listing_routers_is_never_rate_limited() {
+        let app = app_from(LIMITED);
+        for _ in 0..5 {
+            let response = app
+                .clone()
+                .oneshot(from_peer(
+                    Request::get("/api/routers").body(Body::empty()).unwrap(),
+                    "203.0.113.8:4000",
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
     }
 }

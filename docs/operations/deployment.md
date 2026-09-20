@@ -156,6 +156,17 @@ commands the vendor driver would send, so you can read them first.
 - **A busy instance refuses rather than queues**, answering HTTP 429 with
   `Retry-After`. That is intentional: an unbounded queue is a way to keep a
   router busy indefinitely.
+- **Rate limiting is on by default**, at 20 queries a minute per visitor with a
+  burst of 5. IPv6 is counted per /64, because one visitor holds a whole /64.
+  Listing the router inventory, the version and the health check are never
+  limited, so a visitor who is being limited can still read the page that tells
+  them to wait.
+- **Behind a proxy, list it in `trusted_proxies`.** `X-Forwarded-For` is
+  believed only from those addresses; from anywhere else it is attacker
+  controlled, and a limiter keyed on an unverified header is a limiter with a
+  documented bypass. With a proxy in front and no `trusted_proxies`, every
+  visitor counts as the proxy and they all share one allowance — NOGGlass warns
+  about exactly that at startup.
 - **The mock router** (`vendor = "mock"`) answers from fixtures and never opens
   a session. Keep it for a public demo, remove it once real routers are
   configured.
@@ -173,4 +184,6 @@ commands the vendor driver would send, so you can read them first.
 | "could not reach the router" | Reachability and ACLs from the host; the message stays vague on purpose, the log has the detail |
 | A query returns raw text instead of a table | That vendor has no parser for that query yet. The raw output is still the router answer |
 | "too many queries are running" | Concurrency caps; raise them or wait |
+| "too many queries from your address" | The per-visitor rate limit; `[rate_limit]` in the configuration |
+| Everyone shares one allowance | A proxy is in front and `trusted_proxies` is empty |
 | The footer shows `dev` | The binary was not built by the release pipeline, so it does not know its version |

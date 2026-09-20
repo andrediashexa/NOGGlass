@@ -245,6 +245,70 @@ fn is_blank(value: Option<String>) -> bool {
     }
 }
 
+/// How much a single visitor may ask for.
+///
+/// Separate from [`Limits`], which bounds one query; this bounds how many
+/// queries one visitor gets.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RateLimitSettings {
+    /// Turning this off on a public instance means a stranger decides how much
+    /// control-plane CPU your routers spend.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_max_requests")]
+    pub max_requests: u32,
+    #[serde(default = "default_window_secs")]
+    pub window_secs: u64,
+    #[serde(default = "default_burst")]
+    pub burst: u32,
+    /// Addresses of proxies whose `X-Forwarded-For` may be believed. Empty
+    /// means the peer address is always used, which is correct when nothing
+    /// sits in front.
+    #[serde(default)]
+    pub trusted_proxies: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_max_requests() -> u32 {
+    20
+}
+fn default_window_secs() -> u64 {
+    60
+}
+fn default_burst() -> u32 {
+    5
+}
+
+impl Default for RateLimitSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            max_requests: default_max_requests(),
+            window_secs: default_window_secs(),
+            burst: default_burst(),
+            trusted_proxies: Vec::new(),
+        }
+    }
+}
+
+impl RateLimitSettings {
+    pub fn to_limit(&self) -> crate::ratelimit::RateLimit {
+        crate::ratelimit::RateLimit {
+            max_requests: self.max_requests,
+            window: std::time::Duration::from_secs(self.window_secs.max(1)),
+            burst: self.burst,
+        }
+    }
+
+    /// The proxy resolver, plus any entry that did not parse so the caller can
+    /// complain loudly rather than trusting silently.
+    pub fn to_client_address(&self) -> (crate::ratelimit::ClientAddress, Vec<String>) {
+        crate::ratelimit::ClientAddress::from_list(&self.trusted_proxies.join(","))
+    }
+}
+
 /// Tier 2 RPKI validation, as the operator writes it (ADR-0010).
 ///
 /// Disabled unless the operator says otherwise: a default that reaches a third
@@ -317,6 +381,8 @@ pub struct Inventory {
     pub limits: Limits,
     #[serde(default)]
     pub rpki: RpkiSettings,
+    #[serde(default, rename = "rate_limit")]
+    pub rate_limit: RateLimitSettings,
     #[serde(rename = "router", default)]
     pub routers: Vec<Router>,
 }
