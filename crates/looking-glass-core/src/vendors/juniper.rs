@@ -131,10 +131,11 @@ impl VendorDriver for JuniperDriver {
         })
     }
 
-    /// Deserialização JSON Nativa do Juniper JunOS (Extração direta de RPKI e BGP Paths)
+    /// Reads the structured output Junos produces with `| display json`,
+    /// including the RPKI validation state it reports natively.
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
         let parsed: JunosRouteInformation = serde_json::from_str(raw)
-            .map_err(|e| DriverError::ParseError(format!("JSON do JunOS inválido: {}", e)))?;
+            .map_err(|e| DriverError::ParseError(format!("invalid Junos JSON: {e}")))?;
 
         let mut paths = Vec::new();
 
