@@ -135,7 +135,14 @@ function showError(code, message) {
 }
 
 function hidePanels() {
-  for (const id of ["error", "graph-panel", "paths-panel", "raw-panel", "global-panel"]) {
+  for (const id of [
+    "error",
+    "graph-panel",
+    "paths-panel",
+    "raw-panel",
+    "global-panel",
+    "hops-panel",
+  ]) {
     document.getElementById(id).hidden = true;
   }
 }
@@ -184,6 +191,9 @@ function render(response) {
     renderGlobalView(response.agreement, response.global);
   } else if (response.kind === "raw") {
     renderRaw(response.result?.raw_output ?? response.output, response.truncated);
+  } else if (response.kind === "traceroute") {
+    renderRaw(response.result.raw_output, false);
+    renderHops(response.result.hops);
   } else {
     renderRaw(response.result.raw_output, false);
   }
@@ -269,6 +279,49 @@ function renderGlobalView(agreement, global) {
   }
 
   panel.hidden = false;
+}
+
+/**
+ * Renders the hop list. A hop that did not answer keeps its number and says so,
+ * because where a traceroute stops is usually the answer someone came for.
+ */
+function renderHops(hops) {
+  if (!hops?.length) return;
+
+  const body = document.querySelector("#hops-table tbody");
+  body.replaceChildren();
+
+  for (const hop of hops) {
+    const row = document.createElement("tr");
+
+    const number = document.createElement("td");
+    number.textContent = String(hop.hop);
+    row.appendChild(number);
+
+    const address = document.createElement("td");
+    if (hop.ip || hop.hostname) {
+      address.textContent = hop.hostname ? `${hop.hostname} (${hop.ip ?? "?"})` : hop.ip;
+    } else {
+      address.textContent = t("traceroute.silent");
+      address.className = "unknown";
+    }
+    row.appendChild(address);
+
+    const times = document.createElement("td");
+    if (hop.rtt_ms?.length) {
+      // Each probe, not an average: 1 ms, 1 ms and 400 ms says something an
+      // average of 134 ms does not.
+      times.textContent = hop.rtt_ms.map((ms) => `${ms.toFixed(3)} ms`).join("  ");
+    } else {
+      times.textContent = t("result.unknown");
+      times.className = "unknown";
+    }
+    row.appendChild(times);
+
+    body.appendChild(row);
+  }
+
+  document.getElementById("hops-panel").hidden = false;
 }
 
 function renderTable(paths) {

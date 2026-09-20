@@ -66,5 +66,10 @@
   "table.next_hop": "Next hop",
   "table.origin": "Origem",
   "table.prefix": "Prefixo",
-  "table.rpki": "RPKI"
+  "table.rpki": "RPKI",
+  "traceroute.address": "Endereço",
+  "traceroute.hop": "Salto",
+  "traceroute.rtt": "Ida e volta",
+  "traceroute.silent": "sem resposta",
+  "traceroute.title": "Saltos"
 }

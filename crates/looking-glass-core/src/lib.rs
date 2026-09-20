@@ -6,6 +6,7 @@ pub mod inventory;
 pub mod ratelimit;
 pub mod rpki;
 pub mod target;
+pub mod traceroute;
 pub mod vendors;
 
 pub use catalogue::{Catalogue, CatalogueError, BUILTIN};
@@ -219,9 +220,12 @@ mod tests {
         }
     }
 
+    /// Every driver reads traceroute through the shared parser, and a hop that
+    /// did not answer survives in all of them — dropping it renumbers the rest
+    /// and hides where the path stopped.
     #[test]
-    fn traceroute_is_not_silently_empty() {
-        let raw = " 1  192.0.2.254  0.512 ms  0.480 ms  0.501 ms";
+    fn every_driver_keeps_a_silent_hop() {
+        let raw = " 1  192.0.2.254  0.512 ms\n 2  * * *\n 3  198.51.100.10  2.5 ms\n";
         let drivers: Vec<Box<dyn VendorDriver>> = vec![
             Box::new(HuaweiVrpDriver),
             Box::new(CiscoDriver::new(false)),
@@ -233,15 +237,16 @@ mod tests {
         ];
 
         for driver in drivers {
-            match driver.parse_traceroute(raw) {
-                Err(DriverError::Unsupported { query, .. }) => assert_eq!(query, "traceroute"),
-                Err(other) => panic!("{}: unexpected error {other}", driver.vendor_name()),
-                Ok(result) => panic!(
-                    "{}: returned {} hops from an unimplemented parser",
-                    driver.vendor_name(),
-                    result.hops.len()
-                ),
-            }
+            let name = driver.vendor_name();
+            let result = driver
+                .parse_traceroute(raw)
+                .unwrap_or_else(|e| panic!("{name}: traceroute should parse, got {e}"));
+            assert_eq!(result.hops.len(), 3, "{name} lost a hop");
+            assert_eq!(result.hops[1].hop, 2, "{name} renumbered the hops");
+            assert!(
+                result.hops[1].ip.is_none() && result.hops[1].rtt_ms.is_empty(),
+                "{name} invented an answer for a silent hop"
+            );
         }
     }
 
