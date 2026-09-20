@@ -7,6 +7,10 @@ nogglass.toml
 !nogglass.example.toml
 routers.yml
 
+# Rust build output. Without this, a `git add -A` at the workspace root
+# commits hundreds of megabytes of build artefacts, which GitHub then refuses.
+target/
+
 # Python
 __pycache__/
 *.py[cod]
