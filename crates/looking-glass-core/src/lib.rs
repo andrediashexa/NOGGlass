@@ -127,4 +127,82 @@ mod tests {
         assert_eq!(paths[0].local_pref, Some(150));
         assert_eq!(paths[0].communities, vec!["(65001,100)", "(65100,500)"]);
     }
+
+    /// A driver that cannot parse something MUST say so. Returning a default
+    /// value — a perfect ping, an empty hop list, an empty route list — makes a
+    /// diagnostic tool lie to the operator reading it (ADR-0006).
+    #[test]
+    fn unimplemented_parsers_error_instead_of_inventing_results() {
+        let ping_raw = "5 packets transmitted, 0 packets received, 100% packet loss";
+
+        for (vendor, result) in [
+            ("nokia_sros", NokiaSrosDriver.parse_ping(ping_raw)),
+            ("datacom_dmos", DatacomDriver.parse_ping(ping_raw)),
+            ("bird_routing_daemon", BirdDriver.parse_ping(ping_raw)),
+        ] {
+            match result {
+                Err(DriverError::Unsupported { vendor: v, query }) => {
+                    assert_eq!(v, vendor);
+                    assert_eq!(query, "ping");
+                }
+                Err(other) => panic!("{vendor}: unexpected error {other}"),
+                Ok(parsed) => {
+                    panic!("{vendor}: invented a ping result from a 100% loss output: {parsed:?}")
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn traceroute_is_not_silently_empty() {
+        let raw = " 1  192.0.2.254  0.512 ms  0.480 ms  0.501 ms";
+        let drivers: Vec<Box<dyn VendorDriver>> = vec![
+            Box::new(HuaweiVrpDriver),
+            Box::new(CiscoDriver::new(false)),
+            Box::new(JuniperDriver),
+            Box::new(MikrotikDriver::new(true)),
+            Box::new(NokiaSrosDriver),
+            Box::new(DatacomDriver),
+            Box::new(BirdDriver),
+        ];
+
+        for driver in drivers {
+            match driver.parse_traceroute(raw) {
+                Err(DriverError::Unsupported { query, .. }) => assert_eq!(query, "traceroute"),
+                Err(other) => panic!("{}: unexpected error {other}", driver.vendor_name()),
+                Ok(result) => panic!(
+                    "{}: returned {} hops from an unimplemented parser",
+                    driver.vendor_name(),
+                    result.hops.len()
+                ),
+            }
+        }
+    }
+
+    /// VRP marks the origin with a trailing i, e or ? on the AS path. When the
+    /// marker is absent the router did not report it, and the field stays None.
+    #[test]
+    fn huawei_origin_is_none_when_the_router_does_not_report_it() {
+        let driver = HuaweiVrpDriver;
+        let with_marker = r#"
+   Network            NextHop        MED        LocPrf    PrefVal Path/Ogn
+*>  198.51.100.0/24    192.0.2.254    10         150       0       65100 65500i
+"#;
+        let paths = driver
+            .parse_bgp_route(with_marker)
+            .expect("VRP output with an origin marker should parse");
+        assert_eq!(paths[0].origin.as_deref(), Some("IGP"));
+
+        let without_marker = r#"
+   Network            NextHop        MED        LocPrf    PrefVal Path/Ogn
+*>  198.51.100.0/24    192.0.2.254    10         150       0       65100 65500
+"#;
+        let paths = driver
+            .parse_bgp_route(without_marker)
+            .expect("VRP output without an origin marker should still parse");
+        assert_eq!(
+            paths[0].origin, None,
+            "origin must not be assumed when the router does not report it"
+        );
+    }
 }

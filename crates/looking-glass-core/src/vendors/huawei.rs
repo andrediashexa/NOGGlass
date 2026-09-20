@@ -110,11 +110,12 @@ impl VendorDriver for HuaweiVrpDriver {
         })
     }
 
-    fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
-        Ok(TracerouteResult {
-            target: "".to_string(),
-            hops: Vec::new(),
-            raw_output: raw.to_string(),
+    fn parse_traceroute(&self, _raw: &str) -> Result<TracerouteResult, DriverError> {
+        // No hop parser yet. An empty hop list would be indistinguishable from
+        // a traceroute that legitimately returned nothing.
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "traceroute",
         })
     }
 
@@ -178,24 +179,24 @@ impl VendorDriver for HuaweiVrpDriver {
                     idx += 1; // PrefVal
                     idx += 1;
 
-                    // Extrair AS Path e Origin
+                    // AS path and origin. VRP marks the origin with a trailing
+                    // i (IGP), e (EGP) or ? (incomplete) on the last token. When
+                    // no marker is present the router did not tell us, so the
+                    // origin stays None instead of being assumed to be IGP.
                     let mut as_path = Vec::new();
-                    let mut origin = "IGP".to_string();
+                    let mut origin: Option<String> = None;
 
                     for &token in &parts[idx.min(parts.len())..] {
-                        if token.ends_with('i') || token == "i" {
-                            origin = "IGP".to_string();
-                            let clean = token.trim_end_matches('i');
-                            if let Ok(asn) = clean.parse::<u32>() {
-                                as_path.push(asn);
-                            }
-                        } else if token.ends_with('?') || token == "?" {
-                            origin = "Incomplete".to_string();
-                            let clean = token.trim_end_matches('?');
-                            if let Ok(asn) = clean.parse::<u32>() {
-                                as_path.push(asn);
-                            }
-                        } else if let Ok(asn) = token.parse::<u32>() {
+                        let (marker, clean) = match token.chars().last() {
+                            Some('i') => (Some("IGP"), token.trim_end_matches('i')),
+                            Some('e') => (Some("EGP"), token.trim_end_matches('e')),
+                            Some('?') => (Some("Incomplete"), token.trim_end_matches('?')),
+                            _ => (None, token),
+                        };
+                        if let Some(m) = marker {
+                            origin = Some(m.to_string());
+                        }
+                        if let Ok(asn) = clean.parse::<u32>() {
                             as_path.push(asn);
                         }
                     }
@@ -219,12 +220,11 @@ impl VendorDriver for HuaweiVrpDriver {
         Ok(paths)
     }
 
-    fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
-        Ok(BgpSummaryResult {
-            router_id: None,
-            local_as: None,
-            peers: Vec::new(),
-            raw_output: raw.to_string(),
+    fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {
+        // An empty peer list would read as "this router has no BGP sessions".
+        Err(DriverError::Unsupported {
+            vendor: self.vendor_name(),
+            query: "bgp_summary",
         })
     }
 }

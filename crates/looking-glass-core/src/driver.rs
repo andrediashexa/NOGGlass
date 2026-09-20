@@ -5,20 +5,31 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DriverError {
-    #[error("Falha de conexão SSH: {0}")]
+    #[error("SSH connection failed: {0}")]
     ConnectionFailed(String),
-    #[error("Timeout na execução do comando após {0} segundos")]
+    #[error("command timed out after {0} seconds")]
     Timeout(u64),
-    #[error("Erro de protocolo ou I/O: {0}")]
+    #[error("protocol or I/O error: {0}")]
     IoError(String),
-    #[error("Target inválido para o comando: {0}")]
+    #[error("invalid target for this command: {0}")]
     InvalidTarget(String),
-    #[error("Resposta vazia ou truncada do roteador")]
+    #[error("empty or truncated response from the router")]
     EmptyResponse,
-    #[error("Falha no parsing da resposta: {0}")]
+    #[error("could not parse the response: {0}")]
     ParseError(String),
-    #[error("Erro de deserialização JSON: {0}")]
+    #[error("JSON deserialization error: {0}")]
     JsonError(#[from] serde_json::Error),
+    /// The driver has no parser for this query yet.
+    ///
+    /// A missing parser MUST surface as this error. Returning an empty or
+    /// default-valued result would be indistinguishable from a real answer,
+    /// and a diagnostic tool that invents data is worse than one that is
+    /// missing (ADR-0006).
+    #[error("{vendor} cannot answer {query} yet: no parser implemented")]
+    Unsupported {
+        vendor: &'static str,
+        query: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,7 +91,9 @@ pub struct BgpPath {
     pub local_pref: Option<u32>,
     pub med: Option<u32>,
     pub weight: Option<u32>,
-    pub origin: String,
+    /// BGP origin attribute as reported by the router: IGP, EGP or incomplete.
+    /// `None` when the vendor output does not carry it — never defaulted.
+    pub origin: Option<String>,
     pub communities: Vec<String>,
     pub rpki_status: RpkiStatus,
 }
@@ -103,24 +116,25 @@ pub struct BgpSummaryResult {
     pub raw_output: String,
 }
 
-/// Contrato universal de Driver de Roteador com suporte a comandos e parsing
+/// Contract every vendor driver implements: build read-only commands and parse
+/// their output into the normalised model.
 pub trait VendorDriver: Send + Sync {
-    /// Nome identificador do vendor
+    /// Identifier of the network operating system this driver speaks.
     fn vendor_name(&self) -> &'static str;
 
-    /// Comando de desativação de paginação (--More--)
+    /// Command that disables output paging (the `--More--` prompt), if any.
     fn disable_paging_cmd(&self) -> Option<&'static str>;
 
-    /// Regex de retorno do prompt do roteador
+    /// Regex matching the router prompt, used to detect end of output.
     fn prompt_pattern(&self) -> &'static str;
 
-    // --- Formatadores de comandos ---
+    // --- Command builders. Arguments are typed, never raw user text. ---
     fn format_ping(&self, target: &IpAddr, count: u8) -> String;
     fn format_traceroute(&self, target: &IpAddr) -> String;
     fn format_bgp_route(&self, target: &QueryTarget) -> String;
     fn format_bgp_summary(&self) -> String;
 
-    // --- Parsers estruturados ---
+    // --- Parsers. A parser that cannot read the output returns an error. ---
     fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError>;
     fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError>;
     fn parse_bgp_route(&self, raw: &str) -> Result<Vec<BgpPath>, DriverError>;
