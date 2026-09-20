@@ -46,6 +46,13 @@ docker compose restart
 docker compose logs -f nogglass
 ```
 
+That brings up two containers: the looking glass on `127.0.0.1:8080` and its
+documentation on `127.0.0.1:8081`, which is this set of pages as a searchable
+site. The second one is optional — `docker compose up -d nogglass` skips it, and
+nothing depends on it — but it costs 30 MB and answers most of the questions
+your visitors will otherwise send you. See
+[running the documentation site](documentation-site.md).
+
 The configuration lives in a named volume, so `docker compose pull && docker
 compose up -d` never overwrites it. On a Linux host the file is at
 `/var/lib/docker/volumes/nogglass-config/_data/nogglass.toml`, which is where
