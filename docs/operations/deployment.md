@@ -132,14 +132,13 @@ Image tags follow the release rules
 | `X.Y` | Latest patch of that minor version |
 | `latest` | Latest **full** release; patch releases are pre-releases and do not move it |
 
-Images are published for **linux/amd64** only for now. Building arm64 by
-emulation made every release wait more than half an hour, so it was removed
-until it can be cross-compiled or built on a native runner. On arm64, build from
-source in the meantime:
+Images are published for **linux/amd64** and **linux/arm64**. They are
+cross-compiled rather than emulated, so a release takes minutes instead of the
+half hour QEMU needed to compile Rust for arm64.
 
-```bash
-docker build -t nogglass .
-```
+The arm64 image is built but not started in CI, because running it there would
+need the emulation the build avoids. If you run NOGGlass on Ampere, Graviton or
+a Raspberry Pi, the first `/api/health` after an upgrade is worth a look.
 
 An operator who wants only blessed versions follows `latest`. An operator who
 wants the newest fix pins the exact `X.Y.Z` of a pre-release, knowingly.

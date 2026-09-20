@@ -91,17 +91,15 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
-      # amd64 only. Building arm64 here means QEMU emulating a Rust compile of
-      # ring, rustls and russh, which ran past 30 minutes on the first release
-      # before being cancelled. arm64 comes back through cross-compilation or a
-      # native runner, tracked separately, rather than by making every release
-      # wait half an hour.
+      # Both architectures, cross-compiled rather than emulated: the builder
+      # stage runs natively and zig links for the target. Emulating the Rust
+      # compile instead ran past 30 minutes and was cancelled.
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -110,7 +108,9 @@ jobs:
             NOGGLASS_BUILT_AT=${{ github.event.repository.updated_at }}
 
       # An image that was pushed but cannot start is worse than no image: the
-      # operator finds out, not us.
+      # operator finds out, not us. Only the native architecture is started
+      # here; an arm64 image cannot run on this runner without the emulation
+      # this build exists to avoid.
       - name: Start the image and check it answers
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/nogglass:${{ steps.tags.outputs.version }}
