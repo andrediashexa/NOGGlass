@@ -122,3 +122,18 @@ traceroute_v6 = "traceroute6 -n {target}"
 bgp_route_v4 = "birdc show route for {target} all"
 bgp_route_v6 = "birdc show route for {target} all"
 bgp_summary = "birdc show protocols all"
+
+# The mock router. Answers from fixtures, never opens a session, and is enabled
+# explicitly by the operator. Its "commands" exist only so the rest of the
+# system can treat it like any other vendor.
+[mock]
+display_name = "Mock router (fabricated data)"
+prompt = 'mock>'
+ping_v4 = "ping {target} count {count}"
+ping_v6 = "ping {target} count {count}"
+traceroute_v4 = "traceroute {target}"
+traceroute_v6 = "traceroute {target}"
+bgp_route_v4 = "show bgp {target}"
+bgp_route_v6 = "show bgp {target}"
+bgp_route_asn = "show bgp regexp {asn}"
+bgp_summary = "show bgp summary"
