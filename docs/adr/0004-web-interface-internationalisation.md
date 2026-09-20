@@ -1,10 +1,16 @@
 # ADR-0004 — Web interface internationalisation by URL prefix
 
-- **Status:** Accepted
+- **Status:** Superseded in delivery by [ADR-0007](0007-unified-rust-architecture-and-drivers.md); the locale rules below remain in force
 - **Date:** 2026-09-17
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
+
+> **Delivery superseded.** The interface is no longer a Next.js container: it is
+> embedded in the Rust binary (ADR-0007, section 4). Everything this document
+> says about locales — the three languages, the URL prefix, the fallback chain,
+> the parity check and what MUST NOT be translated — still applies, and is
+> restated in ADR-0007.
 
 The web interface ships in Portuguese, English and Spanish, selected by a URL
 prefix (`/pt`, `/en`, `/es`). The first visit is redirected using

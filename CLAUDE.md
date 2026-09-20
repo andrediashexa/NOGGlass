@@ -2,11 +2,12 @@
 
 ## TL;DR
 
-This is a multi-vendor, self-hosted Looking Glass: FastAPI backend, Next.js
-frontend in pt/en/es, read-only SSH to routers, shipped as Docker Compose.
-Everything written here is in English. One issue per feature, one branch per
-issue, squashed pull request, automatic release on merge. Never put user input
-on a router command line.
+This is **NOGGlass**, a multi-vendor, self-hosted looking glass: one Rust binary
+serving the API and an embedded UI in pt/en/es, read-only SSH to routers, BGP
+answers as a normalised path model drawn as an AS-PATH graph. Everything written
+here is in English. One issue per feature, one branch per issue, squashed pull
+request, automatic release on merge. Never put user input on a router command
+line, and never invent a value a router did not report.
 
 ## Working agreement
 
@@ -18,7 +19,10 @@ on a router command line.
 - Every feature starts as a GitHub issue. If a task arrives without one, create
   the issue first.
 - Do not edit `version.txt` or `CHANGELOG.md`; `release-please` owns them.
-- Run `scripts/check-docs.sh` and `scripts/check-i18n.sh` before pushing.
+- Run `scripts/check-docs.sh` and `scripts/check-i18n.sh` before pushing, plus
+  `cargo fmt`, `cargo clippy -- -D warnings` and `cargo test` when Rust changed.
+- This machine has no C linker and no sudo. Build with zig as the linker:
+  `CC=zig-cc cargo test --config 'target.x86_64-unknown-linux-gnu.linker="zig-cc"'`.
 
 ## Documentation rules
 
@@ -39,11 +43,14 @@ Architecture decisions go to `docs/adr/` as numbered ADRs.
 2. **Read-only only.** Commands that change router state are out of scope,
    including in drivers written "just for testing".
 3. **Fail closed.** Missing configuration, missing credentials or an unknown
-   vendor means refusing the query, never falling back to a guess.
+   vendor means refusing the query, never falling back to a guess. A parser that
+   cannot read a field MUST report that it could not: unimplemented parsers
+   return an error, absent attributes are null, and `Ok(empty)` MUST NOT be
+   used to mean failure.
 4. **Safe defaults.** Every feature flag that reaches the outside world defaults
    to disabled (`*_ENABLED=false`).
-5. **Pinned dependencies.** Exact versions in `requirements.txt`, lockfile for
-   the frontend, fixed tags for third-party images.
+5. **Pinned dependencies.** `Cargo.lock` committed, `rust-toolchain.toml`
+   pinned, fixed tags for third-party images.
 6. **Memory limits are measured.** Every Compose service declares `mem_limit`
    with a comment stating the measured usage.
 7. **No published ports except the proxy.** Internal services talk over the
@@ -55,10 +62,11 @@ Architecture decisions go to `docs/adr/` as numbered ADRs.
 
 | Layer | Choice |
 |---|---|
-| Frontend | Next.js + TypeScript, i18n by URL prefix (`/pt`, `/en`, `/es`) |
-| Backend | Python 3.12 + FastAPI, SSE for streaming output |
-| Router access | Direct SSH from the backend (scrapli/netmiko), read-only user |
-| Proxy | Traefik v3 |
-| Packaging | Docker Compose, images published to GHCR |
-| CI | GitHub Actions: docs lint, i18n parity, secret scan, tests |
+| Language | Rust (ADR-0005), workspace under `crates/` |
+| Server | Axum + Tokio, SSE for streamed output, listens on :8080 (ADR-0012) |
+| Interface | Embedded in the binary, i18n by URL prefix (`/pt`, `/en`, `/es`) (ADR-0007) |
+| Router access | Direct SSH (`russh`), read-only user, per-vendor drivers |
+| BGP results | Normalised path model with raw output preserved (ADR-0006) |
+| Packaging | Single binary; multi-stage image published to GHCR (ADR-0012) |
+| CI | GitHub Actions: cargo fmt/clippy/test, docs lint, i18n parity, secret scan |
 | Release | release-please, Conventional Commits, SemVer |

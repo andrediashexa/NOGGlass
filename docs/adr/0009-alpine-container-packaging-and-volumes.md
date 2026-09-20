@@ -1,10 +1,18 @@
 # ADR-0009 — Hardened Alpine container packaging, multi-stage compilation and persistent volume management
 
-- **Status:** Proposed
+- **Status:** Superseded by [ADR-0012](0012-standalone-binary-exposure-and-packaging.md)
 - **Date:** 2026-09-17
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
+
+> **Superseded.** The packaging decisions here — multi-stage build, no compiler
+> in the runtime image, non-root user, configuration in a named volume — were
+> accepted and carried into ADR-0012. What was NOT accepted: binding ports 80
+> and 443 directly, which contradicts the non-root requirement in this same
+> document, and mandatory `network_mode: host`, which is now an opt-in for
+> operators who need a fixed IPv6 source address.
+
 
 Defines the container packaging strategy using multi-stage builds on hardened Alpine Linux.
 The build stage fetches the codebase and compiles a static Rust binary with `musl`,

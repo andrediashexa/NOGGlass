@@ -1,10 +1,21 @@
 # ADR-0011 — Authenticated collaborative multi-tenant platform with PeeringDB/RDAP verification and encrypted router vault
 
-- **Status:** Proposed
+- **Status:** Proposed — deferred to the `0.3.0` milestone
 - **Date:** 2026-09-19
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
+
+> **Deferred, not rejected.** On 2026-09-20 the maintainers decided that
+> `0.1.0` ships a publicly queryable Looking Glass with no account required, as
+> stated in the README and ADR-0006. This document describes a different
+> product layer — a federated diagnostic network between verified operators —
+> and it MUST NOT be implemented before a public Looking Glass works end to
+> end. Two consequences need answering before it is accepted: custody of other
+> operators' router credentials is a legal and operational liability that does
+> not disappear because the blobs are encrypted, and forbidding anonymous
+> queries removes the audience a looking glass exists for.
+
 
 Transforms the Looking Glass from a single-tenant tool into an authenticated, collaborative multi-tenant platform for verified Autonomous System (ASN) operators.
 Anonymous public queries are prohibited; all users MUST register and verify administrative authority over their declared ASN via the PeeringDB API or IANA-federated RDAP, followed by dynamic single-use token confirmation by corporate email.
