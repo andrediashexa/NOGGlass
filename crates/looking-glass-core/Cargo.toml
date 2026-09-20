@@ -8,6 +8,13 @@ license.workspace = true
 [dependencies]
 async-trait.workspace = true
 regex = "1.10"
+# rustls rather than the system OpenSSL: one fewer thing an operator has to
+# have installed, and it matches the crypto backend russh already uses.
+# rustls with the ring provider, not the default aws-lc-rs: aws-lc-sys needs
+# cmake and a C toolchain, and russh already brings ring in. One crypto
+# backend, no build-tools hunt for whoever packages this.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "charset", "http2", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 ipnet.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 # ring rather than the default aws-lc-rs backend: aws-lc-sys needs cmake and a

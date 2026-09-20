@@ -147,6 +147,9 @@ pub struct Executor {
     inventory: Arc<Inventory>,
     catalogue: Arc<Catalogue>,
     transport: Arc<dyn Transport>,
+    /// Fills in RPKI state the router did not report. Absent unless the
+    /// operator configured a validator.
+    rpki: Option<Arc<crate::rpki::Enricher>>,
     /// Instance-wide cap.
     global: Arc<Semaphore>,
     /// Per-router caps, so one busy router cannot starve the others.
@@ -176,8 +179,15 @@ impl Executor {
             inventory,
             catalogue,
             transport,
+            rpki: None,
             per_router,
         }
+    }
+
+    /// Attaches Tier 2 RPKI validation (ADR-0010).
+    pub fn with_rpki(mut self, enricher: Arc<crate::rpki::Enricher>) -> Self {
+        self.rpki = Some(enricher);
+        self
     }
 
     /// Runs a query, applying every limit.
@@ -219,12 +229,18 @@ impl Executor {
             .map_err(|_| ExecutionError::Busy { scope: "router" })?;
 
         let started = Instant::now();
-        let outcome = if router.is_mock() {
+        let mut outcome = if router.is_mock() {
             self.mock_outcome(query, target, &limits)?
         } else {
             self.run_on_router(router, query, target, &command, &limits)
                 .await?
         };
+
+        // Enrichment runs after the router answered, and cannot fail the query:
+        // a slow or broken validator leaves the state as not-checked.
+        if let (Some(enricher), QueryOutcome::BgpRoute(result)) = (&self.rpki, &mut outcome) {
+            enricher.enrich(result).await;
+        }
 
         Ok(Execution {
             router_id: router.id.clone(),

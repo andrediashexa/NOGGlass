@@ -245,11 +245,78 @@ fn is_blank(value: Option<String>) -> bool {
     }
 }
 
+/// Tier 2 RPKI validation, as the operator writes it (ADR-0010).
+///
+/// Disabled unless the operator says otherwise: a default that reaches a third
+/// party would send every visitor's query off their network without anyone
+/// deciding to.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RpkiSettings {
+    /// Turns Tier 2 on. With no `validator_url`, RIPEstat is used, which sends
+    /// the queried prefix and origin AS to a third party — say so in your
+    /// privacy notice.
+    #[serde(default)]
+    pub enable_fallback: bool,
+    /// An operator-run validator, such as Routinator.
+    #[serde(default)]
+    pub validator_url: Option<String>,
+    #[serde(default = "default_rpki_timeout_ms")]
+    pub timeout_ms: u64,
+    #[serde(default = "default_rpki_ttl")]
+    pub cache_ttl_secs: u64,
+    #[serde(default = "default_rpki_capacity")]
+    pub cache_max_capacity: usize,
+}
+
+fn default_rpki_timeout_ms() -> u64 {
+    1000
+}
+fn default_rpki_ttl() -> u64 {
+    3600
+}
+fn default_rpki_capacity() -> usize {
+    50_000
+}
+
+impl Default for RpkiSettings {
+    fn default() -> Self {
+        Self {
+            enable_fallback: false,
+            validator_url: None,
+            timeout_ms: default_rpki_timeout_ms(),
+            cache_ttl_secs: default_rpki_ttl(),
+            cache_max_capacity: default_rpki_capacity(),
+        }
+    }
+}
+
+impl RpkiSettings {
+    /// Turns the file settings into what the enricher needs.
+    pub fn to_config(&self) -> crate::rpki::RpkiConfig {
+        use crate::rpki::{RpkiConfig, Validator};
+        let validator = match (self.enable_fallback, &self.validator_url) {
+            (false, _) => Validator::Disabled,
+            (true, Some(url)) => Validator::Local {
+                base_url: url.clone(),
+            },
+            (true, None) => Validator::RipeStat,
+        };
+        RpkiConfig {
+            validator,
+            timeout: std::time::Duration::from_millis(self.timeout_ms),
+            cache_ttl: std::time::Duration::from_secs(self.cache_ttl_secs),
+            cache_capacity: self.cache_max_capacity,
+        }
+    }
+}
+
 /// The whole configuration file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Inventory {
     #[serde(default)]
     pub limits: Limits,
+    #[serde(default)]
+    pub rpki: RpkiSettings,
     #[serde(rename = "router", default)]
     pub routers: Vec<Router>,
 }
@@ -401,6 +468,33 @@ name = "Demo router (fabricated data)"
 vendor = "mock"
 host = "127.0.0.1"
 "#;
+
+    #[test]
+    fn rpki_fallback_is_off_until_the_operator_turns_it_on() {
+        use crate::rpki::Validator;
+
+        let inventory = Inventory::from_toml(SAMPLE).unwrap();
+        assert!(matches!(
+            inventory.rpki.to_config().validator,
+            Validator::Disabled
+        ));
+
+        let with_ripestat = format!("{SAMPLE}\n[rpki]\nenable_fallback = true\n");
+        let inventory = Inventory::from_toml(&with_ripestat).unwrap();
+        assert!(matches!(
+            inventory.rpki.to_config().validator,
+            Validator::RipeStat
+        ));
+
+        let with_local = format!(
+            "{SAMPLE}\n[rpki]\nenable_fallback = true\nvalidator_url = \"http://routinator:8323\"\n"
+        );
+        let inventory = Inventory::from_toml(&with_local).unwrap();
+        match inventory.rpki.to_config().validator {
+            Validator::Local { base_url } => assert_eq!(base_url, "http://routinator:8323"),
+            other => panic!("expected the operator's validator, got {other:?}"),
+        }
+    }
 
     #[test]
     fn loads_a_valid_inventory() {
