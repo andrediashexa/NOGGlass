@@ -1,4 +1,7 @@
-use crate::driver::{BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult, VendorDriver};
+use crate::driver::{
+    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
+    VendorDriver,
+};
 use std::net::IpAddr;
 
 pub struct CiscoDriver {
@@ -86,7 +89,11 @@ impl VendorDriver for CiscoDriver {
         for line in raw.lines() {
             if line.contains("Success rate is") {
                 if let Some(rate_str) = line.split("percent").next() {
-                    if let Some(rate) = rate_str.split_whitespace().last().and_then(|s| s.parse::<f64>().ok()) {
+                    if let Some(rate) = rate_str
+                        .split_whitespace()
+                        .last()
+                        .and_then(|s| s.parse::<f64>().ok())
+                    {
                         loss = 100.0 - rate;
                     }
                 }

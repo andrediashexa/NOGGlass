@@ -1,0 +1,45 @@
+name: rust
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: Build, lint and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/looking-glass-core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: rustup component add rustfmt clippy
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/looking-glass-core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('crates/looking-glass-core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Lints
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --all-targets
+
+      - name: Release build
+        run: cargo build --release

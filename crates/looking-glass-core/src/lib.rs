@@ -10,22 +10,21 @@ pub use vendors::*;
 use regex::Regex;
 use std::sync::LazyLock;
 
-/// Regex universal de detecção de término de comando portado do Netmiko
-pub static DEFAULT_BASE_PROMPT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[\>#\]]\s*$").expect("Regex inválido de prompt padrão")
-});
+/// Generic end-of-output prompt detection, ported from Netmiko.
+pub static DEFAULT_BASE_PROMPT_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[>#\]]\s*$").expect("invalid default prompt regex"));
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ipnet::IpNet;
-    use std::net::IpAddr;
-    use std::str::FromStr;
 
     #[test]
     fn test_huawei_commands_and_parsing() {
         let driver = HuaweiVrpDriver;
-        assert_eq!(driver.disable_paging_cmd(), Some("screen-length 0 temporary"));
+        assert_eq!(
+            driver.disable_paging_cmd(),
+            Some("screen-length 0 temporary")
+        );
         assert_eq!(driver.format_bgp_summary(), "display bgp peer");
 
         let raw_bgp = r#"
@@ -36,7 +35,9 @@ mod tests {
 *>  198.51.100.0/24    192.0.2.254    10         150       0       65100 65500i
 *                      198.51.100.254 50         100       0       65200 65500i
 "#;
-        let paths = driver.parse_bgp_route(raw_bgp).expect("Falha no parse do Huawei VRP");
+        let paths = driver
+            .parse_bgp_route(raw_bgp)
+            .expect("Falha no parse do Huawei VRP");
         assert_eq!(paths.len(), 2);
         assert!(paths[0].is_best);
         assert_eq!(paths[0].network, "198.51.100.0/24");
@@ -53,7 +54,10 @@ mod tests {
     #[test]
     fn test_juniper_json_parsing_with_rpki() {
         let driver = JuniperDriver;
-        assert_eq!(driver.format_bgp_summary(), "show bgp summary | display json");
+        assert_eq!(
+            driver.format_bgp_summary(),
+            "show bgp summary | display json"
+        );
 
         let raw_json = r#"{
             "route-information": [{
@@ -75,7 +79,9 @@ mod tests {
             }]
         }"#;
 
-        let paths = driver.parse_bgp_route(raw_json).expect("Falha ao parsear JSON nativo do JunOS");
+        let paths = driver
+            .parse_bgp_route(raw_json)
+            .expect("Falha ao parsear JSON nativo do JunOS");
         assert_eq!(paths.len(), 1);
         let p = &paths[0];
         assert!(p.is_best);
@@ -91,7 +97,9 @@ mod tests {
     fn test_mikrotik_parsing() {
         let driver = MikrotikDriver::new(true);
         let raw = "0 ADb dst=198.51.100.0/24 gateway=192.0.2.254 as-path=65100,65500 local-pref=150 med=10";
-        let paths = driver.parse_bgp_route(raw).expect("Falha no parse MikroTik");
+        let paths = driver
+            .parse_bgp_route(raw)
+            .expect("Falha no parse MikroTik");
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].network, "198.51.100.0/24");
         assert_eq!(paths[0].next_hop, "192.0.2.254");
