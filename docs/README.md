@@ -48,7 +48,8 @@ flowchart LR
 
 | Document | Purpose |
 |---|---|
-| [Wiki outline](wiki-outline.md) | The pages that teach use, what each answers, and when each is done |
+| [Using NOGGlass](wiki/) | Ten pages: reading an answer, and running an instance |
+| [Wiki outline](wiki-outline.md) | What each page is meant to achieve, and when it is done |
 
 ## Operations
 
