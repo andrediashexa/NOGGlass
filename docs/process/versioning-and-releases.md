@@ -83,4 +83,7 @@ display `dev` rather than a wrong number.
   releases pile up defeats the purpose.
 - A release MUST NOT be deleted or re-tagged. A mistake is fixed by releasing
   the next patch version.
-- Tags MUST be `vX.Y.Z`, matching the GitHub Release name.
+- Tags MUST be `vX.Y.Z`, matching the GitHub Release name. The first release
+  was tagged `looking-glass-v0.1.0` because `release-please` prefixes the
+  component name by default; `include-component-in-tag` is now `false`, so
+  later tags follow the rule. The published tag is never rewritten.
