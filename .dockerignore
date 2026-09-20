@@ -1,0 +1,9 @@
+# Everything the build does not need. Without this, the 1.5 GB target directory
+# is uploaded to the daemon on every build.
+target/
+.git/
+.github/
+docs/
+*.md
+!README.md
+nogglass.toml

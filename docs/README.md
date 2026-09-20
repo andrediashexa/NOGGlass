@@ -26,6 +26,7 @@ flowchart LR
     docs --> arch[architecture/<br/>how it works]
     docs --> adr[adr/<br/>why it is like this]
     docs --> tpl[templates/<br/>how to write a document]
+    docs --> ops[operations/<br/>how to run it]
     docs --> ref[reference/<br/>imported material]
 ```
 
@@ -41,6 +42,13 @@ flowchart LR
 | Document | Purpose |
 |---|---|
 | [Overview](architecture/overview.md) | Components, request flow and trust boundaries |
+
+## Operations
+
+| Document | Purpose |
+|---|---|
+| [Deployment](operations/deployment.md) | Installing, configuring, exposing and upgrading an instance |
+| [Read-only router users](operations/router-users.md) | The account NOGGlass authenticates with, per vendor |
 
 ## Decisions
 

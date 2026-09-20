@@ -15,6 +15,8 @@ jobs:
     outputs:
       released: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      patch: ${{ steps.release.outputs.patch }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -38,3 +40,52 @@ jobs:
           else
             echo "$TAG is a minor or major release; leaving it as a full release."
           fi
+
+  image:
+    name: Build and publish the container image
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A patch release is a pre-release (ADR-0014), so it does not move
+      # "latest": an operator pulling latest gets a version the maintainers
+      # stand behind.
+      - name: Work out the image tags
+        id: tags
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          PATCH: ${{ needs.release-please.outputs.patch }}
+        run: |
+          image=ghcr.io/${{ github.repository_owner }}/nogglass
+          minor=${VERSION%.*}
+          tags="$image:$VERSION,$image:$minor"
+          if [ "$PATCH" = "0" ]; then
+            tags="$tags,$image:latest"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NOGGLASS_VERSION=${{ needs.release-please.outputs.version }}
+            NOGGLASS_COMMIT=${{ github.sha }}
+            NOGGLASS_BUILT_AT=${{ github.event.repository.updated_at }}
