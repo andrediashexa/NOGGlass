@@ -1,6 +1,6 @@
 use crate::driver::{
-    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
-    VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
+    Origin, PingResult, QueryTarget, TracerouteResult, VendorDriver,
 };
 use std::net::IpAddr;
 
@@ -123,57 +123,75 @@ impl VendorDriver for MikrotikDriver {
     }
 
     /// Parser de Bloco Chave=Valor do RouterOS (/routing/bgp/route/print detail)
-    fn parse_bgp_route(&self, raw: &str) -> Result<Vec<BgpPath>, DriverError> {
+    fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
+        // RouterOS prints `/routing/route/print detail` as numbered blocks:
+        //
+        // 0 ADb dst=198.51.100.0/24 gateway=192.0.2.254 as-path=65100,65500 ...
+        //
+        // The letters after the index are flags, and only those count as flags:
+        // scanning the whole block for a letter matched values too, which made
+        // almost every route look like the best one.
         let mut paths = Vec::new();
-        // Blocos começam com números ou flags: "Flags: X - active, D - dynamic, ..."
-        // 0 ADb dst=198.51.100.0/24 gateway=192.0.2.254 as-path=65100,65500 local-pref=150 ...
+
         for block in raw.split("\n\n") {
-            if block.trim().is_empty() || block.contains("Flags:") {
+            let block = block.trim();
+            if block.is_empty() || block.starts_with("Flags:") {
                 continue;
             }
 
-            let mut network = String::new();
-            let mut next_hop = String::new();
-            let mut as_path = Vec::new();
-            let mut local_pref = None;
-            let mut med = None;
-            let is_best = block.contains("active") || block.contains('b') || block.contains('A');
+            let mut path = BgpPath::default();
+
+            // Flags are the second whitespace-separated token, after the index.
+            let mut head = block.split_whitespace();
+            let flags = match (head.next(), head.next()) {
+                (Some(index), Some(flags))
+                    if index.bytes().all(|b| b.is_ascii_digit())
+                        && flags.chars().all(|c| c.is_ascii_alphabetic()) =>
+                {
+                    flags
+                }
+                _ => "",
+            };
+            path.is_best = flags.contains('A') || flags.contains('b');
+            path.is_valid = Some(!flags.contains('I'));
 
             for token in block.split_whitespace() {
                 if let Some(val) = token.strip_prefix("dst=") {
-                    network = val.to_string();
+                    path.prefix = parse_network(val);
                 } else if let Some(val) = token.strip_prefix("gateway=") {
-                    next_hop = val.to_string();
+                    path.next_hop = parse_hop(val);
                 } else if let Some(val) = token.strip_prefix("as-path=") {
-                    for part in val.split(',') {
-                        if let Ok(asn) = part.trim().parse::<u32>() {
-                            as_path.push(asn);
-                        }
-                    }
+                    path.as_path = val
+                        .trim_matches('"')
+                        .split([',', ' '])
+                        .filter_map(|p| p.trim().parse::<u32>().ok())
+                        .collect();
                 } else if let Some(val) = token.strip_prefix("local-pref=") {
-                    local_pref = val.parse().ok();
+                    path.local_pref = val.parse().ok();
                 } else if let Some(val) = token.strip_prefix("med=") {
-                    med = val.parse().ok();
+                    path.med = val.parse().ok();
+                } else if let Some(val) = token.strip_prefix("origin=") {
+                    path.origin = match val.trim_matches('"').to_ascii_lowercase().as_str() {
+                        "igp" => Some(Origin::Igp),
+                        "egp" => Some(Origin::Egp),
+                        "incomplete" => Some(Origin::Incomplete),
+                        _ => None,
+                    };
+                } else if let Some(val) = token.strip_prefix("bgp-communities=") {
+                    path.communities = val
+                        .trim_matches('"')
+                        .split(',')
+                        .map(Community::parse)
+                        .collect();
                 }
             }
 
-            if !network.is_empty() {
-                paths.push(BgpPath {
-                    is_best,
-                    network,
-                    next_hop,
-                    as_path,
-                    local_pref,
-                    med,
-                    weight: None,
-                    origin: None, // not parsed from this vendor output yet
-                    communities: Vec::new(),
-                    rpki_status: RpkiStatus::NotChecked,
-                });
+            if path.prefix.is_some() {
+                paths.push(path);
             }
         }
 
-        Ok(paths)
+        Ok(BgpRouteResult::new(paths, raw))
     }
 
     fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {

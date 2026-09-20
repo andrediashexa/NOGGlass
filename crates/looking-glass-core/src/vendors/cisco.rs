@@ -1,6 +1,6 @@
 use crate::driver::{
-    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
-    VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, DriverError, Origin,
+    PingResult, QueryTarget, TracerouteResult, VendorDriver,
 };
 use std::net::IpAddr;
 
@@ -137,33 +137,95 @@ impl VendorDriver for CiscoDriver {
         })
     }
 
-    fn parse_bgp_route(&self, raw: &str) -> Result<Vec<BgpPath>, DriverError> {
-        // Suporta JSON nativo do XR ou fallback tabular do IOS-XE clássico
+    fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
+        // Tabular `show bgp` output, the form IOS-XE and IOS-XR share:
+        //
+        //    Network          Next Hop   Metric LocPrf Weight Path
+        // *>i198.51.100.0/24  192.0.2.254    10    150      0 65100 65500 i
+        //
+        // The status column is glued to the network on IOS, so it is split off
+        // by character rather than by whitespace.
         let mut paths = Vec::new();
+        let mut unreadable = 0usize;
+        let mut current_prefix = None;
 
         for line in raw.lines() {
-            let line = line.trim_start();
-            if line.starts_with('*') {
-                let is_best = line.contains('>');
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 4 {
-                    paths.push(BgpPath {
-                        is_best,
-                        network: parts.get(1).unwrap_or(&"").to_string(),
-                        next_hop: parts.get(2).unwrap_or(&"").to_string(),
-                        as_path: Vec::new(),
-                        local_pref: None,
-                        med: None,
-                        weight: None,
-                        origin: None, // not parsed from this vendor output yet
-                        communities: Vec::new(),
-                        rpki_status: RpkiStatus::NotChecked,
-                    });
-                }
+            let trimmed = line.trim_end();
+            if trimmed.is_empty() {
+                continue;
             }
+            let body = trimmed.trim_start();
+            if body.starts_with("Network")
+                || body.starts_with("BGP table")
+                || body.starts_with("Status codes")
+                || body.starts_with("Origin codes")
+                || body.starts_with("Route Distinguisher")
+                || body.starts_with("Processed")
+            {
+                continue;
+            }
+            if !body.starts_with('*') && !body.starts_with("r>") && !body.starts_with('r') {
+                unreadable += 1;
+                continue;
+            }
+
+            // Status flags are the leading non-alphanumeric characters plus the
+            // internal/external marker.
+            let flags: String = body
+                .chars()
+                .take_while(|c| matches!(c, '*' | '>' | 'r' | 's' | 'd' | 'h' | 'i' | 'S' | ' '))
+                .collect();
+            let rest = &body[flags.len()..];
+            let mut fields = rest.split_whitespace();
+
+            let Some(first) = fields.next() else {
+                unreadable += 1;
+                continue;
+            };
+
+            // A continuation line omits the network and starts at the next hop.
+            let (prefix, next_hop_text) = match parse_network(first) {
+                Some(net) => {
+                    current_prefix = Some(net);
+                    (Some(net), fields.next())
+                }
+                None => (current_prefix, Some(first)),
+            };
+
+            let remaining: Vec<&str> = fields.collect();
+            // Metric, LocPrf and Weight are right-aligned numbers; the AS path
+            // and the origin marker follow.
+            let numbers: Vec<u32> = remaining
+                .iter()
+                .take_while(|t| t.bytes().all(|b| b.is_ascii_digit()))
+                .filter_map(|t| t.parse().ok())
+                .collect();
+            let as_path: Vec<u32> = remaining
+                .iter()
+                .skip(numbers.len())
+                .filter_map(|t| t.parse::<u32>().ok())
+                .collect();
+            let origin = remaining
+                .last()
+                .and_then(|t| t.chars().last())
+                .and_then(Origin::from_marker);
+
+            paths.push(BgpPath {
+                prefix,
+                next_hop: next_hop_text.and_then(parse_hop),
+                is_best: flags.contains('>'),
+                is_valid: Some(flags.contains('*')),
+                as_path,
+                // Positional: metric, then local preference, then weight.
+                med: numbers.first().copied(),
+                local_pref: numbers.get(1).copied(),
+                weight: numbers.get(2).copied(),
+                origin,
+                ..BgpPath::default()
+            });
         }
 
-        Ok(paths)
+        Ok(BgpRouteResult::new(paths, raw).partial(unreadable))
     }
 
     fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {

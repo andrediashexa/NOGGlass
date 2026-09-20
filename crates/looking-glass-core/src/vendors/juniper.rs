@@ -1,6 +1,6 @@
 use crate::driver::{
-    BgpPath, BgpSummaryResult, DriverError, PingResult, QueryTarget, RpkiStatus, TracerouteResult,
-    VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
+    Origin, PingResult, QueryTarget, RpkiStatus, RpkiValidation, TracerouteResult, VendorDriver,
 };
 use serde::Deserialize;
 use std::net::IpAddr;
@@ -164,7 +164,7 @@ impl VendorDriver for JuniperDriver {
     }
 
     /// Deserialização JSON Nativa do Juniper JunOS (Extração direta de RPKI e BGP Paths)
-    fn parse_bgp_route(&self, raw: &str) -> Result<Vec<BgpPath>, DriverError> {
+    fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
         let parsed: JunosRouteInformation = serde_json::from_str(raw)
             .map_err(|e| DriverError::ParseError(format!("JSON do JunOS inválido: {}", e)))?;
 
@@ -206,15 +206,23 @@ impl VendorDriver for JuniperDriver {
                                             .and_then(|n| n.into_iter().next())
                                             .and_then(|n| n.to)
                                             .and_then(|t| t.into_iter().next())
-                                            .map(|t| t.data)
-                                            .unwrap_or_default();
+                                            .and_then(|t| parse_hop(&t.data));
 
+                                        // Junos prints "65100 65500 I": AS
+                                        // numbers followed by the origin marker.
                                         let mut as_path = Vec::new();
+                                        let mut origin = None;
                                         if let Some(ap_vec) = entry.as_path {
                                             if let Some(ap_txt) = ap_vec.into_iter().next() {
                                                 for token in ap_txt.data.split_whitespace() {
                                                     if let Ok(asn) = token.parse::<u32>() {
                                                         as_path.push(asn);
+                                                    } else if let Some(marker) = token
+                                                        .chars()
+                                                        .next()
+                                                        .and_then(Origin::from_marker)
+                                                    {
+                                                        origin = Some(marker);
                                                     }
                                                 }
                                             }
@@ -235,7 +243,8 @@ impl VendorDriver for JuniperDriver {
                                             for c in comms {
                                                 if let Some(list) = c.community {
                                                     for item in list {
-                                                        communities.push(item.data);
+                                                        communities
+                                                            .push(Community::parse(&item.data));
                                                     }
                                                 }
                                             }
@@ -243,15 +252,16 @@ impl VendorDriver for JuniperDriver {
 
                                         paths.push(BgpPath {
                                             is_best,
-                                            network: network.clone(),
+                                            is_valid: Some(true),
+                                            prefix: parse_network(&network),
                                             next_hop,
                                             as_path,
                                             local_pref,
                                             med,
-                                            weight: None,
-                                            origin: None, // not parsed from this vendor output yet
+                                            origin,
                                             communities,
-                                            rpki_status,
+                                            rpki: RpkiValidation::from_router(rpki_status),
+                                            ..BgpPath::default()
                                         });
                                     }
                                 }
@@ -262,7 +272,7 @@ impl VendorDriver for JuniperDriver {
             }
         }
 
-        Ok(paths)
+        Ok(BgpRouteResult::new(paths, raw))
     }
 
     fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {
