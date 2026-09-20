@@ -1,8 +1,10 @@
+pub mod bgp_table;
 pub mod catalogue;
 pub mod driver;
 pub mod executor;
 pub mod global_view;
 pub mod inventory;
+pub mod ping;
 pub mod ratelimit;
 pub mod rpki;
 pub mod summary;
@@ -196,27 +198,33 @@ mod tests {
         assert_eq!(paths[0].origin, Some(Origin::Igp), "BIRD prints [AS65500i]");
     }
 
-    /// A driver that cannot parse something MUST say so. Returning a default
-    /// value — a perfect ping, an empty hop list, an empty route list — makes a
-    /// diagnostic tool lie to the operator reading it (ADR-0006).
+    /// The rule that replaced the fabricated results of #43: a driver reports
+    /// what the router said, and nothing else. Nokia, Datacom and BIRD used to
+    /// return a hardcoded 5/5 with no loss for any input; they now read the
+    /// output, and a total loss reads as a total loss.
     #[test]
-    fn unimplemented_parsers_error_instead_of_inventing_results() {
+    fn a_total_loss_is_never_reported_as_a_healthy_ping() {
         let ping_raw = "5 packets transmitted, 0 packets received, 100% packet loss";
 
-        for (vendor, result) in [
-            ("nokia_sros", NokiaSrosDriver.parse_ping(ping_raw)),
-            ("datacom_dmos", DatacomDriver.parse_ping(ping_raw)),
-            ("bird_routing_daemon", BirdDriver.parse_ping(ping_raw)),
-        ] {
-            match result {
-                Err(DriverError::Unsupported { vendor: v, query }) => {
-                    assert_eq!(v, vendor);
-                    assert_eq!(query, "ping");
+        let drivers: Vec<Box<dyn VendorDriver>> = vec![
+            Box::new(NokiaSrosDriver),
+            Box::new(DatacomDriver),
+            Box::new(BirdDriver),
+            Box::new(CiscoDriver::new(false)),
+            Box::new(MikrotikDriver::new(true)),
+        ];
+
+        for driver in drivers {
+            let name = driver.vendor_name();
+            match driver.parse_ping(ping_raw) {
+                Ok(result) => {
+                    assert_eq!(result.packets_received, 0, "{name} invented replies");
+                    assert_eq!(result.packet_loss_percent, 100.0, "{name} hid the loss");
+                    assert_eq!(result.avg_rtt_ms, None, "{name} invented a round trip");
                 }
-                Err(other) => panic!("{vendor}: unexpected error {other}"),
-                Ok(parsed) => {
-                    panic!("{vendor}: invented a ping result from a 100% loss output: {parsed:?}")
-                }
+                // A driver without a parser must say so rather than guess.
+                Err(DriverError::Unsupported { .. }) => {}
+                Err(other) => panic!("{name}: unexpected error {other}"),
             }
         }
     }
