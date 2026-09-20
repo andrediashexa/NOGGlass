@@ -205,6 +205,9 @@ pub enum OutcomeBody {
         /// How the two views line up. `unknown` when there is no global view.
         agreement: Agreement,
     },
+    BgpSummary {
+        result: looking_glass_core::driver::BgpSummaryResult,
+    },
     /// Output no parser could read yet, so the visitor still gets the answer.
     Raw { output: String, truncated: bool },
 }
@@ -219,6 +222,7 @@ impl From<Execution> for QueryResponse {
                 global: None,
                 agreement: Agreement::Unknown,
             },
+            QueryOutcome::BgpSummary(result) => OutcomeBody::BgpSummary { result },
             QueryOutcome::Raw { output, truncated } => OutcomeBody::Raw { output, truncated },
         };
         Self {

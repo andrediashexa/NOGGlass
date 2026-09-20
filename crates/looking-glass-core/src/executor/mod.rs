@@ -110,6 +110,7 @@ pub enum QueryOutcome {
     Ping(PingResult),
     Traceroute(TracerouteResult),
     BgpRoute(BgpRouteResult),
+    BgpSummary(crate::driver::BgpSummaryResult),
     /// Vendor output that has no parser yet, returned as text so the visitor
     /// still gets their answer.
     Raw {
@@ -344,9 +345,13 @@ impl Executor {
                 },
                 Err(other) => return Err(other.into()),
             },
-            QueryType::BgpSummary => QueryOutcome::Raw {
-                output: raw,
-                truncated,
+            QueryType::BgpSummary => match driver.parse_bgp_summary(&raw) {
+                Ok(result) => QueryOutcome::BgpSummary(result),
+                Err(DriverError::Unsupported { .. }) => QueryOutcome::Raw {
+                    output: raw,
+                    truncated,
+                },
+                Err(other) => return Err(other.into()),
             },
         };
 
@@ -373,10 +378,15 @@ impl Executor {
                 ))
             }
             (QueryType::BgpRoute, _) => QueryOutcome::BgpRoute(mock.bgp_route(target)),
-            (QueryType::BgpSummary, _) => QueryOutcome::Raw {
-                output: "Mock router — fabricated data\nNo BGP sessions.\n".to_string(),
-                truncated: false,
-            },
+            (QueryType::BgpSummary, _) => QueryOutcome::BgpSummary(
+                crate::summary::parse(
+                    "Mock router — fabricated data\n\
+                     BGP router identifier 192.0.2.1, local AS number 65001\n\
+                     192.0.2.254     4        65100   12345   12300       42    0    0 05:12:33      850000\n\
+                     192.0.2.253     4        65200    4321    4300       42    0    0 02:01:10          12\n\
+                     192.0.2.252     4        65300       0       0        0    0    0 never    Idle\n",
+                ),
+            ),
         })
     }
 }

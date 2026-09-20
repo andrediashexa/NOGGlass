@@ -35,11 +35,8 @@ impl VendorDriver for DatacomDriver {
         })
     }
 
-    fn parse_bgp_summary(&self, _raw: &str) -> Result<BgpSummaryResult, DriverError> {
-        // An empty peer list would read as "this router has no BGP sessions".
-        Err(DriverError::Unsupported {
-            vendor: self.vendor_name(),
-            query: "bgp_summary",
-        })
+    fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
+        // Shared reader: the tables differ in headers, not in what a row means.
+        Ok(crate::summary::parse(raw))
     }
 }

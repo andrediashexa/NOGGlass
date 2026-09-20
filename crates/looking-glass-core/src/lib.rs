@@ -5,6 +5,7 @@ pub mod global_view;
 pub mod inventory;
 pub mod ratelimit;
 pub mod rpki;
+pub mod summary;
 pub mod target;
 pub mod traceroute;
 pub mod vendors;
