@@ -10,14 +10,9 @@ impl VendorDriver for BirdDriver {
         "bird_routing_daemon"
     }
 
-    fn parse_ping(&self, _raw: &str) -> Result<PingResult, DriverError> {
-        // Previously returned a hardcoded 5/5 with 0% loss for any input, so a
-        // fully failing ping rendered as a perfect one. Until a real parser
-        // exists, say so.
-        Err(DriverError::Unsupported {
-            vendor: self.vendor_name(),
-            query: "ping",
-        })
+    fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
+        // BIRD runs on a Linux host, so this is iputils output.
+        crate::ping::parse(raw)
     }
 
     fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
