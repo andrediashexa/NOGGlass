@@ -142,6 +142,7 @@ function hidePanels() {
     "raw-panel",
     "global-panel",
     "hops-panel",
+    "sessions-panel",
   ]) {
     document.getElementById(id).hidden = true;
   }
@@ -191,6 +192,9 @@ function render(response) {
     renderGlobalView(response.agreement, response.global);
   } else if (response.kind === "raw") {
     renderRaw(response.result?.raw_output ?? response.output, response.truncated);
+  } else if (response.kind === "bgp_summary") {
+    renderRaw(response.result.raw_output, false);
+    renderSessions(response.result);
   } else if (response.kind === "traceroute") {
     renderRaw(response.result.raw_output, false);
     renderHops(response.result.hops);
@@ -285,6 +289,45 @@ function renderGlobalView(agreement, global) {
  * Renders the hop list. A hop that did not answer keeps its number and says so,
  * because where a traceroute stops is usually the answer someone came for.
  */
+/**
+ * Renders the session table. A session that is not established is coloured,
+ * because finding those is the whole reason this query exists.
+ */
+function renderSessions(summary) {
+  const meta = document.getElementById("sessions-meta");
+  const parts = [];
+  if (summary.router_id) parts.push(`${t("summary.router_id")}: ${summary.router_id}`);
+  if (summary.local_as != null) parts.push(`${t("summary.local_as")}: AS${summary.local_as}`);
+  meta.textContent = parts.join(" · ");
+
+  const body = document.querySelector("#sessions-table tbody");
+  body.replaceChildren();
+
+  for (const peer of summary.peers) {
+    const established = peer.state.toLowerCase() === "established";
+    const row = document.createElement("tr");
+    row.dataset.established = String(established);
+
+    const cells = [
+      peer.peer_ip,
+      `AS${peer.peer_as}`,
+      established ? t("summary.established") : peer.state,
+      peer.uptime || t("result.unknown"),
+      established ? String(peer.prefixes_received) : t("result.unknown"),
+    ];
+
+    for (const value of cells) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      if (value === t("result.unknown")) cell.className = "unknown";
+      row.appendChild(cell);
+    }
+    body.appendChild(row);
+  }
+
+  document.getElementById("sessions-panel").hidden = false;
+}
+
 function renderHops(hops) {
   if (!hops?.length) return;
 

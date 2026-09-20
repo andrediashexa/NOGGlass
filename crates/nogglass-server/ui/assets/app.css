@@ -198,3 +198,6 @@ footer a { color: var(--text-muted); }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 13px; }
 .facts dt { color: var(--text-muted); }
 .facts dd { margin: 0; font-family: var(--font-mono); }
+
+/* A session that is not established is the reason someone opened the page. */
+tr[data-established="false"] td { color: var(--accent-invalid); }
