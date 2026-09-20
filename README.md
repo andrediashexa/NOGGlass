@@ -21,6 +21,8 @@ RPKI state, route attributes and decoded communities. It is free software
 > a real router is compare what NOGGlass shows with what the CLI says, and open
 > an issue with the raw output when they differ.
 
+![The BGP route view: an AS-PATH graph with the best path solid and alternatives dashed, a path table, and the router output below](docs/design/screens/02-rota-bgp.png)
+
 ## Why another looking glass
 
 Most existing tools assume a single vendor, expose a shell-ish command box to
@@ -109,6 +111,7 @@ All documentation lives in [`docs/`](docs/), in English, following the
 | [Architecture overview](docs/architecture/overview.md) | Components, request flow and trust boundaries |
 | [Architecture decisions](docs/adr/) | Why the project looks like this |
 | [Versioning and releases](docs/process/versioning-and-releases.md) | How a merge becomes a release |
+| [Using NOGGlass](docs/wiki-outline.md) | What to do with it, once it runs |
 | [Contributing](CONTRIBUTING.md) | Issue, branch, commit and review rules |
 | [Security policy](SECURITY.md) | How to report a vulnerability |
 
@@ -120,8 +123,32 @@ curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/noggl
 docker compose up -d
 ```
 
-Then open `http://localhost:8080/`. The [deployment guide](docs/operations/deployment.md)
-covers the read-only router user, exposure and TLS, and upgrades.
+Then open `http://localhost:8080/`. Out of the box it serves a **mock router**
+with fabricated data, so you can see what it does before pointing it at
+anything real. When you are ready, replace that entry in `nogglass.toml` with
+your own routers — [read-only router users](docs/operations/router-users.md) has
+the account recipe per vendor, and the
+[deployment guide](docs/operations/deployment.md) covers exposure, TLS and
+upgrades.
+
+### A result is a link
+
+The query lives in the URL, so an answer can be pasted into a ticket:
+
+```
+https://lg.example.net/en/?router=edge-01&type=bgp_route&target=198.51.100.0/24
+```
+
+## What it looks like
+
+| | |
+|---|---|
+| ![RPKI invalid](docs/design/screens/03-rpki-invalido.png) | **RPKI invalid.** A possible hijack, in red, with the origin AS that claimed the prefix. |
+| ![Sessions](docs/design/screens/06-sessoes-bgp.png) | **Sessions.** The one that is down is the reason someone opened the page. |
+| ![Traceroute](docs/design/screens/05-traceroute.png) | **Traceroute.** A hop that did not answer keeps its number and says so. |
+
+More in [`docs/design/screens/`](docs/design/screens/), with the
+[interface brief](docs/design/interface-brief.md) that explains every state.
 
 ## License
 

@@ -44,6 +44,12 @@ flowchart LR
 |---|---|
 | [Overview](architecture/overview.md) | Components, request flow and trust boundaries |
 
+## Using it
+
+| Document | Purpose |
+|---|---|
+| [Wiki outline](wiki-outline.md) | The pages that teach use, what each answers, and when each is done |
+
 ## Operations
 
 | Document | Purpose |
