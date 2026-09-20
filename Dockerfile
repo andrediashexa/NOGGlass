@@ -71,8 +71,8 @@ RUN set -eux; \
     touch crates/*/src/*.rs; \
     target="$(cat /rust-target)"; \
     cargo zigbuild --release --workspace --target "$target"; \
-    strip "target/$target/release/nogglass"; \
-    cp "target/$target/release/nogglass" /nogglass
+    cp "target/$target/release/nogglass" /nogglass; \
+    ls -lh /nogglass
 
 FROM alpine:3.21
 
