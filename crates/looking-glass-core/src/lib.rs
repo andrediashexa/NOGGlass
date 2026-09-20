@@ -2,6 +2,7 @@ pub mod catalogue;
 pub mod driver;
 pub mod executor;
 pub mod inventory;
+pub mod rpki;
 pub mod target;
 pub mod vendors;
 
@@ -13,6 +14,7 @@ pub use driver::{
 };
 pub use executor::{Execution, ExecutionError, Executor, QueryOutcome, Transport};
 pub use inventory::{Credentials, Inventory, InventoryError, Limits, PublicRouter, Router};
+pub use rpki::{RpkiConfig, Validator, ValidityCache};
 pub use target::{parse_target, QueryLimits, TargetError, MAX_TARGET_LEN};
 pub use vendors::*;
 

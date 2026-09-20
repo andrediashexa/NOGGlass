@@ -66,3 +66,22 @@ name = "Demo router"
 vendor = "mock"
 host = "127.0.0.1"
 location = "Fixtures"
+
+# ---------------------------------------------------------------------------
+# RPKI validation (ADR-0010).
+#
+# Tier 1 is whatever your router reported: if it has an RTR session, its answer
+# is used and nothing leaves your network.
+#
+# Tier 2 fills the blanks for routers that report nothing. It is OFF by default.
+# With enable_fallback and no validator_url, NOGGlass asks RIPEstat, which means
+# the queried prefix and origin AS leave your network — mention it in your
+# privacy notice, or point validator_url at your own validator.
+# ---------------------------------------------------------------------------
+
+[rpki]
+enable_fallback = false
+# validator_url = "http://routinator.internal:8323"
+timeout_ms = 1000
+cache_ttl_secs = 3600
+cache_max_capacity = 50000

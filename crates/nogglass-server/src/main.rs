@@ -92,11 +92,27 @@ async fn run() -> Result<(), String> {
 
     let inventory = Arc::new(inventory);
     let transport: Arc<dyn Transport> = Arc::new(SshTransport::default());
-    let executor = Arc::new(Executor::new(
-        inventory.clone(),
-        Arc::new(BUILTIN.clone()),
-        transport,
-    ));
+    let mut executor = Executor::new(inventory.clone(), Arc::new(BUILTIN.clone()), transport);
+
+    let rpki = inventory.rpki.to_config();
+    if !matches!(
+        rpki.validator,
+        looking_glass_core::rpki::Validator::Disabled
+    ) {
+        info!(validator = ?rpki.validator, "RPKI fallback enabled");
+        if matches!(
+            rpki.validator,
+            looking_glass_core::rpki::Validator::RipeStat
+        ) {
+            warn!(
+                "RPKI fallback uses RIPEstat: queried prefixes and origin AS numbers \
+                 leave this network. Say so in your privacy notice, or configure \
+                 validator_url to point at your own validator."
+            );
+        }
+        executor = executor.with_rpki(Arc::new(looking_glass_core::rpki::Enricher::new(rpki)));
+    }
+    let executor = Arc::new(executor);
 
     let app = api::routes(AppState {
         executor,
