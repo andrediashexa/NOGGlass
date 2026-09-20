@@ -6,6 +6,7 @@
 //! answers visitors with surprises.
 
 mod api;
+mod ui;
 
 use api::{AppState, VersionInfo};
 use looking_glass_core::catalogue::BUILTIN;
@@ -102,6 +103,7 @@ async fn run() -> Result<(), String> {
         inventory,
         version,
     })
+    .merge(ui::routes())
     .layer(tower_http::trace::TraceLayer::new_for_http())
     .layer(tower_http::compression::CompressionLayer::new());
 
