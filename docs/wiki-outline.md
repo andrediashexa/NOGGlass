@@ -173,3 +173,9 @@ The repository wiki is disabled. Two ways to change that:
 The second fits the project's rules better. The first is easier for a
 contributor who is not a developer, which is exactly who writes good
 documentation for pages 1 to 6.
+
+**Decided: both.** The pages live in `docs/wiki/`, reviewed and linted, and
+`scripts/publish-wiki.sh` mirrors them to the GitHub wiki. The mirror is
+generated, so an edit made in the wiki is replaced rather than merged — which
+keeps one source of truth while still giving a non-developer a page to read.
+The script cannot run yet: a wiki in a private repository needs a paid plan.
