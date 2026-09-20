@@ -196,13 +196,7 @@ pub struct Enricher {
 
 impl Enricher {
     pub fn new(config: RpkiConfig) -> Self {
-        // rustls is built without a default provider so that ring is the only
-        // crypto backend in the binary; it has to be installed once, and
-        // installing it twice is not an error worth failing over.
-        static PROVIDER: std::sync::Once = std::sync::Once::new();
-        PROVIDER.call_once(|| {
-            let _ = rustls::crypto::ring::default_provider().install_default();
-        });
+        crate::install_crypto_provider();
 
         let client = reqwest::Client::builder()
             .timeout(config.timeout)

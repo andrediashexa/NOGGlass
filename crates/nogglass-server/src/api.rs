@@ -14,6 +14,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router as AxumRouter};
 use looking_glass_core::driver::QueryType;
 use looking_glass_core::executor::{Execution, ExecutionError, Executor, QueryOutcome};
+use looking_glass_core::global_view::{self, Agreement, GlobalView, GlobalViewLookup};
 use looking_glass_core::inventory::{Inventory, PublicRouter};
 use looking_glass_core::ratelimit::{ClientAddress, ClientKey, Decision, RateLimiter};
 use looking_glass_core::target::{parse_target, TargetError};
@@ -32,6 +33,8 @@ pub struct AppState {
     pub version: VersionInfo,
     /// Absent when the operator turned rate limiting off.
     pub limiter: Option<Arc<RateLimiter>>,
+    /// Compares the router answer with what the Internet announces.
+    pub global_view: Arc<GlobalViewLookup>,
     /// Decides which address a request is counted against.
     pub client_address: Arc<ClientAddress>,
 }
@@ -195,6 +198,12 @@ pub enum OutcomeBody {
     },
     BgpRoute {
         result: looking_glass_core::driver::BgpRouteResult,
+        /// What the Internet announces for the same prefix, when the operator
+        /// enabled the comparison and the lookup answered in time.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        global: Option<GlobalView>,
+        /// How the two views line up. `unknown` when there is no global view.
+        agreement: Agreement,
     },
     /// Output no parser could read yet, so the visitor still gets the answer.
     Raw { output: String, truncated: bool },
@@ -205,7 +214,11 @@ impl From<Execution> for QueryResponse {
         let outcome = match execution.outcome {
             QueryOutcome::Ping(result) => OutcomeBody::Ping { result },
             QueryOutcome::Traceroute(result) => OutcomeBody::Traceroute { result },
-            QueryOutcome::BgpRoute(result) => OutcomeBody::BgpRoute { result },
+            QueryOutcome::BgpRoute(result) => OutcomeBody::BgpRoute {
+                result,
+                global: None,
+                agreement: Agreement::Unknown,
+            },
             QueryOutcome::Raw { output, truncated } => OutcomeBody::Raw { output, truncated },
         };
         Self {
@@ -215,6 +228,37 @@ impl From<Execution> for QueryResponse {
             outcome,
         }
     }
+}
+
+/// Adds the global view to a BGP answer, when the operator enabled it.
+///
+/// Runs after the router answered and never fails the query: an unreachable
+/// RIPEstat leaves the comparison `unknown`, which the interface renders as
+/// "global view unavailable".
+async fn add_global_view(state: &AppState, response: &mut QueryResponse) {
+    if !state.global_view.is_enabled() {
+        return;
+    }
+    let OutcomeBody::BgpRoute {
+        result,
+        global,
+        agreement,
+    } = &mut response.outcome
+    else {
+        return;
+    };
+
+    let Some(prefix) = result.paths.iter().find_map(|path| path.prefix) else {
+        return;
+    };
+    let router_origin = result
+        .best()
+        .or_else(|| result.paths.first())
+        .and_then(|path| path.origin_as());
+
+    let view = state.global_view.fetch(prefix).await;
+    *agreement = global_view::compare(router_origin, view.as_ref());
+    *global = view;
 }
 
 async fn run_query(
@@ -235,7 +279,10 @@ async fn run_query(
         .executor
         .execute(&request.router, request.query_type, &target)
         .await?;
-    Ok(Json(execution.into()))
+
+    let mut response: QueryResponse = execution.into();
+    add_global_view(&state, &mut response).await;
+    Ok(Json(response))
 }
 
 /// The same query, as a stream of events.
@@ -282,7 +329,9 @@ async fn stream_query(
                 .executor
                 .execute(&request.router, request.query_type, &target)
                 .await?;
-            Ok::<QueryResponse, ApiError>(execution.into())
+            let mut response: QueryResponse = execution.into();
+            add_global_view(&state, &mut response).await;
+            Ok::<QueryResponse, ApiError>(response)
         }
         .await;
 
@@ -439,12 +488,18 @@ queries = ["bgp_route"]
             .enabled
             .then(|| Arc::new(RateLimiter::new(inventory.rate_limit.to_limit())));
 
+        let global_view = Arc::new(GlobalViewLookup::new(
+            inventory.global_view.enabled,
+            Duration::from_millis(inventory.global_view.timeout_ms),
+        ));
+
         routes(AppState {
             executor,
             inventory,
             version: VersionInfo::from_build(),
             limiter,
             client_address: Arc::new(client_address),
+            global_view,
         })
     }
 

@@ -135,7 +135,7 @@ function showError(code, message) {
 }
 
 function hidePanels() {
-  for (const id of ["error", "graph-panel", "paths-panel", "raw-panel"]) {
+  for (const id of ["error", "graph-panel", "paths-panel", "raw-panel", "global-panel"]) {
     document.getElementById(id).hidden = true;
   }
 }
@@ -181,6 +181,7 @@ function render(response) {
 
   if (response.kind === "bgp_route") {
     renderBgp(response.result);
+    renderGlobalView(response.agreement, response.global);
   } else if (response.kind === "raw") {
     renderRaw(response.result?.raw_output ?? response.output, response.truncated);
   } else {
@@ -216,6 +217,58 @@ function renderBgp(result) {
 
   renderTable(result.paths);
   renderGraph(result.paths);
+}
+
+/**
+ * Shows what the Internet announces next to what the router answered.
+ *
+ * Absent when the operator did not enable the comparison; "unavailable" when
+ * the lookup failed, which is not the same as agreement and must not read like
+ * it.
+ */
+function renderGlobalView(agreement, global) {
+  if (!agreement) return;
+
+  const panel = document.getElementById("global-panel");
+  const verdict = document.getElementById("global-verdict");
+  const facts = document.getElementById("global-facts");
+  facts.replaceChildren();
+
+  const messages = {
+    agrees: "global.agrees",
+    not_announced_globally: "global.not_announced",
+    not_seen_by_router: "global.not_seen_by_router",
+    origin_mismatch: "global.mismatch",
+    unknown: "global.unavailable",
+  };
+
+  // A comparison that was never asked for should not claim to be unavailable.
+  if (agreement.state === "unknown" && !global) {
+    panel.hidden = true;
+    return;
+  }
+
+  verdict.textContent = t(messages[agreement.state] ?? "global.unavailable");
+  verdict.className = `verdict verdict-${agreement.state === "origin_mismatch" ? "mismatch" : agreement.state}`;
+
+  const rows = [];
+  if (agreement.global_origins?.length) {
+    rows.push([t("global.origins"), agreement.global_origins.map((a) => `AS${a}`).join(", ")]);
+  } else if (global?.origins?.length) {
+    rows.push([t("global.origins"), global.origins.map((a) => `AS${a}`).join(", ")]);
+  }
+  if (global?.visibility != null) rows.push([t("global.visibility"), String(global.visibility)]);
+  if (global?.more_specifics) rows.push([t("global.more_specifics"), String(global.more_specifics)]);
+
+  for (const [label, value] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    facts.append(dt, dd);
+  }
+
+  panel.hidden = false;
 }
 
 function renderTable(paths) {

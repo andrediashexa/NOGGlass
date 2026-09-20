@@ -182,6 +182,11 @@ commands the vendor driver would send, so you can read them first.
 - **RPKI fallback is off by default.** Turning it on without `validator_url`
   sends queried prefixes to RIPEstat; say so in your privacy notice or point it
   at your own validator.
+- **The global view is off by default** for the same reason. Enabled, it shows
+  what the Internet announces beside what your router answered, so a prefix that
+  never propagated, an origin that does not match, or a more specific announced
+  inside your space becomes visible in the interface. A failed lookup reads as
+  "global view unavailable", never as agreement.
 - **Logs** go to stdout. `docker compose logs -f nogglass`, or your journal for
   the plain binary.
 
