@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/andrediashexa/looking-glass/compare/v0.4.2...v0.5.0) (2026-09-20)
+
+
+### Features
+
+* **docs:** serve the documentation as a site in a container ([#104](https://github.com/andrediashexa/looking-glass/issues/104)) ([d790ba1](https://github.com/andrediashexa/looking-glass/commit/d790ba1c070e9e9670b556d34147b7c9e9a85d0c))
+* **web:** run a query from a link, and capture the screens ([#96](https://github.com/andrediashexa/looking-glass/issues/96)) ([608aa2e](https://github.com/andrediashexa/looking-glass/commit/608aa2e9a9efaf7e92300fbc1281cde09ce417a4))
+
+
+### Documentation
+
+* **design:** describe the interface and capture a payload per state ([4bbfd3a](https://github.com/andrediashexa/looking-glass/commit/4bbfd3a52c40add01b2cae559450205339ff6007))
+* show the product in the README and outline a wiki for using it ([#98](https://github.com/andrediashexa/looking-glass/issues/98)) ([0227f25](https://github.com/andrediashexa/looking-glass/commit/0227f25590df6b8d670601de77c6b2b9494bb633))
+* **wiki:** write the ten pages that teach using NOGGlass ([#100](https://github.com/andrediashexa/looking-glass/issues/100)) ([d352349](https://github.com/andrediashexa/looking-glass/commit/d3523498de100fb097ec5d0279b146de1cd454ea))
+
+
+### Chores
+
+* **docs:** generate the GitHub wiki from docs/wiki ([#102](https://github.com/andrediashexa/looking-glass/issues/102)) ([2094e05](https://github.com/andrediashexa/looking-glass/commit/2094e05d73c50c34c2acfb2eb85e95d804e5ea56))
+
 ## [0.4.2](https://github.com/andrediashexa/looking-glass/compare/v0.4.1...v0.4.2) (2026-09-20)
 
 
