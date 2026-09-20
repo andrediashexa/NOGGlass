@@ -1,5 +1,6 @@
 pub mod catalogue;
 pub mod driver;
+pub mod inventory;
 pub mod target;
 pub mod vendors;
 
@@ -9,6 +10,7 @@ pub use driver::{
     Completeness, DriverError, Origin, PingResult, QueryTarget, QueryType, RpkiSource, RpkiStatus,
     RpkiValidation, TracerouteHop, TracerouteResult, VendorDriver,
 };
+pub use inventory::{Credentials, Inventory, InventoryError, Limits, PublicRouter, Router};
 pub use target::{parse_target, QueryLimits, TargetError, MAX_TARGET_LEN};
 pub use vendors::*;
 

@@ -1,0 +1,68 @@
+# NOGGlass configuration.
+#
+# Copy this file to /etc/nogglass/nogglass.toml and edit it. NOGGlass validates
+# it at startup and refuses to run if it does not understand it: a Looking Glass
+# that starts with a broken inventory would answer visitors with surprises.
+#
+# This file carries NO secrets. Passwords and key passphrases are named here and
+# read from the environment, so the file itself can live in version control.
+
+[limits]
+# Wall-clock budget for one command, in seconds.
+timeout_secs = 30
+# Router output kept per query. Anything past this is dropped and the answer is
+# flagged as truncated; a legitimate single-prefix answer is kilobytes.
+max_output_bytes = 262144
+# Probes per ping. Clamped to 20 whatever is configured here.
+ping_count = 5
+# Queries that may run at once against one router. Keep this low: the CPU you
+# are spending belongs to a production control plane.
+max_concurrent_per_router = 2
+# Queries that may run at once across the whole instance.
+max_concurrent_total = 16
+
+# ---------------------------------------------------------------------------
+# Routers. One [[router]] block each.
+#
+#   id          stable, appears in URLs — do not change it after publishing
+#   name        what visitors see
+#   vendor      one of: huawei_vrp, cisco_iosxe, cisco_iosxr, juniper_junos,
+#               nokia_sros, mikrotik_routeros, datacom_dmos,
+#               bird_routing_daemon, mock
+#   host        management address; never shown to visitors
+#   username    the read-only user you created for NOGGlass
+#   credentials password_env = "VAR", or key_file = { path = "...",
+#               passphrase_env = "VAR" }
+#   location    grouping in the selector, usually a POP or a city
+#   queries     which queries this router answers; omit to allow every query
+#               its vendor supports
+# ---------------------------------------------------------------------------
+
+[[router]]
+id = "edge-01"
+name = "Edge 01"
+vendor = "huawei_vrp"
+host = "192.0.2.10"
+username = "nogglass"
+location = "Sao Paulo"
+credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
+queries = ["ping", "traceroute", "bgp_route", "bgp_summary"]
+
+[[router]]
+id = "border-02"
+name = "Border 02"
+vendor = "juniper_junos"
+host = "192.0.2.11"
+username = "nogglass"
+location = "Rio de Janeiro"
+credentials = { key_file = { path = "/etc/nogglass/keys/border-02", passphrase_env = "NOGGLASS_BORDER02_PASSPHRASE" } }
+
+# The mock router answers from fixtures and never opens a session. Useful for
+# trying NOGGlass out, and for a public demo. Its answers are fabricated and the
+# interface says so.
+[[router]]
+id = "demo"
+name = "Demo router"
+vendor = "mock"
+host = "127.0.0.1"
+location = "Fixtures"
