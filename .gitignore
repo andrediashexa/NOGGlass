@@ -40,3 +40,7 @@ logs/
 # Captures from the lab. What gets committed is the driver test written from
 # a capture, not the raw text: fixtures live beside the parser they exercise.
 lab/captured/
+
+# containerlab runtime state: generated on deploy, and it contains a CA key
+# and authorized_keys. Nothing here is source.
+lab/clab-nogglass/

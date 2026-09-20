@@ -44,6 +44,7 @@ topology:
       binds:
         - conf/peer-a/frr.conf:/etc/frr/frr.conf
         - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
       sysctls:
         net.ipv4.ip_forward: "1"
         net.ipv6.conf.all.forwarding: "1"
@@ -52,6 +53,7 @@ topology:
       binds:
         - conf/peer-b/frr.conf:/etc/frr/frr.conf
         - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
       sysctls:
         net.ipv4.ip_forward: "1"
         net.ipv6.conf.all.forwarding: "1"
@@ -60,6 +62,25 @@ topology:
       binds:
         - conf/peer-c/frr.conf:/etc/frr/frr.conf
         - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+        # This hop does not answer traceroute. Not a trick: real routers rate
+        # limit ICMP errors and many operators silence them entirely, which is
+        # why a silent hop in the middle of a working path is the single most
+        # misread output in networking. One ICMP error every 2000 seconds is
+        # silence for any traceroute, and the path still works — which is
+        # exactly the case the parser has to keep numbered.
+        net.ipv4.icmp_ratelimit: "2000000"
+        net.ipv6.icmp.ratelimit: "2000000"
+
+    # The destination behind peer-c, so a traceroute has a middle.
+    far:
+      binds:
+        - conf/far/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
       sysctls:
         net.ipv4.ip_forward: "1"
         net.ipv6.conf.all.forwarding: "1"
@@ -101,6 +122,7 @@ topology:
       binds:
         - conf/dut-frr/frr.conf:/etc/frr/frr.conf
         - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
       sysctls:
         net.ipv4.ip_forward: "1"
         net.ipv6.conf.all.forwarding: "1"
@@ -111,3 +133,4 @@ topology:
     - endpoints: ["dut:eth3", "peer-c:eth1"]
     - endpoints: ["peer-a:eth2", "peer-c:eth2"]
     - endpoints: ["peer-b:eth2", "peer-c:eth3"]
+    - endpoints: ["peer-c:eth4", "far:eth1"]

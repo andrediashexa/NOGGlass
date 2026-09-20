@@ -27,8 +27,8 @@ OUT_ROOT="captured"
 
 # Targets that exist in this lab. A capture against anything else produces
 # output that says "no route", which teaches a parser nothing.
-TARGET_V4="203.0.113.3"
-TARGET_V6="2001:db8:beef::3"
+TARGET_V4="203.0.113.10"
+TARGET_V6="2001:db8:beef:f::10"
 PREFIX_V4="203.0.113.0/24"
 PREFIX_V6="2001:db8:beef::/48"
 # The aggregate with the AS_SET, which is the interesting one.
