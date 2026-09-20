@@ -101,8 +101,11 @@ becomes public or the account gains that capability. Until then, pushing to
 
 ## 6. Releases
 
-Every merge into `main` produces a release automatically. The rules are
-described in [versioning and releases](docs/process/versioning-and-releases.md).
+Every merge into `main` produces a tag `vMAJOR.MINOR.PATCH` and a GitHub
+release automatically — documentation and tooling changes included. A patch
+release is published as a **pre-release**; minor and major releases are full
+releases (ADR-0014). The rules are described in
+[versioning and releases](docs/process/versioning-and-releases.md).
 Contributors do not edit `version.txt` or `CHANGELOG.md` by hand.
 
 ## 7. Documentation

@@ -1,10 +1,14 @@
 # ADR-0003 — Conventional Commits and automated releases
 
-- **Status:** Accepted
+- **Status:** Accepted; the release scope is superseded by [ADR-0014](0014-release-every-change-with-patch-prereleases.md)
 - **Date:** 2026-09-17
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
+
+> **Partly superseded.** ADR-0014 changed what gets released: every merge is now
+> tagged and released, documentation included, and patch releases are published
+> as pre-releases. Everything else below still holds.
 
 Pull request titles follow Conventional Commits, merges are squash-only, and
 `release-please` turns them into version bumps, a changelog, a tag and a GitHub

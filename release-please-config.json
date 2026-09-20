@@ -28,23 +28,27 @@
         },
         {
           "type": "docs",
-          "section": "Documentation",
-          "hidden": true
-        },
-        {
-          "type": "chore",
-          "section": "Chores",
-          "hidden": true
-        },
-        {
-          "type": "ci",
-          "section": "CI",
-          "hidden": true
+          "section": "Documentation"
         },
         {
           "type": "test",
-          "section": "Tests",
-          "hidden": true
+          "section": "Tests"
+        },
+        {
+          "type": "build",
+          "section": "Build"
+        },
+        {
+          "type": "ci",
+          "section": "CI"
+        },
+        {
+          "type": "style",
+          "section": "Style"
+        },
+        {
+          "type": "chore",
+          "section": "Chores"
         }
       ],
       "initial-version": "0.1.0",
