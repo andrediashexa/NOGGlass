@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.1](https://github.com/andrediashexa/looking-glass/compare/v0.4.0...v0.4.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **infra:** strip at link time so the arm64 build completes ([#89](https://github.com/andrediashexa/looking-glass/issues/89)) ([da811f1](https://github.com/andrediashexa/looking-glass/commit/da811f163feb983333839765172a37ae0cdf3dbd))
+
+
+### Documentation
+
+* **readme:** describe the product as it is now ([#87](https://github.com/andrediashexa/looking-glass/issues/87)) ([96122ab](https://github.com/andrediashexa/looking-glass/commit/96122abd474c37a33332825061fa65bb99939dcb))
+
 ## [0.4.0](https://github.com/andrediashexa/looking-glass/compare/v0.3.0...v0.4.0) (2026-09-20)
 
 
