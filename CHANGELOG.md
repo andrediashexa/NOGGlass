@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.2.0](https://github.com/andrediashexa/looking-glass/compare/v0.1.0...v0.2.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** normalise the BGP path model per ADR-0006 ([#52](https://github.com/andrediashexa/looking-glass/issues/52))
+
+### Features
+
+* **api:** normalise the BGP path model per ADR-0006 ([#52](https://github.com/andrediashexa/looking-glass/issues/52)) ([b32301e](https://github.com/andrediashexa/looking-glass/commit/b32301eff20ca9ca02e465dde02bdb53e69bf91c))
+* **api:** serve the query API from an Axum server ([#58](https://github.com/andrediashexa/looking-glass/issues/58)) ([29ba121](https://github.com/andrediashexa/looking-glass/commit/29ba1219a90c03585401ffc33dc58bbc18424e9e))
+* **api:** validate RPKI in two tiers with the router first ([#62](https://github.com/andrediashexa/looking-glass/issues/62)) ([8a02b2e](https://github.com/andrediashexa/looking-glass/commit/8a02b2e0732449414d88ce58b4a76f57a11d3d6f))
+* **api:** validate the router inventory at startup ([#56](https://github.com/andrediashexa/looking-glass/issues/56)) ([987bc01](https://github.com/andrediashexa/looking-glass/commit/987bc0112695b9c58f55da800e118e04f9b9fbb6))
+* **executor:** move router commands into a data catalogue ([#53](https://github.com/andrediashexa/looking-glass/issues/53)) ([4ae142d](https://github.com/andrediashexa/looking-glass/commit/4ae142df3d2254f3f8475fd600424c86293dd6ea))
+* **executor:** run queries over SSH with limits and a mock path ([#57](https://github.com/andrediashexa/looking-glass/issues/57)) ([81c5c3b](https://github.com/andrediashexa/looking-glass/commit/81c5c3ba99580ee152d74bfa695e5418ab0dc9f5))
+* **executor:** validate query targets and cap query output ([#50](https://github.com/andrediashexa/looking-glass/issues/50)) ([d13ef01](https://github.com/andrediashexa/looking-glass/commit/d13ef01c09b6a5c9faea4bee5aa97ab7446f6e1b))
+* **infra:** ship a container image and document deployment ([#63](https://github.com/andrediashexa/looking-glass/issues/63)) ([c9b14a3](https://github.com/andrediashexa/looking-glass/commit/c9b14a3aa6a8831280e8a679de2565e66c568283))
+* **vendor:** add a mock router with documentation-range fixtures ([#55](https://github.com/andrediashexa/looking-glass/issues/55)) ([ee85734](https://github.com/andrediashexa/looking-glass/commit/ee85734235c291ce4ea54fdb5207d892300d9247))
+* **web:** embed the interface in the binary, in three languages ([#61](https://github.com/andrediashexa/looking-glass/issues/61)) ([4234743](https://github.com/andrediashexa/looking-glass/commit/4234743fc07d3e0d5f2541581d6be8f01b1fb950))
+
+
+### Bug Fixes
+
+* **vendor:** read Huawei VRP fields by type instead of column position ([#54](https://github.com/andrediashexa/looking-glass/issues/54)) ([db7bf37](https://github.com/andrediashexa/looking-glass/commit/db7bf37d892e08fa098d36f08622fd17ea58a9fd))
+
+
+### Documentation
+
+* **adr:** accept the design system and the tiered RPKI validation ([#49](https://github.com/andrediashexa/looking-glass/issues/49)) ([c5ca7b4](https://github.com/andrediashexa/looking-glass/commit/c5ca7b433ef56549c20761f492eb1bbb54cfc72b))
+* **adr:** release every change and flag patch releases as pre-releases ([#60](https://github.com/andrediashexa/looking-glass/issues/60)) ([ade2899](https://github.com/andrediashexa/looking-glass/commit/ade28990ddd41f8e20b5718504e095e80a04db0d))
+* **operations:** quote the memory figure that was actually measured ([#65](https://github.com/andrediashexa/looking-glass/issues/65)) ([bea748f](https://github.com/andrediashexa/looking-glass/commit/bea748fa0faa43c1ccddd824e1ca2762f75063f4))
+
+
+### Chores
+
+* **ci:** drop the component prefix from release tags ([#45](https://github.com/andrediashexa/looking-glass/issues/45)) ([2153931](https://github.com/andrediashexa/looking-glass/commit/2153931938bfc770b9497fabd85a560c2d3e0908))
+
 ## 0.1.0 (2026-09-20)
 
 
