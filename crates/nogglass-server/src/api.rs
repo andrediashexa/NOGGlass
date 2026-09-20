@@ -12,7 +12,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router as AxumRouter};
-use looking_glass_core::driver::QueryType;
+use looking_glass_core::driver::{QueryTarget, QueryType};
 use looking_glass_core::executor::{Execution, ExecutionError, Executor, QueryOutcome};
 use looking_glass_core::global_view::{self, Agreement, GlobalView, GlobalViewLookup};
 use looking_glass_core::inventory::{Inventory, PublicRouter};
@@ -235,7 +235,7 @@ impl From<Execution> for QueryResponse {
 /// Runs after the router answered and never fails the query: an unreachable
 /// RIPEstat leaves the comparison `unknown`, which the interface renders as
 /// "global view unavailable".
-async fn add_global_view(state: &AppState, response: &mut QueryResponse) {
+async fn add_global_view(state: &AppState, target: &QueryTarget, response: &mut QueryResponse) {
     if !state.global_view.is_enabled() {
         return;
     }
@@ -248,8 +248,15 @@ async fn add_global_view(state: &AppState, response: &mut QueryResponse) {
         return;
     };
 
-    let Some(prefix) = result.paths.iter().find_map(|path| path.prefix) else {
-        return;
+    // Falling back to the queried prefix matters: with no route at all there is
+    // no path to take a prefix from, and "the Internet announces this and your
+    // router does not see it" is exactly the verdict that case needs.
+    let prefix = match result.paths.iter().find_map(|path| path.prefix) {
+        Some(prefix) => prefix,
+        None => match target {
+            QueryTarget::Prefix(prefix) => *prefix,
+            _ => return,
+        },
     };
     let router_origin = result
         .best()
@@ -281,7 +288,7 @@ async fn run_query(
         .await?;
 
     let mut response: QueryResponse = execution.into();
-    add_global_view(&state, &mut response).await;
+    add_global_view(&state, &target, &mut response).await;
     Ok(Json(response))
 }
 
@@ -330,7 +337,7 @@ async fn stream_query(
                 .execute(&request.router, request.query_type, &target)
                 .await?;
             let mut response: QueryResponse = execution.into();
-            add_global_view(&state, &mut response).await;
+            add_global_view(&state, &target, &mut response).await;
             Ok::<QueryResponse, ApiError>(response)
         }
         .await;
@@ -655,6 +662,51 @@ name = "Demo router"
 vendor = "mock"
 host = "192.0.2.200"
 "#;
+
+    /// With no route there is no path to take a prefix from, so the comparison
+    /// used to be skipped — losing the one verdict that case needs.
+    #[tokio::test]
+    async fn a_prefix_the_router_does_not_know_still_gets_compared() {
+        let inventory = Arc::new(Inventory::from_toml(INVENTORY).unwrap());
+        let executor = Arc::new(Executor::new(
+            inventory.clone(),
+            Arc::new(BUILTIN.clone()),
+            Arc::new(NoTransport),
+        ));
+        let state = AppState {
+            executor,
+            inventory,
+            version: VersionInfo::from_build(),
+            limiter: None,
+            client_address: Arc::new(ClientAddress::default()),
+            // Disabled, so the test makes no network call: what is asserted is
+            // that the prefix is resolved, not what RIPEstat would say.
+            global_view: Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1))),
+        };
+
+        let target = parse_target("203.0.113.0/24").unwrap();
+        let mut response = QueryResponse {
+            router: "demo".into(),
+            command: "show bgp 203.0.113.0/24".into(),
+            duration_ms: 0,
+            outcome: OutcomeBody::BgpRoute {
+                result: looking_glass_core::driver::BgpRouteResult::new(Vec::new(), "% no route"),
+                global: None,
+                agreement: Agreement::Unknown,
+            },
+        };
+
+        add_global_view(&state, &target, &mut response).await;
+
+        // The lookup is off, so the verdict stays unknown — but reaching it at
+        // all is the fix: before, the function returned before looking.
+        match response.outcome {
+            OutcomeBody::BgpRoute { agreement, .. } => {
+                assert_eq!(agreement, Agreement::Unknown);
+            }
+            other => panic!("expected a BGP outcome, got {other:?}"),
+        }
+    }
 
     #[tokio::test]
     async fn a_visitor_past_their_allowance_is_refused_with_a_retry_after() {
