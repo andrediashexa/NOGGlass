@@ -57,6 +57,79 @@ jobs:
             echo "$TAG is a minor or major release; leaving it as a full release."
           fi
 
+  docs-image:
+    name: Build and publish the documentation image
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The documentation is released with the software it documents: an
+      # operator running v0.5.0 can read the pages that shipped with it, not a
+      # newer set describing options their binary does not have.
+      - name: Work out the image tags
+        id: tags
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          PATCH: ${{ needs.release-please.outputs.patch }}
+          MANUAL_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          image=ghcr.io/${{ github.repository_owner }}/nogglass-docs
+          version="${VERSION:-${MANUAL_TAG#v}}"
+          patch="${PATCH:-${version##*.}}"
+          minor=${version%.*}
+          tags="$image:$version,$image:$minor"
+          if [ "$patch" = "0" ]; then
+            tags="$tags,$image:latest"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.docs
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=docs
+          cache-to: type=gha,mode=max,scope=docs
+
+      - name: Start the image and check it serves a page
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/nogglass-docs:${{ steps.tags.outputs.version }}
+        run: |
+          docker run -d --name docs-smoke -p 8081:8081 "$IMAGE"
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8081/ >/dev/null 2>&1; then
+              # The wiki is the reason this image exists; check a page of it
+              # rather than only the index.
+              curl -fsS http://127.0.0.1:8081/wiki/ >/dev/null
+              echo "The documentation image starts and serves the wiki."
+              docker rm -f docs-smoke >/dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The documentation image did not answer within a minute."
+          docker logs docs-smoke || true
+          docker rm -f docs-smoke >/dev/null || true
+          exit 1
+
   image:
     name: Build and publish the container image
     needs: release-please

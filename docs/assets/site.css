@@ -1,0 +1,26 @@
+/* Typography for the documentation site.
+ *
+ * The theme would fetch Roboto from Google's servers. It does not here — see
+ * `font: false` in mkdocs.yml — so the families are named explicitly instead of
+ * left to a fallback chain that resolves to whatever a machine happens to have.
+ * Every name below is either a system font or one already installed on a
+ * typical Linux, macOS or Windows host. Nothing is downloaded. */
+
+:root,
+body {
+  /* Named families rather than `system-ui`: on a minimal Linux install
+   * `system-ui` can resolve to whatever font is first, monospace included. */
+  --md-text-font:
+    -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Liberation Sans",
+    "DejaVu Sans", Arial, sans-serif;
+  --md-code-font:
+    SFMono-Regular, "JetBrains Mono", "Fira Mono", Consolas,
+    "Liberation Mono", "DejaVu Sans Mono", monospace;
+}
+
+/* Screenshots of the interface are dark and edge to edge; a border stops them
+ * bleeding into the page background on the dark palette. */
+.md-typeset img[src*="/screens/"] {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 2px;
+}

@@ -48,5 +48,5 @@ scripts/publish-wiki.sh             # publish, once the wiki exists
 ## Elsewhere
 
 Installing and configuring is in [operations](../operations/deployment.md); the
-reasoning behind the product is in the [decisions](../adr/). Neither is repeated
+reasoning behind the product is in the [decisions](../adr/README.md). Neither is repeated
 here — a fact kept in two places becomes wrong in one of them.

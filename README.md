@@ -103,7 +103,14 @@ flowchart TB
 ## Documentation
 
 All documentation lives in [`docs/`](docs/), in English, following the
-[documentation standard](docs/process/documentation-standard.md).
+[documentation standard](docs/process/documentation-standard.md). It is also a
+container: `ghcr.io/andrediashexa/nogglass-docs` serves the whole set as a
+searchable site on port 8081, offline, beside the looking glass itself — see
+[running the documentation site](docs/operations/documentation-site.md).
+
+```bash
+docker run -d -p 8081:8081 ghcr.io/andrediashexa/nogglass-docs:latest
+```
 
 | Document | Purpose |
 |---|---|
@@ -112,6 +119,7 @@ All documentation lives in [`docs/`](docs/), in English, following the
 | [Architecture decisions](docs/adr/) | Why the project looks like this |
 | [Versioning and releases](docs/process/versioning-and-releases.md) | How a merge becomes a release |
 | [Using NOGGlass](docs/wiki/) | Reading an answer, and running an instance |
+| [Running the documentation site](docs/operations/documentation-site.md) | Serving these documents in a container |
 | [Contributing](CONTRIBUTING.md) | Issue, branch, commit and review rules |
 | [Security policy](SECURITY.md) | How to report a vulnerability |
 
