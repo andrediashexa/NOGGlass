@@ -108,3 +108,18 @@ window_secs = 60
 burst = 5
 trusted_proxies = []
 # trusted_proxies = ["192.0.2.1", "2001:db8::1"]
+
+# ---------------------------------------------------------------------------
+# Global view.
+#
+# Shows what the Internet announces for the queried prefix next to what your
+# router answered, which is how a leak, a hijack or an announcement that never
+# propagated becomes visible.
+#
+# OFF by default: it sends the queried prefix to RIPEstat, so it leaves your
+# network and belongs in your privacy notice.
+# ---------------------------------------------------------------------------
+
+[global_view]
+enabled = false
+timeout_ms = 1500

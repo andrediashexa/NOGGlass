@@ -150,12 +150,24 @@ async fn run() -> Result<(), String> {
         });
     }
 
+    if inventory.global_view.enabled {
+        warn!(
+            "the global-view comparison is enabled: queried prefixes are sent to \
+             RIPEstat. Say so in your privacy notice."
+        );
+    }
+    let global_view = Arc::new(looking_glass_core::global_view::GlobalViewLookup::new(
+        inventory.global_view.enabled,
+        std::time::Duration::from_millis(inventory.global_view.timeout_ms),
+    ));
+
     let app = api::routes(AppState {
         executor,
         inventory,
         version,
         limiter,
         client_address: Arc::new(client_address),
+        global_view,
     })
     .merge(ui::routes())
     .layer(tower_http::trace::TraceLayer::new_for_http())

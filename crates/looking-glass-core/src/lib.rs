@@ -1,6 +1,7 @@
 pub mod catalogue;
 pub mod driver;
 pub mod executor;
+pub mod global_view;
 pub mod inventory;
 pub mod ratelimit;
 pub mod rpki;
@@ -14,6 +15,7 @@ pub use driver::{
     RpkiValidation, TracerouteHop, TracerouteResult, VendorDriver,
 };
 pub use executor::{Execution, ExecutionError, Executor, QueryOutcome, Transport};
+pub use global_view::{Agreement, GlobalView, GlobalViewLookup};
 pub use inventory::{Credentials, Inventory, InventoryError, Limits, PublicRouter, Router};
 pub use ratelimit::{ClientAddress, ClientKey, Decision, RateLimit, RateLimiter};
 pub use rpki::{RpkiConfig, Validator, ValidityCache};
@@ -22,6 +24,18 @@ pub use vendors::*;
 
 use regex::Regex;
 use std::sync::LazyLock;
+
+/// Installs the TLS crypto provider, once.
+///
+/// `reqwest` is built with `rustls-no-provider` so that ring is the only
+/// crypto backend in the binary; rustls then refuses to build a client until a
+/// provider is installed. Every HTTP client in this crate calls this first.
+pub fn install_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 /// Generic end-of-output prompt detection, ported from Netmiko.
 pub static DEFAULT_BASE_PROMPT_REGEX: LazyLock<Regex> =

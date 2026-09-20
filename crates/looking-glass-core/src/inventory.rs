@@ -245,6 +245,30 @@ fn is_blank(value: Option<String>) -> bool {
     }
 }
 
+/// Comparing the router answer with what the Internet announces (ADR-0006).
+#[derive(Debug, Clone, Deserialize)]
+pub struct GlobalViewSettings {
+    /// Off by default: turning it on sends the queried prefix to RIPEstat, so
+    /// it is the operator's call and belongs in their privacy notice.
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_global_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_global_timeout_ms() -> u64 {
+    1500
+}
+
+impl Default for GlobalViewSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            timeout_ms: default_global_timeout_ms(),
+        }
+    }
+}
+
 /// How much a single visitor may ask for.
 ///
 /// Separate from [`Limits`], which bounds one query; this bounds how many
@@ -383,6 +407,8 @@ pub struct Inventory {
     pub rpki: RpkiSettings,
     #[serde(default, rename = "rate_limit")]
     pub rate_limit: RateLimitSettings,
+    #[serde(default, rename = "global_view")]
+    pub global_view: GlobalViewSettings,
     #[serde(rename = "router", default)]
     pub routers: Vec<Router>,
 }
