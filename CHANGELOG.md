@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/andrediashexa/looking-glass/compare/v0.5.0...v0.6.0) (2026-09-20)
+
+
+### Features
+
+* **ops:** bring the documentation up with docker compose ([#106](https://github.com/andrediashexa/looking-glass/issues/106)) ([67a1567](https://github.com/andrediashexa/looking-glass/commit/67a156720147e65a4707da313a50e726cb2242a9))
+
 ## [0.5.0](https://github.com/andrediashexa/looking-glass/compare/v0.4.2...v0.5.0) (2026-09-20)
 
 
