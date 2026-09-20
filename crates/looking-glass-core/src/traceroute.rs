@@ -85,11 +85,31 @@ pub fn parse(target: &str, raw: &str) -> TracerouteResult {
     }
 }
 
-/// A hop that answered nothing: the line carries only timeout markers.
+/// A hop that answered nothing: the line carries only markers and counters.
+///
+/// `*` is the common marker, but RouterOS writes the word `timeout` in a table
+/// that also carries a loss percentage and a probe count. Those columns are not
+/// an answer, and a line that has nothing else is a hop that stayed silent —
+/// which MUST keep its number. Dropping it renumbers every hop after it and
+/// moves where the path appears to stop.
 fn is_silent_hop(rest: &str) -> bool {
     let meaningful: Vec<&str> = rest
         .split_whitespace()
-        .filter(|token| !matches!(*token, "*" | "!" | "???" | "?"))
+        .filter(|token| {
+            let token = *token;
+            // Markers.
+            if matches!(token, "*" | "!" | "???" | "?") || token.eq_ignore_ascii_case("timeout") {
+                return false;
+            }
+            // A percentage column, such as the `100%` RouterOS prints for loss.
+            if let Some(number) = token.strip_suffix('%') {
+                if !number.is_empty() && number.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                    return false;
+                }
+            }
+            // A bare counter, such as the number of probes sent.
+            !token.chars().all(|c| c.is_ascii_digit())
+        })
         .collect();
     meaningful.is_empty()
 }
