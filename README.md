@@ -14,9 +14,11 @@ parsed into a normalised path model and drawn as an AS-PATH topology graph with
 RPKI state, route attributes and decoded communities. It is free software
 (Apache-2.0) and ships as a single Rust binary, or as one container.
 
-> **Status: pre-alpha.** Not usable yet. The repository holds the project rules,
-> the architecture decisions and a vendor parser crate. There is no SSH
-> transport, no HTTP server and no interface yet. Follow the milestones.
+> **Status: alpha.** The binary runs: it serves the interface in three
+> languages, validates queries, opens read-only SSH sessions and parses BGP
+> output into the path model behind the AS-PATH graph. Huawei VRP is the vendor
+> with real coverage, and a mock router serves fabricated data for trying it
+> out. Not yet recommended in front of the Internet.
 
 ## Why another looking glass
 
@@ -89,11 +91,23 @@ All documentation lives in [`docs/`](docs/), in English, following the
 
 | Document | Purpose |
 |---|---|
+| [Deployment](docs/operations/deployment.md) | Installing, configuring and upgrading an instance |
 | [Architecture overview](docs/architecture/overview.md) | Components, request flow and trust boundaries |
 | [Architecture decisions](docs/adr/) | Why the project looks like this |
 | [Versioning and releases](docs/process/versioning-and-releases.md) | How a merge becomes a release |
 | [Contributing](CONTRIBUTING.md) | Issue, branch, commit and review rules |
 | [Security policy](SECURITY.md) | How to report a vulnerability |
+
+## Quick start
+
+```bash
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/nogglass.example.toml
+docker compose up -d
+```
+
+Then open `http://localhost:8080/`. The [deployment guide](docs/operations/deployment.md)
+covers the read-only router user, exposure and TLS, and upgrades.
 
 ## License
 

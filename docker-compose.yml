@@ -1,0 +1,52 @@
+# NOGGlass, the boring way to run it.
+#
+#   docker compose up -d
+#
+# The image is published to GHCR, so nothing is compiled here. To build from
+# source instead, uncomment the build section.
+
+services:
+  nogglass:
+    image: ghcr.io/andrediashexa/nogglass:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: nogglass
+    restart: unless-stopped
+    # Measured at 24 MB serving the mock; the ceiling leaves room for a few
+    # concurrent SSH sessions and their output buffers.
+    mem_limit: 128m
+    memswap_limit: 128m
+    # Only the HTTP port is published. Put a reverse proxy in front for TLS
+    # (ADR-0012); NOGGlass warns at startup when it is public without one.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # routers.toml, SSH keys and anything else the operator edits. A named
+      # volume survives image upgrades.
+      - nogglass-config:/etc/nogglass
+    environment:
+      # Router passwords are named in the configuration file and read from here,
+      # so the file itself stays free of secrets.
+      # NOGGLASS_EDGE01_PASSWORD: "${NOGGLASS_EDGE01_PASSWORD}"
+      NOGGLASS_LOG: "${NOGGLASS_LOG:-info}"
+      NOGGLASS_DEFAULT_LOCALE: "${NOGGLASS_DEFAULT_LOCALE:-en}"
+      # Set when a proxy terminates TLS, so the startup warning stays quiet and
+      # forwarded headers are honoured from it.
+      # NOGGLASS_BEHIND_PROXY: "true"
+    networks:
+      - default
+
+# An operator whose routers filter SSH by source address and who needs the
+# host's exact IPv6 address can swap the port publishing above for:
+#   network_mode: host
+# It costs the container's network isolation, so it is opt-in (ADR-0012).
+
+volumes:
+  nogglass-config:
+    name: nogglass-config
+
+networks:
+  default:
+    driver: bridge
+    enable_ipv6: true
