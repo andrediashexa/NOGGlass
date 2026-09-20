@@ -114,10 +114,48 @@ async fn run() -> Result<(), String> {
     }
     let executor = Arc::new(executor);
 
+    // Rate limiting protects the routers from one visitor; the executor's
+    // concurrency caps protect them from all visitors at once. Both are needed.
+    let (client_address, rejected) = inventory.rate_limit.to_client_address();
+    for entry in rejected {
+        warn!(entry = %entry, "trusted_proxies entry is not an address; ignoring it");
+    }
+    if !inventory.rate_limit.enabled {
+        warn!(
+            "rate limiting is OFF: a single visitor can spend as much router \
+             control-plane CPU as they like"
+        );
+    } else if std::env::var("NOGGLASS_BEHIND_PROXY").is_ok() && !client_address.trusts_any_proxy() {
+        warn!(
+            "a proxy is declared but trusted_proxies is empty, so every visitor \
+             counts as the proxy and they share one allowance; list the proxy \
+             addresses under [rate_limit]"
+        );
+    }
+
+    let limiter = inventory.rate_limit.enabled.then(|| {
+        Arc::new(looking_glass_core::ratelimit::RateLimiter::new(
+            inventory.rate_limit.to_limit(),
+        ))
+    });
+
+    // Buckets for visitors who never come back would otherwise accumulate.
+    if let Some(limiter) = limiter.clone() {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop {
+                ticker.tick().await;
+                limiter.evict_idle();
+            }
+        });
+    }
+
     let app = api::routes(AppState {
         executor,
         inventory,
         version,
+        limiter,
+        client_address: Arc::new(client_address),
     })
     .merge(ui::routes())
     .layer(tower_http::trace::TraceLayer::new_for_http())
@@ -128,10 +166,14 @@ async fn run() -> Result<(), String> {
         .map_err(|e| format!("cannot listen on {listen}: {e}"))?;
     info!("listening on http://{listen}");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|e| format!("server stopped: {e}"))
+    // ConnectInfo carries the peer address, which the rate limiter needs.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .map_err(|e| format!("server stopped: {e}"))
 }
 
 /// Finishes in-flight queries before exiting, so a restart does not cut a
