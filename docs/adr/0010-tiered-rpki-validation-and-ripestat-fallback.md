@@ -1,7 +1,7 @@
 # ADR-0010 — Tiered RPKI validation with router-first state and external RIPEstat fallback
 
-- **Status:** Proposed
-- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Date:** 2026-09-17 (accepted 2026-09-20)
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
@@ -18,6 +18,13 @@ to guarantee sub-second response times without blocking or degrading queries.
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT",
 "RECOMMENDED", "MAY" and "OPTIONAL" in this document are to be interpreted as described in
 [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
+> **Accepted on 2026-09-20.** Naming follows ADR-0013: the configuration file
+> is `nogglass.toml` under `/etc/nogglass/`, and any environment variable for
+> this feature uses the `NOGGLASS_` prefix. The privacy note in ADR-0006 applies
+> to Tier 2: querying an external validator sends the visitor's prefix and
+> origin AS to a third party, so the deployment guide MUST state it and the
+> operator MUST be able to turn it off.
 
 ## 5W2H
 
@@ -110,7 +117,7 @@ To prevent latency degradation and third-party rate-limiting:
 
 ### 4. Configuration Schema
 
-The operator configuration file (`looking-glass.toml` / `routers.yml`) SHALL support customization:
+The operator configuration file (`/etc/nogglass/nogglass.toml`) SHALL support customization:
 
 ```toml
 [rpki]

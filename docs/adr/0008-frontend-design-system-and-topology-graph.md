@@ -1,7 +1,7 @@
 # ADR-0008 — Frontend design system, dark NOC aesthetic and interactive topology graph
 
-- **Status:** Proposed
-- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Date:** 2026-09-17 (accepted 2026-09-20)
 - **Deciders:** André Dias, Marcelo Gondim
 
 ## TL;DR
@@ -15,6 +15,15 @@ telemetry side panels, live RPKI validation shields, and decoded community pill 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT",
 "RECOMMENDED", "MAY" and "OPTIONAL" in this document are to be interpreted as described in
 [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
+> **Accepted on 2026-09-20.** The interface is delivered from inside the Rust
+> binary (ADR-0007), so "frontend contributors" means whoever writes the
+> embedded templates, stylesheets and canvas code. Two constraints from other
+> accepted records apply to every item below: user-facing strings live in the
+> three locale catalogues and are never hardcoded (ADR-0004, ADR-0007), and a
+> value the router did not report is rendered as unknown rather than as a
+> default (ADR-0006) — a badge or a panel MUST NOT imply data the query did not
+> produce.
 
 ## 5W2H
 

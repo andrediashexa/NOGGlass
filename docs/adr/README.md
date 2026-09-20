@@ -41,9 +41,9 @@ stateDiagram-v2
 | [0005](0005-backend-implementation-language.md) | Backend implementation language — **Rust** | Accepted |
 | [0006](0006-structured-bgp-model-and-data-sources.md) | Structured BGP model, data sources and RIPE cross-check | Accepted |
 | [0007](0007-unified-rust-architecture-and-drivers.md) | End-to-end Rust architecture with embedded web UI and native vendor drivers | Accepted |
-| [0008](0008-frontend-design-system-and-topology-graph.md) | Frontend design system, dark NOC aesthetic and interactive topology graph | **Proposed** |
+| [0008](0008-frontend-design-system-and-topology-graph.md) | Frontend design system, dark NOC aesthetic and interactive topology graph | Accepted |
 | [0009](0009-alpine-container-packaging-and-volumes.md) | Hardened Alpine container packaging, multi-stage compilation and persistent volume management | Superseded by 0012 |
-| [0010](0010-tiered-rpki-validation-and-ripestat-fallback.md) | Tiered RPKI validation with router-first state and external RIPEstat fallback | **Proposed** |
+| [0010](0010-tiered-rpki-validation-and-ripestat-fallback.md) | Tiered RPKI validation with router-first state and external RIPEstat fallback | Accepted |
 | [0011](0011-authenticated-collaborative-multitenant-looking-glass.md) | Authenticated collaborative multi-tenant platform with PeeringDB/RDAP verification and encrypted router vault | **Proposed** — deferred to 0.3.0 |
 | [0012](0012-standalone-binary-exposure-and-packaging.md) | Standalone binary exposure, ports and container packaging | Accepted |
 | [0013](0013-product-name-and-branding.md) | Product name: NOGGlass | Accepted |
