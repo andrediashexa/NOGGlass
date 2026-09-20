@@ -5,9 +5,10 @@
 The project follows Semantic Versioning. Pull request titles follow Conventional
 Commits, `release-please` reads them after every squash merge into `main`,
 bumps `version.txt`, writes `CHANGELOG.md`, tags `vX.Y.Z` and publishes a GitHub
-Release with container images. Nobody edits version numbers by hand, and the
-running version is always visible in the web interface footer and at
-`/api/version`.
+Release with container images. **Every** merge produces a release, and a patch
+release is published as a **pre-release** ([ADR-0014](../adr/0014-release-every-change-with-patch-prereleases.md)).
+Nobody edits version numbers by hand, and the running version is always visible
+in the web interface footer and at `/api/version`.
 
 ## 5W2H
 
@@ -31,16 +32,30 @@ The project uses [Semantic Versioning 2.0.0](https://semver.org/):
 | `fix: ...` | patch | patch |
 | `feat: ...` | minor | minor |
 | `feat!: ...` or `BREAKING CHANGE:` | minor | major |
-| `docs:`, `chore:`, `ci:`, `test:`, `refactor:`, `style:` | none | none |
+| `docs:`, `chore:`, `ci:`, `test:`, `refactor:`, `style:` | patch | patch |
 
 While the version is below `1.0.0` the public interfaces MAY change between
 minor versions. `1.0.0` SHALL be released when the Looking Glass runs
 end-to-end: the supported vendor drivers, the public query flow, the three
 languages and the deployment documentation.
 
-A change that only touches documentation or CI does NOT produce a release. The
-rule "one release per merge" applies to merges that change the product; a
-documentation-only merge produces no artefact to release.
+Every merge produces a release, including documentation and tooling changes
+(ADR-0014). Nothing on `main` is left unreachable by tag, which is what makes
+any state of the project pinnable and bisectable.
+
+### Full releases and pre-releases
+
+| Version component that changed | GitHub release | Shown as "Latest" |
+|---|---|---|
+| Patch (`vX.Y.Z`, `Z` greater than zero) | **pre-release** | no |
+| Minor (`vX.Y.0`) | full release | yes |
+| Major (`vX.0.0`) | full release | yes |
+
+A patch release ships continuously: a fix, a document, a dependency bump. It is
+flagged as a pre-release so operators tracking "Latest" see only versions the
+maintainers stand behind, while operators who want the newest fix can take a
+pre-release knowingly. The release workflow applies the flag; nobody sets it by
+hand.
 
 ## Release flow
 
@@ -60,6 +75,7 @@ sequenceDiagram
     RP->>Main: open or update "chore(main): release X.Y.Z" PR
     Dev->>RP: merge the release PR
     RP->>GH: create tag vX.Y.Z + release notes
+    GH->>GH: patch release? flag it as a pre-release
     GH->>GHCR: build and push images X.Y.Z, X.Y, latest
 ```
 
@@ -87,3 +103,5 @@ display `dev` rather than a wrong number.
   was tagged `looking-glass-v0.1.0` because `release-please` prefixes the
   component name by default; `include-component-in-tag` is now `false`, so
   later tags follow the rule. The published tag is never rewritten.
+- A patch release MUST be a pre-release, and a minor or major release MUST NOT
+  be one.

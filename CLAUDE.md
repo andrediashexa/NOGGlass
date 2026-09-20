@@ -19,6 +19,8 @@ line, and never invent a value a router did not report.
 - Every feature starts as a GitHub issue. If a task arrives without one, create
   the issue first.
 - Do not edit `version.txt` or `CHANGELOG.md`; `release-please` owns them.
+- Every merge is tagged `vX.Y.Z` and released; patch releases are published as
+  pre-releases, minor and major as full releases (ADR-0014).
 - Run `scripts/check-docs.sh` and `scripts/check-i18n.sh` before pushing, plus
   `cargo fmt`, `cargo clippy -- -D warnings` and `cargo test` when Rust changed.
 - This machine has no C toolchain and no sudo, but `russh` pulls in `ring`,

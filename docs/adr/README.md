@@ -36,7 +36,7 @@ stateDiagram-v2
 |---|---|---|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-fastapi-backend-and-direct-ssh.md) | FastAPI backend with direct SSH to routers | Superseded by 0007 |
-| [0003](0003-conventional-commits-and-automated-releases.md) | Conventional Commits and automated releases | Accepted |
+| [0003](0003-conventional-commits-and-automated-releases.md) | Conventional Commits and automated releases | Accepted; release scope superseded by 0014 |
 | [0004](0004-web-interface-internationalisation.md) | Web interface internationalisation by URL prefix | Superseded in delivery by 0007; locale rules in force |
 | [0005](0005-backend-implementation-language.md) | Backend implementation language — **Rust** | Accepted |
 | [0006](0006-structured-bgp-model-and-data-sources.md) | Structured BGP model, data sources and RIPE cross-check | Accepted |
@@ -47,3 +47,4 @@ stateDiagram-v2
 | [0011](0011-authenticated-collaborative-multitenant-looking-glass.md) | Authenticated collaborative multi-tenant platform with PeeringDB/RDAP verification and encrypted router vault | **Proposed** — deferred to 0.3.0 |
 | [0012](0012-standalone-binary-exposure-and-packaging.md) | Standalone binary exposure, ports and container packaging | Accepted |
 | [0013](0013-product-name-and-branding.md) | Product name: NOGGlass | Accepted |
+| [0014](0014-release-every-change-with-patch-prereleases.md) | Every change is released; patch releases are pre-releases | Accepted |
