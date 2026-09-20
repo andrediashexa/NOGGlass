@@ -1,0 +1,82 @@
+{
+    "router": "demo",
+    "command": "show bgp 198.51.100.10",
+    "duration_ms": 0,
+    "kind": "bgp_route",
+    "result": {
+        "paths": [
+            {
+                "prefix": "198.51.100.0/24",
+                "next_hop": "192.0.2.254",
+                "peer": "192.0.2.254",
+                "is_best": true,
+                "is_valid": true,
+                "as_path": [
+                    65100,
+                    65500
+                ],
+                "local_pref": 150,
+                "med": 10,
+                "weight": 0,
+                "origin": "igp",
+                "communities": [
+                    {
+                        "raw": "65001:100",
+                        "kind": "standard",
+                        "name": null
+                    },
+                    {
+                        "raw": "65100:500",
+                        "kind": "standard",
+                        "name": null
+                    }
+                ],
+                "rpki": {
+                    "status": "valid",
+                    "source": "router"
+                }
+            },
+            {
+                "prefix": "198.51.100.0/24",
+                "next_hop": "192.0.2.253",
+                "peer": "192.0.2.253",
+                "is_best": false,
+                "is_valid": true,
+                "as_path": [
+                    65200,
+                    65300,
+                    65500
+                ],
+                "local_pref": 100,
+                "med": null,
+                "weight": 0,
+                "origin": "igp",
+                "communities": [
+                    {
+                        "raw": "65001:200",
+                        "kind": "standard",
+                        "name": null
+                    }
+                ],
+                "rpki": {
+                    "status": "valid",
+                    "source": "router"
+                }
+            }
+        ],
+        "raw_output": "Mock router \u2014 fabricated data for development and demonstration\nPaths: 2\n",
+        "completeness": {
+            "state": "complete"
+        },
+        "truncated": false
+    },
+    "global": {
+        "origins": [],
+        "visibility": 0,
+        "more_specifics": 0,
+        "announced": false
+    },
+    "agreement": {
+        "state": "not_announced_globally"
+    }
+}

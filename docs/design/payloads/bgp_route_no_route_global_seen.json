@@ -1,0 +1,28 @@
+{
+    "router": "demo",
+    "command": "show bgp 193.0.0.0/21",
+    "duration_ms": 0,
+    "kind": "bgp_route",
+    "result": {
+        "paths": [],
+        "raw_output": "% Network not in table\n",
+        "completeness": {
+            "state": "complete"
+        },
+        "truncated": false
+    },
+    "global": {
+        "origins": [
+            3333
+        ],
+        "visibility": 111,
+        "more_specifics": 0,
+        "announced": true
+    },
+    "agreement": {
+        "state": "not_seen_by_router",
+        "global_origins": [
+            3333
+        ]
+    }
+}

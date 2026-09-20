@@ -27,6 +27,7 @@ flowchart LR
     docs --> adr[adr/<br/>why it is like this]
     docs --> tpl[templates/<br/>how to write a document]
     docs --> ops[operations/<br/>how to run it]
+    docs --> design[design/<br/>what the interface shows]
     docs --> ref[reference/<br/>imported material]
 ```
 
@@ -49,6 +50,13 @@ flowchart LR
 |---|---|
 | [Deployment](operations/deployment.md) | Installing, configuring, exposing and upgrading an instance |
 | [Read-only router users](operations/router-users.md) | The account NOGGlass authenticates with, per vendor |
+
+## Design
+
+| Document | Purpose |
+|---|---|
+| [Interface brief](design/interface-brief.md) | What the product does, every screen, every state, and the rules a design cannot break |
+| [Captured payloads](design/payloads/) | Real API responses, one per state, to design and check against |
 
 ## Decisions
 

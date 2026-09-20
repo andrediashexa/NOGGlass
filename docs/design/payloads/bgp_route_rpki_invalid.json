@@ -1,0 +1,50 @@
+{
+    "router": "demo",
+    "command": "show bgp 203.0.113.0/24",
+    "duration_ms": 0,
+    "kind": "bgp_route",
+    "result": {
+        "paths": [
+            {
+                "prefix": "203.0.113.0/24",
+                "next_hop": "192.0.2.252",
+                "peer": "192.0.2.252",
+                "is_best": true,
+                "is_valid": true,
+                "as_path": [
+                    65400,
+                    65534
+                ],
+                "local_pref": 100,
+                "med": 0,
+                "weight": 0,
+                "origin": "incomplete",
+                "communities": [
+                    {
+                        "raw": "65535:666",
+                        "kind": "well_known",
+                        "name": "blackhole"
+                    }
+                ],
+                "rpki": {
+                    "status": "invalid",
+                    "source": "router"
+                }
+            }
+        ],
+        "raw_output": "Mock router \u2014 fabricated data for development and demonstration\nPaths: 1\n",
+        "completeness": {
+            "state": "complete"
+        },
+        "truncated": false
+    },
+    "global": {
+        "origins": [],
+        "visibility": 0,
+        "more_specifics": 0,
+        "announced": false
+    },
+    "agreement": {
+        "state": "not_announced_globally"
+    }
+}

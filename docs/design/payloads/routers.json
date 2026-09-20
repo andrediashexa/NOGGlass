@@ -1,0 +1,15 @@
+[
+    {
+        "id": "demo",
+        "name": "Demo router",
+        "vendor": "mock",
+        "location": "Fixtures",
+        "is_mock": true,
+        "queries": [
+            "ping",
+            "traceroute",
+            "bgp_route",
+            "bgp_summary"
+        ]
+    }
+]

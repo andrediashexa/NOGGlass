@@ -1,0 +1,37 @@
+{
+    "router": "demo",
+    "command": "show bgp summary",
+    "duration_ms": 0,
+    "kind": "bgp_summary",
+    "result": {
+        "router_id": "192.0.2.1",
+        "local_as": 65001,
+        "peers": [
+            {
+                "peer_ip": "192.0.2.254",
+                "peer_as": 65100,
+                "state": "Established",
+                "uptime": "05:12:33",
+                "prefixes_received": 850000,
+                "prefixes_accepted": null
+            },
+            {
+                "peer_ip": "192.0.2.253",
+                "peer_as": 65200,
+                "state": "Established",
+                "uptime": "02:01:10",
+                "prefixes_received": 12,
+                "prefixes_accepted": null
+            },
+            {
+                "peer_ip": "192.0.2.252",
+                "peer_as": 65300,
+                "state": "Idle",
+                "uptime": "never",
+                "prefixes_received": 0,
+                "prefixes_accepted": null
+            }
+        ],
+        "raw_output": "Mock router \u2014 fabricated data\nBGP router identifier 192.0.2.1, local AS number 65001\n192.0.2.254     4        65100   12345   12300       42    0    0 05:12:33      850000\n192.0.2.253     4        65200    4321    4300       42    0    0 02:01:10          12\n192.0.2.252     4        65300       0       0        0    0    0 never    Idle\n"
+    }
+}

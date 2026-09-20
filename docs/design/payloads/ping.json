@@ -1,0 +1,15 @@
+{
+    "router": "demo",
+    "command": "ping 198.51.100.10 count 5",
+    "duration_ms": 0,
+    "kind": "ping",
+    "result": {
+        "packets_sent": 5,
+        "packets_received": 5,
+        "packet_loss_percent": 0.0,
+        "min_rtt_ms": 0.412,
+        "avg_rtt_ms": 0.501,
+        "max_rtt_ms": 0.688,
+        "raw_output": "Mock router \u2014 fabricated data\nPING 198.51.100.10: 5 packets, 0% loss, rtt min/avg/max = 0.412/0.501/0.688 ms\n"
+    }
+}

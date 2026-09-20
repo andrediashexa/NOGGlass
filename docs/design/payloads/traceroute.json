@@ -1,0 +1,48 @@
+{
+    "router": "demo",
+    "command": "traceroute 198.51.100.10",
+    "duration_ms": 0,
+    "kind": "traceroute",
+    "result": {
+        "target": "198.51.100.10",
+        "hops": [
+            {
+                "hop": 1,
+                "ip": "192.0.2.254",
+                "hostname": "edge-01.mock.example",
+                "rtt_ms": [
+                    0.412,
+                    0.398,
+                    0.431
+                ]
+            },
+            {
+                "hop": 2,
+                "ip": "192.0.2.1",
+                "hostname": "transit-a.mock.example",
+                "rtt_ms": [
+                    1.204,
+                    1.18,
+                    1.233
+                ]
+            },
+            {
+                "hop": 3,
+                "ip": null,
+                "hostname": null,
+                "rtt_ms": []
+            },
+            {
+                "hop": 4,
+                "ip": "198.51.100.10",
+                "hostname": null,
+                "rtt_ms": [
+                    2.551,
+                    2.498,
+                    2.602
+                ]
+            }
+        ],
+        "raw_output": "Mock router \u2014 fabricated data\ntraceroute to 198.51.100.10, 4 hops max\n"
+    }
+}
