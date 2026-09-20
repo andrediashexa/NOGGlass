@@ -281,7 +281,7 @@ impl Executor {
         &self,
         router: &Router,
         query: QueryType,
-        _target: &QueryTarget,
+        target: &QueryTarget,
         command: &str,
         limits: &QueryLimits,
     ) -> Result<QueryOutcome, ExecutionError> {
@@ -319,7 +319,14 @@ impl Executor {
                 Err(other) => return Err(other.into()),
             },
             QueryType::Traceroute => match driver.parse_traceroute(&raw) {
-                Ok(result) => QueryOutcome::Traceroute(result),
+                Ok(mut result) => {
+                    // The driver reads hops; only the executor knows what was
+                    // asked about, so it fills the target in.
+                    if let QueryTarget::Ip(ip) = target {
+                        result.target = ip.to_string();
+                    }
+                    QueryOutcome::Traceroute(result)
+                }
                 Err(DriverError::Unsupported { .. }) => QueryOutcome::Raw {
                     output: raw,
                     truncated,

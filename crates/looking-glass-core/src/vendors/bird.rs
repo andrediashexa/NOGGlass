@@ -20,13 +20,10 @@ impl VendorDriver for BirdDriver {
         })
     }
 
-    fn parse_traceroute(&self, _raw: &str) -> Result<TracerouteResult, DriverError> {
-        // No hop parser yet. An empty hop list would be indistinguishable from
-        // a traceroute that legitimately returned nothing.
-        Err(DriverError::Unsupported {
-            vendor: self.vendor_name(),
-            query: "traceroute",
-        })
+    fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
+        // The shared reader: vendors differ in decoration, not in substance,
+        // and a silent hop has to survive in every one of them.
+        Ok(crate::traceroute::parse("", raw))
     }
 
     /// Parser de Bloco BIRD (show route for <ip> all)
