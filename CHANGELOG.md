@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.2](https://github.com/andrediashexa/looking-glass/compare/v0.6.1...v0.6.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cisco:** read IOS-XE's route detail, and the table by its header ([#128](https://github.com/andrediashexa/looking-glass/issues/128)) ([ef07ac7](https://github.com/andrediashexa/looking-glass/commit/ef07ac704dd26592e5ad8b878405010b1a44ba44))
+* **ssh:** offer the NIST curves, without which no Cisco is reachable ([#134](https://github.com/andrediashexa/looking-glass/issues/134)) ([9f54907](https://github.com/andrediashexa/looking-glass/commit/9f5490732f9caf62fe2406ddc940279bdb98f893))
+
+
+### Documentation
+
+* record what was verified, and how each lab was built ([#132](https://github.com/andrediashexa/looking-glass/issues/132)) ([062cf80](https://github.com/andrediashexa/looking-glass/commit/062cf8069c21711e676e229ce04b59481a4875c2))
+* say which drivers have read a real router, and make it a rule ([#126](https://github.com/andrediashexa/looking-glass/issues/126)) ([76d2c42](https://github.com/andrediashexa/looking-glass/commit/76d2c42251c81810cc8d7f746717c567af8140eb))
+
 ## [0.6.1](https://github.com/andrediashexa/looking-glass/compare/v0.6.0...v0.6.1) (2026-09-21)
 
 
