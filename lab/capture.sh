@@ -157,6 +157,10 @@ run_docker() {
 
 run_ssh() {
   local command="$1"
+  # Vendor SSH stacks are old: a Huawei VRP offers ssh-rsa host keys and
+  # nothing a current OpenSSH accepts by default. A lab is the place to say so
+  # explicitly rather than to wonder why the connection closed.
+  local legacy=(-o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa)
   # -n is not optional: ssh reads standard input, and this runs inside a
   # `while read` loop, so without it the first command swallows the rest and
   # the capture silently stops after one file.
@@ -168,11 +172,23 @@ run_ssh() {
       echo "NOGGLASS_LAB_PASSWORD is set but sshpass is not installed" >&2
       exit 3
     }
-    sshpass -e ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -o LogLevel=ERROR -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
+    if [[ -n "$PAGING" ]]; then
+      # The paging command has to travel in the same session as the query, the
+      # way the product sends it. Sent as its own connection it does nothing,
+      # and the capture then stops at a full screen waiting for a keypress.
+      printf '%s\n%s\n' "$PAGING" "$command" |
+        sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          -o LogLevel=ERROR -o PreferredAuthentications=password "${legacy[@]}" \
+          -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" 2>&1
+    else
+      sshpass -e ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o LogLevel=ERROR -o PreferredAuthentications=password "${legacy[@]}" \
+        -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
+    fi
   else
     ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
+      -o LogLevel=ERROR -o BatchMode=yes "${legacy[@]}" \
+      -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" "$command" 2>&1
   fi
 }
 
@@ -188,9 +204,14 @@ else
   commands="$(catalogue_commands)"
 fi
 
+# The catalogue's paging command, kept aside: it is a setting for the session,
+# not a query with output worth capturing.
+PAGING="$(printf '%s\n' "$commands" | awk -F'\t' '$1 == "disable_paging" { print $2 }')"
+
 failures=0
 while IFS=$'\t' read -r name command; do
   [[ -n "$name" ]] || continue
+  [[ "$name" != "disable_paging" ]] || continue
   printf '  %-18s %s\n' "$name" "$command"
   if [[ "$VIA" == "ssh" ]]; then
     output="$(run_ssh "$command" || true)"

@@ -1,6 +1,6 @@
 use crate::driver::{
-    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, DriverError, Origin,
-    PingResult, TracerouteResult, VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
+    Origin, PingResult, TracerouteResult, VendorDriver,
 };
 use ipnet::IpNet;
 
@@ -228,6 +228,23 @@ impl VendorDriver for HuaweiVrpDriver {
 
     /// Parser de Texto BGP do Huawei VRP (Extrai Best Path '*' e '>' + Next-Hop + MED + LocPrf + AS-Path)
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
+        // VRP answers in two shapes, and which one arrives depends on the
+        // command. `display bgp routing-table <network> <mask>` — what the
+        // catalogue sends for a route query — prints a block per path:
+        //
+        //  BGP routing table entry information of 203.0.113.0/24:
+        //  From: 192.0.2.10 (192.0.2.10)
+        //  Original nexthop: 192.0.2.10
+        //  AS-path 64498, origin igp, MED 0, pref-val 0, valid, external, best
+        //
+        // `display bgp routing-table regular-expression ...`, which the AS
+        // query sends, prints the columns handled further down. Reading only
+        // the columns meant a real NE40E answered every route query with no
+        // paths at all.
+        if raw.contains("BGP routing table entry information of") {
+            return Ok(parse_detail_blocks(raw));
+        }
+
         // `display bgp routing-table` prints fixed-width columns under a header:
         //
         //  Status codes: * - valid, > - best, d - damped ...
@@ -306,6 +323,162 @@ impl VendorDriver for HuaweiVrpDriver {
         // Shared reader: the tables differ in headers, not in what a row means.
         Ok(crate::summary::parse(raw))
     }
+}
+
+/// Reads VRP's per-path detail blocks.
+fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
+    let mut paths: Vec<BgpPath> = Vec::new();
+    let mut unreadable = 0usize;
+    let mut current: Option<BgpPath> = None;
+    let mut partial_path = false;
+
+    for line in raw.lines() {
+        let line = line.trim();
+
+        if let Some(rest) = line.strip_prefix("BGP routing table entry information of") {
+            if let Some(path) = current.take() {
+                paths.push(path);
+            }
+            current = Some(BgpPath {
+                prefix: parse_network(rest.trim().trim_end_matches(':')),
+                ..BgpPath::default()
+            });
+            continue;
+        }
+
+        let Some(path) = current.as_mut() else {
+            continue;
+        };
+
+        if let Some(rest) = line.strip_prefix("From:") {
+            // `From: 192.0.2.10 (192.0.2.10)` — the session, then the peer's
+            // router id. The address is the one that matters here.
+            path.peer = rest.split_whitespace().next().and_then(parse_hop);
+        } else if let Some(rest) = line.strip_prefix("Original nexthop:") {
+            path.next_hop = rest.split_whitespace().next().and_then(parse_hop);
+        } else if let Some(rest) = line.strip_prefix("Community:") {
+            path.communities.extend(
+                rest.split(',')
+                    .map(|c| Community::parse(c.trim().trim_matches(|c| c == '<' || c == '>'))),
+            );
+        } else if let Some(rest) = line.strip_prefix("AS-path") {
+            match read_attributes(rest, path) {
+                Ok(()) => {}
+                Err(()) => partial_path = true,
+            }
+        } else if line.starts_with("Qos information")
+            || line.starts_with("Route Duration")
+            || line.starts_with("Direct Out-interface")
+            || line.starts_with("Relay")
+            || line.starts_with("Aggregator")
+            || line.starts_with("Not advertised")
+            || line.starts_with("Advertised to")
+            || line.starts_with("BGP local router ID")
+            || line.starts_with("Local AS number")
+            || line.starts_with("Paths:")
+            || line.is_empty()
+        {
+            // Known and carrying nothing the model holds.
+        } else {
+            unreadable += 1;
+        }
+    }
+
+    if let Some(path) = current.take() {
+        paths.push(path);
+    }
+
+    let result = BgpRouteResult::new(paths, raw);
+    // A set in the path is not something the model can hold yet, and the
+    // sequence stops at it; say so rather than present a shortened path as
+    // whole.
+    let result = if partial_path {
+        result.partial(1)
+    } else {
+        result
+    };
+    result.partial(unreadable)
+}
+
+/// Reads the attribute line that follows `AS-path`.
+///
+///   64498 {64496 64497}, origin igp, MED 0, pref-val 0, valid, external, best
+///
+/// Returns `Err` when the path contained an AS_SET, whose members are a set
+/// rather than a sequence and are therefore not appended to it.
+fn read_attributes(rest: &str, path: &mut BgpPath) -> Result<(), ()> {
+    let mut had_set = false;
+    for (index, attribute) in rest.split(',').enumerate() {
+        let attribute = attribute.trim();
+        if index == 0 {
+            // `AS-path Nil` is VRP for a path this router originated.
+            if attribute.eq_ignore_ascii_case("Nil") {
+                continue;
+            }
+            let (sequence, set) = read_as_sequence(attribute);
+            path.as_path = sequence;
+            had_set = set;
+            continue;
+        }
+
+        let mut words = attribute.split_whitespace();
+        match (words.next(), words.next()) {
+            (Some("origin"), Some(origin)) => {
+                path.origin = match origin.to_ascii_lowercase().as_str() {
+                    "igp" => Some(Origin::Igp),
+                    "egp" => Some(Origin::Egp),
+                    "incomplete" => Some(Origin::Incomplete),
+                    _ => None,
+                }
+            }
+            // Absent is not zero: a path with no MED simply has no `MED`
+            // attribute here, and it stays None (ADR-0006).
+            (Some("MED"), Some(value)) => path.med = value.parse().ok(),
+            (Some("localpref"), Some(value)) => path.local_pref = value.parse().ok(),
+            (Some("pref-val"), Some(value)) => path.weight = value.parse().ok(),
+            (Some("valid"), _) => path.is_valid = Some(true),
+            (Some("best"), _) => path.is_best = true,
+            _ => {}
+        }
+    }
+
+    if had_set {
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
+/// Reads an AS sequence, stopping at an AS_SET.
+fn read_as_sequence(text: &str) -> (Vec<u32>, bool) {
+    let mut sequence = Vec::new();
+    for token in text.split_whitespace() {
+        if token.starts_with('{') {
+            return (sequence, true);
+        }
+        if let Some(asn) = parse_asn(token) {
+            sequence.push(asn);
+        }
+    }
+    (sequence, false)
+}
+
+/// Reads an AS number in either notation VRP prints.
+///
+/// A 32-bit ASN arrives as `1.0` rather than `65536` — asdot, which is what
+/// VRP uses by default. Read as a plain integer it fails to parse, and a
+/// parser that drops what it cannot read turns a ten-hop path into a four-hop
+/// one that looks perfectly plausible.
+fn parse_asn(token: &str) -> Option<u32> {
+    if let Some((high, low)) = token.split_once('.') {
+        let high: u32 = high.parse().ok()?;
+        let low: u32 = low.parse().ok()?;
+        if low > u16::MAX as u32 || high > u16::MAX as u32 {
+            return None;
+        }
+        return Some(high * 65536 + low);
+    }
+    token.parse().ok()
 }
 
 #[cfg(test)]
@@ -419,5 +592,133 @@ this line is not a route at all
         let result = HuaweiVrpDriver.parse_bgp_route(raw).unwrap();
         assert!(result.paths.is_empty());
         assert_eq!(result.completeness, Completeness::Complete);
+    }
+}
+
+#[cfg(test)]
+mod real_ne40e_tests {
+    use super::*;
+    use crate::driver::Completeness;
+
+    /// Captured from a Huawei NE40E running VRP 8.180 (V800R011C00SPC607) in
+    /// `lab/`, peering with three FRR speakers. This is the answer to the
+    /// command the catalogue sends, which is not the format the column reader
+    /// was written for.
+    const REAL_DETAIL: &str = r#" BGP local router ID : 192.0.2.1
+ Local AS number : 64499
+ Paths:   3 available, 1 best, 1 select, 0 best-external, 0 add-path
+ BGP routing table entry information of 203.0.113.0/24:
+ From: 192.0.2.10 (192.0.2.10)  
+ Route Duration: 0d00h15m42s
+ Direct Out-interface: Ethernet1/0/2
+ Original nexthop: 192.0.2.10
+ Qos information : 0x0
+ AS-path 64498, origin igp, MED 0, pref-val 0, valid, external, best, select, pre 255
+ Not advertised to any peer yet
+
+ BGP routing table entry information of 203.0.113.0/24:
+ From: 192.0.2.6 (192.0.2.6)  
+ Original nexthop: 192.0.2.6
+ AS-path 64497 64498, origin igp, MED 100, pref-val 0, valid, external, pre 255, not preferred for AS-Path
+ Not advertised to any peer yet
+
+ BGP routing table entry information of 203.0.113.0/24:
+ From: 192.0.2.2 (192.0.2.2)  
+ Original nexthop: 192.0.2.2
+ AS-path 64496 64496 64496 1.0 1.1 1.2 1.3 1.4 1.5 64498, origin igp, pref-val 0, valid, external, pre 255, not preferred for AS-Path
+ Not advertised to any peer yet
+"#;
+
+    /// The route query returned nothing at all before this: the driver read
+    /// the column format, and `display bgp routing-table <network> <mask>`
+    /// answers in blocks.
+    #[test]
+    fn the_detail_format_is_read() {
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(REAL_DETAIL)
+            .expect("real NE40E output");
+
+        assert_eq!(result.paths.len(), 3, "three paths, none of them lost");
+        for path in &result.paths {
+            assert_eq!(
+                path.prefix.map(|p| p.to_string()).as_deref(),
+                Some("203.0.113.0/24")
+            );
+        }
+    }
+
+    /// VRP prints 32-bit ASNs in asdot: `1.0` is 65536. Parsed as a plain
+    /// integer it fails, and a parser that drops what it cannot read turns a
+    /// ten-hop path into a four-hop one that looks perfectly plausible.
+    #[test]
+    fn asdot_as_numbers_are_read_as_numbers() {
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(REAL_DETAIL)
+            .expect("real NE40E output");
+
+        assert_eq!(
+            result.paths[2].as_path,
+            vec![64496, 64496, 64496, 65536, 65537, 65538, 65539, 65540, 65541, 64498]
+        );
+    }
+
+    /// Absent, zero and set, in one answer (ADR-0006).
+    #[test]
+    fn an_absent_med_is_not_a_med_of_zero() {
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(REAL_DETAIL)
+            .expect("real NE40E output");
+
+        let meds: Vec<Option<u32>> = result.paths.iter().map(|p| p.med).collect();
+        assert_eq!(meds, vec![Some(0), Some(100), None]);
+    }
+
+    #[test]
+    fn the_best_path_is_the_one_marked_best() {
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(REAL_DETAIL)
+            .expect("real NE40E output");
+
+        let best: Vec<bool> = result.paths.iter().map(|p| p.is_best).collect();
+        assert_eq!(best, vec![true, false, false]);
+        assert_eq!(
+            result.best().and_then(|p| p.peer).map(|p| p.to_string()),
+            Some("192.0.2.10".to_string()),
+            "the path's peer is the session it arrived on"
+        );
+    }
+
+    /// VRP closes the brace and separates the members with spaces, unlike
+    /// RouterOS. The members are still a set, not a sequence.
+    #[test]
+    fn an_as_set_stops_the_path_and_marks_the_result_partial() {
+        let raw = r#" BGP routing table entry information of 198.51.100.0/24:
+ From: 192.0.2.10 (192.0.2.10)  
+ Original nexthop: 192.0.2.10
+ AS-path 64498 {64496 64497}, origin igp, MED 0, pref-val 0, valid, external, best, select, pre 255
+ Aggregator: AS 64498, Aggregator ID 192.0.2.10
+"#;
+
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(raw)
+            .expect("real NE40E output");
+
+        assert_eq!(result.paths[0].as_path, vec![64498]);
+        assert!(matches!(result.completeness, Completeness::Partial { .. }));
+    }
+
+    /// The column format still arrives, from the AS-path query, and still has
+    /// to be read.
+    #[test]
+    fn the_column_format_still_works() {
+        let raw = "\
+ BGP Local router ID is 192.0.2.1
+ Status codes: * - valid, > - best, d - damped, h - history, i - internal
+   Network            NextHop         MED   LocPrf  PrefVal Path/Ogn
+*>  198.51.100.0/24    192.0.2.254      10      150        0 65100 65500i
+";
+        let result = HuaweiVrpDriver.parse_bgp_route(raw).expect("column output");
+        assert_eq!(result.paths.len(), 1);
+        assert_eq!(result.paths[0].med, Some(10));
     }
 }
