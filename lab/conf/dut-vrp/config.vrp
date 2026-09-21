@@ -1,0 +1,50 @@
+system-view
+route-policy ANNOUNCE-NOTHING deny node 10
+quit
+interface Ethernet1/0/0
+ undo shutdown
+ ip address 192.0.2.1 255.255.255.252
+ ipv6 enable
+ ipv6 address 2001:db8:0:1::1/64
+ quit
+interface Ethernet1/0/1
+ undo shutdown
+ ip address 192.0.2.5 255.255.255.252
+ ipv6 enable
+ ipv6 address 2001:db8:0:2::1/64
+ quit
+interface Ethernet1/0/2
+ undo shutdown
+ ip address 192.0.2.9 255.255.255.252
+ ipv6 enable
+ ipv6 address 2001:db8:0:3::1/64
+ quit
+bgp 64499
+ router-id 192.0.2.1
+ peer 192.0.2.2 as-number 64496
+ peer 192.0.2.6 as-number 64497
+ peer 192.0.2.10 as-number 64498
+ peer 192.0.2.126 as-number 64511
+ peer 2001:db8:0:1::2 as-number 64496
+ peer 2001:db8:0:2::2 as-number 64497
+ peer 2001:db8:0:3::2 as-number 64498
+ ipv4-family unicast
+  peer 192.0.2.2 enable
+  peer 192.0.2.2 route-policy ANNOUNCE-NOTHING export
+  peer 192.0.2.6 enable
+  peer 192.0.2.6 route-policy ANNOUNCE-NOTHING export
+  peer 192.0.2.10 enable
+  peer 192.0.2.10 route-policy ANNOUNCE-NOTHING export
+  peer 192.0.2.126 enable
+  quit
+ ipv6-family unicast
+  peer 2001:db8:0:1::2 enable
+  peer 2001:db8:0:1::2 route-policy ANNOUNCE-NOTHING export
+  peer 2001:db8:0:2::2 enable
+  peer 2001:db8:0:2::2 route-policy ANNOUNCE-NOTHING export
+  peer 2001:db8:0:3::2 enable
+  peer 2001:db8:0:3::2 route-policy ANNOUNCE-NOTHING export
+  quit
+ quit
+commit
+quit
