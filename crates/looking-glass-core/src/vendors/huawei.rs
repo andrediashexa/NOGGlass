@@ -167,33 +167,53 @@ impl VendorDriver for HuaweiVrpDriver {
     }
 
     fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
-        // Exemplo Huawei:
-        // 5 packet(s) transmitted, 5 packet(s) received, 0.00% packet loss
-        // round-trip min/avg/max = 1/2/4 ms
-        let mut sent = 0;
-        let mut recv = 0;
-        let mut loss = 100.0;
+        // VRP prints the statistics in two shapes. The documented one puts
+        // them on a single line:
+        //
+        //   5 packet(s) transmitted, 5 packet(s) received, 0.00% packet loss
+        //
+        // A real NE40E puts each on its own:
+        //
+        //     4 packet(s) transmitted
+        //     4 packet(s) received
+        //     0.00% packet loss
+        //
+        // Reading only the first meant a ping that answered every probe was
+        // reported as total loss, beside a minimum, average and maximum that
+        // had been read correctly.
+        //
+        // Nothing defaults here. A count nobody printed stays None, and a
+        // result with no statistics at all is an error rather than a claim
+        // that the address did not answer (rule 3, ADR-0006): ping is the
+        // query most likely to be read as a yes or no, so it is the worst
+        // place to guess.
+        let mut sent: Option<u32> = None;
+        let mut recv: Option<u32> = None;
+        let mut loss: Option<f64> = None;
         let mut min = None;
         let mut avg = None;
         let mut max = None;
 
         for line in raw.lines() {
-            if line.contains("transmitted") && line.contains("received") {
-                let parts: Vec<&str> = line.split(',').collect();
-                if let Some(p) = parts.first() {
-                    if let Some(num) = p.split_whitespace().next() {
-                        sent = num.parse().unwrap_or(0);
-                    }
-                }
-                if let Some(p) = parts.get(1) {
-                    if let Some(num) = p.split_whitespace().next() {
-                        recv = num.parse().unwrap_or(0);
-                    }
-                }
-                if let Some(p) = parts.get(2) {
-                    let clean = p.replace("% packet loss", "").replace('%', "");
-                    if let Some(num) = clean.split_whitespace().next() {
-                        loss = num.parse().unwrap_or(100.0);
+            let line = line.trim();
+
+            if line.contains("transmitted")
+                || line.contains("received")
+                || line.contains("packet loss")
+            {
+                // One line or three: splitting on commas covers both, since a
+                // line with no comma is a single field.
+                for field in line.split(',') {
+                    let field = field.trim();
+                    let Some(first) = field.split_whitespace().next() else {
+                        continue;
+                    };
+                    if field.contains("transmitted") {
+                        sent = first.parse().ok();
+                    } else if field.contains("received") {
+                        recv = first.parse().ok();
+                    } else if field.contains("packet loss") {
+                        loss = first.trim_end_matches('%').parse().ok();
                     }
                 }
             } else if line.contains("round-trip min/avg/max") {
@@ -209,10 +229,28 @@ impl VendorDriver for HuaweiVrpDriver {
             }
         }
 
+        // No statistics at all: the router said something this driver does not
+        // understand, and saying so is the only honest answer. Reporting a
+        // reachability failure that did not happen sends someone looking for a
+        // problem that does not exist.
+        let (Some(sent), Some(recv)) = (sent, recv) else {
+            return Err(DriverError::ParseError(
+                "no ping statistics found in the router's output".to_string(),
+            ));
+        };
+
         Ok(PingResult {
             packets_sent: sent,
             packets_received: recv,
-            packet_loss_percent: loss,
+            // Derived only when the router did not print it, and from counts
+            // it did print.
+            packet_loss_percent: loss.unwrap_or_else(|| {
+                if sent == 0 {
+                    100.0
+                } else {
+                    (sent - recv) as f64 * 100.0 / sent as f64
+                }
+            }),
             min_rtt_ms: min,
             avg_rtt_ms: avg,
             max_rtt_ms: max,
@@ -226,7 +264,8 @@ impl VendorDriver for HuaweiVrpDriver {
         Ok(crate::traceroute::parse("", raw))
     }
 
-    /// Parser de Texto BGP do Huawei VRP (Extrai Best Path '*' e '>' + Next-Hop + MED + LocPrf + AS-Path)
+    /// Reads a BGP route: best-path flags, next hop, MED, local preference
+    /// and AS path.
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
         // VRP answers in two shapes, and which one arrives depends on the
         // command. `display bgp routing-table <network> <mask>` — what the
@@ -720,5 +759,64 @@ mod real_ne40e_tests {
         let result = HuaweiVrpDriver.parse_bgp_route(raw).expect("column output");
         assert_eq!(result.paths.len(), 1);
         assert_eq!(result.paths[0].med, Some(10));
+    }
+
+    /// Captured from the NE40E in `lab/`. The statistics arrive on three
+    /// lines; the documented shape puts them on one, and reading only that
+    /// reported a ping that answered every probe as total loss.
+    #[test]
+    fn statistics_on_separate_lines_are_read() {
+        let raw = r#"  PING 203.0.113.10: 56  data bytes, press CTRL_C to break
+    Reply from 203.0.113.10: bytes=56 Sequence=1 ttl=63 time=2 ms
+    Reply from 203.0.113.10: bytes=56 Sequence=2 ttl=63 time=1 ms
+    Reply from 203.0.113.10: bytes=56 Sequence=3 ttl=63 time=1 ms
+    Reply from 203.0.113.10: bytes=56 Sequence=4 ttl=63 time=1 ms
+
+  --- 203.0.113.10 ping statistics ---
+    4 packet(s) transmitted
+    4 packet(s) received
+    0.00% packet loss
+    round-trip min/avg/max = 1/1/2 ms
+"#;
+
+        let result = HuaweiVrpDriver.parse_ping(raw).expect("real NE40E output");
+
+        assert_eq!(result.packets_sent, 4);
+        assert_eq!(result.packets_received, 4);
+        assert_eq!(result.packet_loss_percent, 0.0);
+        assert_eq!(result.min_rtt_ms, Some(1.0));
+        assert_eq!(result.max_rtt_ms, Some(2.0));
+    }
+
+    /// The documented shape still arrives on other builds.
+    #[test]
+    fn statistics_on_one_line_are_read() {
+        let raw = "\
+  --- 198.51.100.1 ping statistics ---
+  5 packet(s) transmitted, 4 packet(s) received, 20.00% packet loss
+  round-trip min/avg/max = 1/2/4 ms
+";
+        let result = HuaweiVrpDriver.parse_ping(raw).expect("documented output");
+
+        assert_eq!(result.packets_sent, 5);
+        assert_eq!(result.packets_received, 4);
+        assert_eq!(result.packet_loss_percent, 20.0);
+    }
+
+    /// The old parser defaulted loss to 100, so output it did not understand
+    /// became a reachability failure that had not happened. Ping is the query
+    /// most likely to be read as a yes or no; refusing is the honest answer.
+    #[test]
+    fn output_without_statistics_is_refused_rather_than_called_loss() {
+        let raw = "  PING 203.0.113.10: 56  data bytes, press CTRL_C to break\n";
+
+        let error = HuaweiVrpDriver
+            .parse_ping(raw)
+            .expect_err("no statistics means no answer");
+
+        assert!(
+            matches!(error, DriverError::ParseError(_)),
+            "got {error:?}, which is not a refusal"
+        );
     }
 }
