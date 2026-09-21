@@ -15,8 +15,9 @@ use crate::executor::Transport;
 use crate::inventory::{Credentials, Router};
 use regex::Regex;
 use russh::client::{self, Handle};
-use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
+use russh::keys::{load_secret_key, Algorithm, EcdsaCurve, HashAlg, PrivateKeyWithHashAlg};
 use russh::{ChannelMsg, Disconnect};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -127,6 +128,47 @@ impl SshTransport {
     }
 }
 
+/// Host key algorithms, in the order this client asks for them.
+///
+/// The negotiated algorithm is the first entry the server also supports, so
+/// the order decides what happens on a router that offers several.
+///
+/// `ecdsa-sha2-nistp521` sits at the end, behind RSA, and that is the whole
+/// point of this list. A Huawei NE40E offers `ssh-dss, ssh-rsa,
+/// ecdsa-sha2-nistp521`; the client's default order picks nistp521, and
+/// decoding what VRP sends for it fails with `mpint encoding invalid` — so
+/// every query to every Huawei answered "could not reach the router", with the
+/// router reachable and the credentials right. OpenSSH accepts the same key,
+/// which is why nothing looks wrong from a terminal.
+///
+/// Nothing weaker is added to make this work. `ssh-dss` is 1024-bit DSA, gone
+/// from OpenSSH years ago, and a looking glass that authenticates a router with
+/// it is worse than one that refuses.
+fn host_key_preference() -> Vec<Algorithm> {
+    vec![
+        Algorithm::Ed25519,
+        Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP256,
+        },
+        Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP384,
+        },
+        Algorithm::Rsa {
+            hash: Some(HashAlg::Sha512),
+        },
+        Algorithm::Rsa {
+            hash: Some(HashAlg::Sha256),
+        },
+        // SHA-1 signatures, which is all a VRP offers for RSA.
+        Algorithm::Rsa { hash: None },
+        // Last, for the reason above: a server that offers nothing else is
+        // still tried, and fails the way it does today.
+        Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP521,
+        },
+    ]
+}
+
 /// Session callbacks. Its only real job is the host key decision.
 struct ClientHandler {
     policy: HostKeyPolicy,
@@ -167,6 +209,10 @@ impl Transport for SshTransport {
     ) -> Result<String, DriverError> {
         let config = Arc::new(client::Config {
             inactivity_timeout: Some(self.idle_timeout * 2),
+            preferred: russh::Preferred {
+                key: Cow::Owned(host_key_preference()),
+                ..client::Config::default().preferred
+            },
             ..Default::default()
         });
         let handler = ClientHandler {
@@ -324,5 +370,52 @@ display bgp routing-table 198.51.100.0 255.255.255.0
     #[test]
     fn the_default_host_key_policy_is_accept_any() {
         assert!(matches!(HostKeyPolicy::default(), HostKeyPolicy::AcceptAny));
+    }
+}
+
+#[cfg(test)]
+mod host_key_tests {
+    use super::*;
+
+    /// The order is the fix. A Huawei NE40E offers `ssh-dss, ssh-rsa,
+    /// ecdsa-sha2-nistp521`, the negotiated algorithm is the first entry the
+    /// server also supports, and decoding VRP's nistp521 signature fails — so
+    /// RSA has to come first or every Huawei reports itself unreachable.
+    #[test]
+    fn rsa_is_offered_before_nistp521() {
+        let preference = host_key_preference();
+
+        let rsa = preference
+            .iter()
+            .position(|algorithm| matches!(algorithm, Algorithm::Rsa { .. }))
+            .expect("RSA is offered");
+        let nistp521 = preference
+            .iter()
+            .position(|algorithm| {
+                matches!(
+                    algorithm,
+                    Algorithm::Ecdsa {
+                        curve: EcdsaCurve::NistP521
+                    }
+                )
+            })
+            .expect("nistp521 is still offered, for a server that has nothing else");
+
+        assert!(
+            rsa < nistp521,
+            "RSA must be preferred over nistp521: a Huawei offers both, and the client cannot read its nistp521 signature"
+        );
+    }
+
+    /// DSA is 1024-bit and gone from OpenSSH. A looking glass that
+    /// authenticates a router with it is worse than one that refuses.
+    #[test]
+    fn dsa_is_not_offered() {
+        assert!(
+            !host_key_preference()
+                .iter()
+                .any(|algorithm| matches!(algorithm, Algorithm::Dsa)),
+            "ssh-dss must not be added, however convenient it would be"
+        );
     }
 }
