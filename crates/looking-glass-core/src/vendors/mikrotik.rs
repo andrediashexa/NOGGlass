@@ -24,6 +24,7 @@ impl VendorDriver for MikrotikDriver {
     fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
         // RouterOS ends a ping with a summary of key=value pairs:
         //   sent=5 received=5 packet-loss=0% min-rtt=1ms234us avg-rtt=1ms456us max-rtt=2ms12us
+        let raw = &normalise(raw);
         let mut sent = 0;
         let mut recv = 0;
         let mut loss = 100.0;
@@ -59,12 +60,23 @@ impl VendorDriver for MikrotikDriver {
     }
 
     fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
-        // The shared reader: vendors differ in decoration, not in substance,
-        // and a silent hop has to survive in every one of them.
-        Ok(crate::traceroute::parse("", raw))
+        // RouterOS redraws the whole table as it discovers hops, so the same
+        // hop appears several times: once per redraw. The early ones are a
+        // guess in progress — hop 1 shows `0ms` before the probe has timed out
+        // — and reading them reports a round trip for a hop that never
+        // answered. Only the last table is the answer.
+        //
+        // The shared reader handles the rest: vendors differ in decoration,
+        // not in substance, and a silent hop has to survive in every one.
+        let normalised = normalise(raw);
+        let final_table = match normalised.rfind("Columns:") {
+            Some(start) => &normalised[start..],
+            None => normalised.as_str(),
+        };
+        Ok(crate::traceroute::parse("", final_table))
     }
 
-    /// Parser de Bloco Chave=Valor do RouterOS (/routing/bgp/route/print detail)
+    /// Reads RouterOS's key=value blocks (`/routing/route/print detail`).
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
         // RouterOS prints `/routing/route/print detail` as numbered blocks:
         //
@@ -73,27 +85,33 @@ impl VendorDriver for MikrotikDriver {
         // The letters after the index are flags, and only those count as flags:
         // scanning the whole block for a letter matched values too, which made
         // almost every route look like the best one.
+        let raw_normalised = normalise(raw);
         let mut paths = Vec::new();
+        let mut unreadable = 0;
 
-        for block in raw.split("\n\n") {
+        for block in raw_normalised.split("\n\n") {
+            // RouterOS prints the flag legend first and does not put a blank
+            // line after it, so the legend arrives glued to the first entry.
+            // Skipping any block that starts with `Flags:` therefore threw away
+            // a real route along with it. Legend lines carry no `key=value`;
+            // an entry's first line always does, starting with `afi=`.
+            let block: String = block
+                .lines()
+                .skip_while(|line| !line.contains('='))
+                .collect::<Vec<_>>()
+                .join("\n");
             let block = block.trim();
-            if block.is_empty() || block.starts_with("Flags:") {
+            if block.is_empty() {
                 continue;
             }
 
             let mut path = BgpPath::default();
 
-            // Flags are the second whitespace-separated token, after the index.
-            let mut head = block.split_whitespace();
-            let flags = match (head.next(), head.next()) {
-                (Some(index), Some(flags))
-                    if index.bytes().all(|b| b.is_ascii_digit())
-                        && flags.chars().all(|c| c.is_ascii_alphabetic()) =>
-                {
-                    flags
-                }
-                _ => "",
-            };
+            // Flags come first on the entry's first line. Older RouterOS put a
+            // numbered index before them; 7.16 prints none at all, and reading
+            // the second token as the flags on that output found no flags ever,
+            // so no route was marked active.
+            let flags = read_flags(block);
             // A is active — the route the router is using. b only says the
             // route came from BGP, and every route in this output did, so
             // treating it as "best" marked all of them.
@@ -102,6 +120,13 @@ impl VendorDriver for MikrotikDriver {
             path.is_valid = Some(!flags.contains('X'));
 
             for token in block.split_whitespace() {
+                // RouterOS 7 prints the BGP attributes as sub-properties:
+                // `bgp.peer-cache-id=… .as-path=… .med=…`. The leading dot is
+                // part of the name on every line after the first, so a parser
+                // matching `as-path=` alone reads none of them.
+                let token = token.strip_prefix('.').unwrap_or(token);
+                let token = token.strip_prefix("bgp.").unwrap_or(token);
+
                 // v6 prints `dst-address=`, v7 `dst-address=` too, and some
                 // builds abbreviate to `dst=`.
                 if let Some(val) = token
@@ -117,11 +142,15 @@ impl VendorDriver for MikrotikDriver {
                     // parse_hop returns None for that rather than inventing one.
                     path.next_hop = parse_hop(val.split('%').next().unwrap_or(val));
                 } else if let Some(val) = token.strip_prefix("as-path=") {
-                    path.as_path = val
-                        .trim_matches('"')
-                        .split([',', ' '])
-                        .filter_map(|p| p.trim().parse::<u32>().ok())
-                        .collect();
+                    let (sequence, has_set) = read_as_path(val);
+                    path.as_path = sequence;
+                    if has_set {
+                        // The model cannot express an AS_SET yet, and flattening
+                        // one into the sequence would claim an order the route
+                        // never had. Stop at the set and say the reading is
+                        // partial; the raw output carries the whole truth.
+                        unreadable += 1;
+                    }
                 } else if let Some(val) = token.strip_prefix("local-pref=") {
                     path.local_pref = val.parse().ok();
                 } else if let Some(val) = token.strip_prefix("med=") {
@@ -133,7 +162,10 @@ impl VendorDriver for MikrotikDriver {
                         "incomplete" => Some(Origin::Incomplete),
                         _ => None,
                     };
-                } else if let Some(val) = token.strip_prefix("bgp-communities=") {
+                } else if let Some(val) = token
+                    .strip_prefix("bgp-communities=")
+                    .or_else(|| token.strip_prefix("communities="))
+                {
                     path.communities = val
                         .trim_matches('"')
                         .split(',')
@@ -147,17 +179,94 @@ impl VendorDriver for MikrotikDriver {
             }
         }
 
-        Ok(BgpRouteResult::new(paths, raw))
+        Ok(BgpRouteResult::new(paths, raw).partial(unreadable))
     }
 
     fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
         // Shared reader: the tables differ in headers, not in what a row means.
-        Ok(crate::summary::parse(raw))
+        Ok(crate::summary::parse(&normalise(raw)))
     }
 }
 
+/// Normalises what a RouterOS SSH session actually sends.
+///
+/// Every line ends `\r\n`. That single carriage return is enough to empty a
+/// result: splitting entries on a blank line looks for `"\n\n"`, which never
+/// matches `"\r\n\r\n"`, so the whole output was read as one block, the block
+/// began with the `Flags:` legend, and the parser skipped it. A router with the
+/// route then answered "no route".
+fn normalise(raw: &str) -> String {
+    raw.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// The flag letters at the start of an entry, if there are any.
+///
+/// RouterOS 7.16 prints ` Ab   afi=ip4 …`: flags first, no index. Older builds
+/// print `0 ADb dst=…`. Both are read here, and anything else yields no flags
+/// rather than a guess — a letter picked out of a value once marked almost
+/// every route as best.
+fn read_flags(block: &str) -> &str {
+    let first_line = block.lines().next().unwrap_or("");
+    let mut tokens = first_line.split_whitespace();
+    let Some(first) = tokens.next() else {
+        return "";
+    };
+
+    let is_flags =
+        |token: &str| !token.is_empty() && token.chars().all(|c| c.is_ascii_alphabetic());
+
+    // Old form: an index, then the flags.
+    if first.bytes().all(|b| b.is_ascii_digit()) {
+        return match tokens.next() {
+            Some(flags) if is_flags(flags) => flags,
+            _ => "",
+        };
+    }
+
+    // Current form: the flags themselves, before the first `key=value`.
+    if is_flags(first) {
+        return first;
+    }
+
+    ""
+}
+
+/// Reads an AS path, stopping at an AS_SET.
+///
+/// RouterOS prints a set as `64498{64496,64497` — with no closing brace, which
+/// is its own output and not a truncation here. The numbers inside are a set,
+/// not a sequence, so they are not appended: an AS path is read left to right
+/// and inventing an order for them would describe a route that does not exist.
+/// The caller marks the result partial instead.
+fn read_as_path(value: &str) -> (Vec<u32>, bool) {
+    let value = value.trim_matches('"');
+    let mut sequence = Vec::new();
+
+    for element in value.split([',', ' ']) {
+        let element = element.trim();
+        if element.is_empty() {
+            continue;
+        }
+        if element.contains('{') || element.contains('}') {
+            // The sequence ends here. Whatever precedes the brace is still an
+            // AS in the sequence: `64498{64496` means 64498 then a set.
+            if let Some(before) = element.split('{').next() {
+                if let Ok(asn) = before.trim().parse::<u32>() {
+                    sequence.push(asn);
+                }
+            }
+            return (sequence, true);
+        }
+        if let Ok(asn) = element.parse::<u32>() {
+            sequence.push(asn);
+        }
+    }
+
+    (sequence, false)
+}
+
 fn parse_mikrotik_time(s: &str) -> Option<f64> {
-    // Converte formato MikroTik "1ms234us" para ms decimal
+    // RouterOS writes a time as `1ms234us`: two units, one value.
     if s.contains("ms") {
         let parts: Vec<&str> = s.split("ms").collect();
         let ms: f64 = parts[0].parse().unwrap_or(0.0);
@@ -291,5 +400,218 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
         // quotes a vendor that does not exist.
         assert_eq!(MikrotikDriver::new(true).vendor_name(), "mikrotik_routeros");
         let _ = QueryType::BgpRoute;
+    }
+
+    /// Everything below this line was captured from a RouterOS 7.16.2 in
+    /// `lab/`, peering with three FRR speakers. It is what the router printed,
+    /// not what its documentation describes — the difference is the reason
+    /// these tests exist.
+    ///
+    /// RouterOS sends CRLF over SSH. The fixtures are written with plain
+    /// newlines and converted here, so the conversion is visible rather than
+    /// hidden in an editor.
+    fn as_routeros_sends_it(text: &str) -> String {
+        text.replace('\n', "\r\n")
+    }
+
+    const REAL_THREE_PATHS: &str = r#"Flags: X - disabled, F - filtered, U - unreachable, A - active; 
+c - connect, s - static, r - rip, b - bgp, o - ospf, i - isis, d - dhcp, v - vpn, m - modem, a - ldp-address, l - ldp-mapping, g - slaac, y - bgp-mpls-vpn; 
+H - hw-offloaded; + - ecmp, B - blackhole 
+  b   afi=ip4 contribution=candidate dst-address=203.0.113.0/24 
+       routing-table=main gateway=192.0.2.6 immediate-gw=192.0.2.6%ether3 
+       distance=20 scope=40 target-scope=10 belongs-to="bgp-IP-192.0.2.6" 
+       bgp.peer-cache-id=*2800003 .as-path="64497,64498" .med=100 .origin=igp 
+       debug.fwp-ptr=0x202C24E0 
+
+  b   afi=ip4 contribution=candidate dst-address=203.0.113.0/24 
+       routing-table=main gateway=192.0.2.2 immediate-gw=192.0.2.2%ether2 
+       distance=20 scope=40 target-scope=10 belongs-to="bgp-IP-192.0.2.2" 
+       bgp.peer-cache-id=*2800002 
+       .as-path="64496,64496,64496,65536,65537,65538,65539,65540,65541,64498" 
+       .origin=igp 
+       debug.fwp-ptr=0x202C2540 
+
+ Ab   afi=ip4 contribution=active dst-address=203.0.113.0/24 
+       routing-table=main gateway=192.0.2.10 immediate-gw=192.0.2.10%ether4 
+       distance=20 scope=40 target-scope=10 belongs-to="bgp-IP-192.0.2.10" 
+       bgp.peer-cache-id=*2800004 .as-path="64498" .med=0 .origin=igp 
+       debug.fwp-ptr=0x202C2660 
+"#;
+
+    /// The carriage returns alone used to empty the result: entries are split
+    /// on a blank line, `"\n\n"` never matches `"\r\n\r\n"`, so the whole
+    /// output was one block, that block opened with the legend, and the parser
+    /// skipped it. A router holding the route answered "no route".
+    #[test]
+    fn carriage_returns_do_not_empty_the_result() {
+        let driver = MikrotikDriver::new(true);
+        let result = driver
+            .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
+            .expect("real RouterOS output");
+
+        assert_eq!(
+            result.paths.len(),
+            3,
+            "a route the router has must never be reported as absent"
+        );
+    }
+
+    /// The legend is not followed by a blank line, so it arrives glued to the
+    /// first entry. Skipping the block that starts with `Flags:` threw that
+    /// route away with it.
+    #[test]
+    fn the_route_glued_to_the_legend_is_not_lost() {
+        let driver = MikrotikDriver::new(true);
+        let result = driver
+            .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
+            .expect("real RouterOS output");
+
+        let first = &result.paths[0];
+        assert_eq!(
+            first.next_hop.map(|h| h.to_string()).as_deref(),
+            Some("192.0.2.6")
+        );
+        assert_eq!(first.med, Some(100));
+    }
+
+    /// Absent, zero and set, in one answer. A parser that prints 0 for a MED
+    /// nobody sent is describing a route that does not exist (ADR-0006).
+    #[test]
+    fn an_absent_med_is_not_a_med_of_zero() {
+        let driver = MikrotikDriver::new(true);
+        let result = driver
+            .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
+            .expect("real RouterOS output");
+
+        let meds: Vec<Option<u32>> = result.paths.iter().map(|p| p.med).collect();
+        assert_eq!(meds, vec![Some(100), None, Some(0)]);
+    }
+
+    /// RouterOS 7.16 prints the flags first with no index. Reading the second
+    /// token as the flags found none, so no path was ever marked best.
+    #[test]
+    fn the_active_path_is_the_one_flagged_active() {
+        let driver = MikrotikDriver::new(true);
+        let result = driver
+            .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
+            .expect("real RouterOS output");
+
+        let best: Vec<bool> = result.paths.iter().map(|p| p.is_best).collect();
+        assert_eq!(best, vec![false, false, true], "only `Ab` is active");
+        assert_eq!(
+            result
+                .best()
+                .and_then(|p| p.next_hop)
+                .map(|h| h.to_string()),
+            Some("192.0.2.10".to_string())
+        );
+    }
+
+    /// The attributes are sub-properties of `bgp.`, printed with a leading dot
+    /// on every line after the first. Matching `as-path=` alone read none.
+    #[test]
+    fn dotted_attributes_are_read() {
+        let driver = MikrotikDriver::new(true);
+        let result = driver
+            .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
+            .expect("real RouterOS output");
+
+        assert_eq!(
+            result.paths[1].as_path,
+            vec![64496, 64496, 64496, 65536, 65537, 65538, 65539, 65540, 65541, 64498],
+            "a 32-bit ASN is one number, and the path survives its own line"
+        );
+        assert_eq!(result.paths[1].origin, Some(Origin::Igp));
+    }
+
+    /// RouterOS prints an AS_SET with no closing brace — its own output, not a
+    /// truncation. The numbers inside are a set, so appending them to the
+    /// sequence would claim an order the route never had.
+    #[test]
+    fn an_as_set_stops_the_path_and_marks_the_result_partial() {
+        let raw = as_routeros_sends_it(
+            r#"Flags: X - disabled, F - filtered, U - unreachable, A - active; 
+H - hw-offloaded; + - ecmp, B - blackhole 
+ Ab   afi=ip4 contribution=active dst-address=198.51.100.0/24 
+       routing-table=main gateway=192.0.2.10 immediate-gw=192.0.2.10%ether4 
+       bgp.peer-cache-id=*2800004 .aggregator="64498:192.0.2.10" 
+       .as-path="64498{64496,64497" .med=0 .origin=igp 
+"#,
+        );
+
+        let result = MikrotikDriver::new(true)
+            .parse_bgp_route(&raw)
+            .expect("real RouterOS output");
+
+        assert_eq!(result.paths.len(), 1);
+        assert_eq!(
+            result.paths[0].as_path,
+            vec![64498],
+            "the sequence stops at the set; its members are not a sequence"
+        );
+        assert!(
+            matches!(result.completeness, Completeness::Partial { .. }),
+            "a set the model cannot hold yet makes the reading partial, not wrong"
+        );
+    }
+
+    /// RouterOS redraws the table as it discovers hops. The first draft shows
+    /// hop 1 as `0ms` before the probe has timed out; the final one shows it as
+    /// `timeout`. Reading the draft reported a round trip for a hop that never
+    /// answered.
+    #[test]
+    fn a_hop_that_timed_out_keeps_its_number_and_carries_no_timing() {
+        let raw = as_routeros_sends_it(
+            r#"Columns: LOSS, SENT, LAST
+#  LOSS  SENT  LAST
+1  0%       1  0ms 
+
+Columns: ADDRESS, LOSS, SENT, LAST, AVG, BEST, WORST, STD-DEV
+#  ADDRESS       LOSS  SENT  LAST     AVG  BEST  WORST  STD-DEV
+1                100%     1  timeout                           
+2  203.0.113.10  0%       1  0.3ms    0.3  0.3   0.3          0
+"#,
+        );
+
+        let result = MikrotikDriver::new(true)
+            .parse_traceroute(&raw)
+            .expect("real RouterOS output");
+
+        assert_eq!(result.hops.len(), 2, "a silent hop is still a hop");
+        assert_eq!(result.hops[0].hop, 1);
+        assert_eq!(result.hops[0].ip, None);
+        assert!(
+            result.hops[0].rtt_ms.is_empty(),
+            "a hop that did not answer has no round trip time, not one of zero"
+        );
+        assert_eq!(result.hops[1].ip.as_deref(), Some("203.0.113.10"));
+        assert_eq!(result.hops[1].rtt_ms, vec![0.3]);
+    }
+
+    /// Microseconds, which is what RouterOS reports on a link this short.
+    #[test]
+    fn a_ping_in_microseconds_is_not_read_as_milliseconds() {
+        let raw = as_routeros_sends_it(
+            r#"  SEQ HOST                                     SIZE TTL TIME       STATUS      
+    0 203.0.113.10                               56  63 311us     
+    1 203.0.113.10                               56  63 338us     
+    sent=4 received=4 packet-loss=0% min-rtt=311us avg-rtt=358us 
+   max-rtt=397us 
+"#,
+        );
+
+        let result = MikrotikDriver::new(true)
+            .parse_ping(&raw)
+            .expect("real RouterOS output");
+
+        assert_eq!(result.packets_sent, 4);
+        assert_eq!(result.packets_received, 4);
+        assert_eq!(result.min_rtt_ms, Some(0.311));
+        assert_eq!(result.avg_rtt_ms, Some(0.358));
+        assert_eq!(
+            result.max_rtt_ms,
+            Some(0.397),
+            "the summary wraps onto a second line and the value is still read"
+        );
     }
 }

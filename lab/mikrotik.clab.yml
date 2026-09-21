@@ -1,0 +1,101 @@
+# The NOGGlass test lab, with RouterOS as the device under test.
+#
+#   containerlab deploy -t nogglass.clab.yml
+#   ./capture.sh --node dut --vendor frr        # once BGP has converged
+#   containerlab destroy -t nogglass.clab.yml --cleanup
+#
+# Three BGP speakers around one device under test. The speakers are FRR, which
+# is free and small, so only the DUT ever needs a licensed image. What they
+# announce is chosen to break parsers rather than to look like a real network:
+# see README.md for what each prefix is for.
+#
+#                 +--------+            +--------+
+#                 | peer-a |------------| peer-c |
+#                 +--------+            +--------+
+#                      |  \              /   |
+#                      |   \            /    |
+#                 eth1 |    \   eth3   /     | eth2
+#                 +---------------+   /      |
+#                 |      dut      |---       |
+#                 +---------------+          |
+#                      | eth2                |
+#                 +--------+                 |
+#                 | peer-b |-----------------+
+#                 +--------+
+#
+# To run only part of it — a lab that has no vendor image yet, for instance:
+#
+#   containerlab deploy -t nogglass.clab.yml --node-filter peer-a,peer-b,peer-c,dut
+
+name: nogglass-ros
+
+topology:
+  defaults:
+    kind: linux
+
+  kinds:
+    linux:
+      # Pinned, like every other image in this project: an unpinned peer
+      # changes the output a fixture was captured from.
+      image: quay.io/frrouting/frr:9.1.0
+
+  nodes:
+    peer-a:
+      binds:
+        - conf/peer-a/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+
+    peer-b:
+      binds:
+        - conf/peer-b/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+
+    peer-c:
+      binds:
+        - conf/peer-c/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+        # This hop does not answer traceroute. Not a trick: real routers rate
+        # limit ICMP errors and many operators silence them entirely, which is
+        # why a silent hop in the middle of a working path is the single most
+        # misread output in networking. One ICMP error every 2000 seconds is
+        # silence for any traceroute, and the path still works — which is
+        # exactly the case the parser has to keep numbered.
+        net.ipv4.icmp_ratelimit: "2000000"
+        net.ipv6.icmp.ratelimit: "2000000"
+
+    # The destination behind peer-c, so a traceroute has a middle.
+    far:
+      binds:
+        - conf/far/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+
+    # RouterOS 7 as the device under test, via vrnetlab. Needs /dev/kvm on the
+    # host: this one is a virtual machine, not a container.
+    dut:
+      kind: mikrotik_ros
+      image: vrnetlab/mikrotik_routeros:7.16.2
+      startup-config: conf/dut-ros/config.rsc
+
+  links:
+    - endpoints: ["dut:eth1", "peer-a:eth1"]
+    - endpoints: ["dut:eth2", "peer-b:eth1"]
+    - endpoints: ["dut:eth3", "peer-c:eth1"]
+    - endpoints: ["peer-a:eth2", "peer-c:eth2"]
+    - endpoints: ["peer-b:eth2", "peer-c:eth3"]
+    - endpoints: ["peer-c:eth4", "far:eth1"]
