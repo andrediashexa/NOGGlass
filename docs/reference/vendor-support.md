@@ -3,8 +3,8 @@
 ## TL;DR
 
 Eight drivers, and they are not equally trustworthy. Four have read output from
-a device running the vendor's own software; one of those has answered a query
-through the whole product, SSH and all. The rest have been written from
+a device running the vendor's own software; two of those have answered every
+query through the whole product, SSH and all. The rest have been written from
 documentation and never run against anything, which — on the evidence of the
 three — means they are probably wrong in ways nobody has noticed yet
 ([ADR-0015](../adr/0015-vendor-drivers-are-verified-against-real-devices.md)).
@@ -47,7 +47,7 @@ flowchart TB
 | Vendor | Driver | Status | Verified against | How it was run |
 |---|---|---|---|---|
 | **Huawei VRP** | `huawei_vrp` | **Verified end to end** | NE40E, VRP 8.180 (V800R011C00SPC607) | `lab/huawei.clab.yml`, vrnetlab |
-| **Cisco IOS-XE** | `cisco_iosxe` | **Verified** | CSR1000v, IOS-XE 17.03.08a | `lab/iosxe.clab.yml`, vrnetlab |
+| **Cisco IOS-XE** | `cisco_iosxe` | **Verified end to end** | CSR1000v, IOS-XE 17.03.08a | `lab/iosxe.clab.yml`, vrnetlab |
 | **MikroTik RouterOS** | `mikrotik_routeros` | **Verified** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
 | **BIRD** | `bird_routing_daemon` | **Verified** | BIRD 2.15.1 | `lab/bird.clab.yml` |
 | **Cisco IOS-XR** | `cisco_iosxr` | Unverified | — | XRv9k boots and its admin VM times out here; see below |
@@ -106,6 +106,11 @@ Worth reading before assuming an unverified driver is fine.
   prefix**.
 - Ping, traceroute and the session summary were already right, including a
   silent hop that keeps its number.
+- **The product could not open an SSH session to it at all.** The client offers
+  no `ecdh-sha2-nistp*` key exchange by default, and IOS-XE offers those three
+  and `diffie-hellman-group14-sha1` and nothing else, so the handshake ended
+  with no algorithm in common — twelve milliseconds after being asked, reported
+  as "could not reach the router".
 
 ### BIRD 2.15.1
 

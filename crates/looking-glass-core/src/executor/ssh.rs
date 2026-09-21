@@ -15,6 +15,7 @@ use crate::executor::Transport;
 use crate::inventory::{Credentials, Router};
 use regex::Regex;
 use russh::client::{self, Handle};
+use russh::kex;
 use russh::keys::{load_secret_key, Algorithm, EcdsaCurve, HashAlg, PrivateKeyWithHashAlg};
 use russh::{ChannelMsg, Disconnect};
 use std::borrow::Cow;
@@ -128,6 +129,43 @@ impl SshTransport {
     }
 }
 
+/// Key exchange algorithms, in the order this client asks for them.
+///
+/// The library's default list is modern and short — curve25519, the SHA-2
+/// Diffie-Hellman groups, a post-quantum hybrid — and contains **no**
+/// `ecdh-sha2-nistp*`, although it implements all three. Cisco IOS-XE offers
+/// exactly those three and `diffie-hellman-group14-sha1`, so the intersection
+/// was empty and every Cisco answered "could not reach the router" twelve
+/// milliseconds after being asked. OpenSSH negotiates nistp256 with the same
+/// router without comment, which is why nothing looked wrong from a terminal.
+///
+/// The NIST curves go after the modern algorithms: a router that offers
+/// something better still gets it, and one that does not is reachable.
+///
+/// `diffie-hellman-group14-sha1` is deliberately absent. It is SHA-1 key
+/// exchange, and plenty of equipment still offers it — but everything seen so
+/// far offers a NIST curve as well, and a looking glass is read-only access to
+/// someone else's router. When a real device turns up with nothing else, that
+/// is the evidence to revisit this with.
+pub fn kex_preference() -> Vec<kex::Name> {
+    vec![
+        kex::CURVE25519,
+        kex::CURVE25519_PRE_RFC_8731,
+        kex::DH_GEX_SHA256,
+        kex::DH_G18_SHA512,
+        kex::DH_G16_SHA512,
+        kex::DH_G14_SHA256,
+        // Not in the library's defaults, and all a great deal of vendor
+        // equipment has.
+        kex::ECDH_SHA2_NISTP256,
+        kex::ECDH_SHA2_NISTP384,
+        kex::ECDH_SHA2_NISTP521,
+        // Advertised so a server that supports extensions says so; not a key
+        // exchange in itself.
+        kex::EXTENSION_SUPPORT_AS_CLIENT,
+    ]
+}
+
 /// Host key algorithms, in the order this client asks for them.
 ///
 /// The negotiated algorithm is the first entry the server also supports, so
@@ -144,7 +182,7 @@ impl SshTransport {
 /// Nothing weaker is added to make this work. `ssh-dss` is 1024-bit DSA, gone
 /// from OpenSSH years ago, and a looking glass that authenticates a router with
 /// it is worse than one that refuses.
-fn host_key_preference() -> Vec<Algorithm> {
+pub fn host_key_preference() -> Vec<Algorithm> {
     vec![
         Algorithm::Ed25519,
         Algorithm::Ecdsa {
@@ -210,6 +248,7 @@ impl Transport for SshTransport {
         let config = Arc::new(client::Config {
             inactivity_timeout: Some(self.idle_timeout * 2),
             preferred: russh::Preferred {
+                kex: Cow::Owned(kex_preference()),
                 key: Cow::Owned(host_key_preference()),
                 ..client::Config::default().preferred
             },
@@ -440,6 +479,58 @@ mod host_key_tests {
             rsa < nistp521,
             "RSA must be preferred over nistp521: a Huawei offers both, and the client cannot read its nistp521 signature"
         );
+    }
+
+    /// The NIST curves are the whole point of the key exchange list. A Cisco
+    /// IOS-XE offers `ecdh-sha2-nistp256/384/521` and
+    /// `diffie-hellman-group14-sha1` and nothing else; the library's defaults
+    /// contain none of them, so the handshake ended with "no common Kex
+    /// algorithm" twelve milliseconds in, and every Cisco was unreachable.
+    #[test]
+    fn the_nist_curves_are_offered() {
+        let preference = kex_preference();
+
+        for curve in [
+            kex::ECDH_SHA2_NISTP256,
+            kex::ECDH_SHA2_NISTP384,
+            kex::ECDH_SHA2_NISTP521,
+        ] {
+            assert!(
+                preference.contains(&curve),
+                "{curve:?} must be offered: a great deal of vendor equipment has nothing else"
+            );
+        }
+    }
+
+    /// Modern first. A router that has something better than a NIST curve
+    /// still gets it; one that has not is merely reachable.
+    #[test]
+    fn curve25519_is_preferred_over_the_nist_curves() {
+        let preference = kex_preference();
+        let modern = preference
+            .iter()
+            .position(|name| *name == kex::CURVE25519)
+            .expect("curve25519 is offered");
+        let nist = preference
+            .iter()
+            .position(|name| *name == kex::ECDH_SHA2_NISTP256)
+            .expect("nistp256 is offered");
+
+        assert!(modern < nist);
+    }
+
+    /// SHA-1 key exchange stays out until a real device is found that offers
+    /// nothing else. Everything seen so far offers a NIST curve as well.
+    #[test]
+    fn sha1_key_exchange_is_not_offered() {
+        let preference = kex_preference();
+
+        for weak in [kex::DH_G14_SHA1, kex::DH_G1_SHA1, kex::DH_GEX_SHA1] {
+            assert!(
+                !preference.contains(&weak),
+                "{weak:?} must not be added without evidence that a device needs it"
+            );
+        }
     }
 
     /// DSA is 1024-bit and gone from OpenSSH. A looking glass that
