@@ -40,11 +40,13 @@ mod tests {
     /// reader rather than through a second copy of the same logic.
     #[test]
     fn reads_the_shared_tabular_format() {
-        let raw = "\
-   Network            Next Hop         Metric LocPrf Weight Path
+        // A raw string: `"\` strips the leading whitespace of the next line,
+        // which would take the three spaces that line the header up with the
+        // rows and leave a table no router prints.
+        let raw = r#"   Network            Next Hop         Metric LocPrf Weight Path
 *> 198.51.100.0/24    192.0.2.254          10    150      0 65100 65500 i
 *                    192.0.2.253          20    100      0 65200 65500 i
-";
+"#;
         let result = DatacomDriver
             .parse_bgp_route(raw)
             .expect("DmOS output should parse");

@@ -1,0 +1,21 @@
+set interfaces ge-0/0/0 unit 0 family inet address 192.0.2.1/30
+set interfaces ge-0/0/0 unit 0 family inet6 address 2001:db8:0:1::1/64
+set interfaces ge-0/0/1 unit 0 family inet address 192.0.2.5/30
+set interfaces ge-0/0/1 unit 0 family inet6 address 2001:db8:0:2::1/64
+set interfaces ge-0/0/2 unit 0 family inet address 192.0.2.9/30
+set interfaces ge-0/0/2 unit 0 family inet6 address 2001:db8:0:3::1/64
+set routing-options autonomous-system 64499
+set routing-options router-id 192.0.2.1
+set policy-options policy-statement ANNOUNCE-NOTHING then reject
+set protocols bgp group peers type external
+set protocols bgp group peers export ANNOUNCE-NOTHING
+set protocols bgp group peers neighbor 192.0.2.2 peer-as 64496
+set protocols bgp group peers neighbor 192.0.2.6 peer-as 64497
+set protocols bgp group peers neighbor 192.0.2.10 peer-as 64498
+set protocols bgp group peers neighbor 192.0.2.126 peer-as 64511
+set protocols bgp group peers6 type external
+set protocols bgp group peers6 export ANNOUNCE-NOTHING
+set protocols bgp group peers6 family inet6 unicast
+set protocols bgp group peers6 neighbor 2001:db8:0:1::2 peer-as 64496
+set protocols bgp group peers6 neighbor 2001:db8:0:2::2 peer-as 64497
+set protocols bgp group peers6 neighbor 2001:db8:0:3::2 peer-as 64498

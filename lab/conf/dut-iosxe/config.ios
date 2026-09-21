@@ -1,0 +1,61 @@
+! Cisco IOS-XE, the device under test.
+!
+! vrnetlab keeps GigabitEthernet1 for management, so the lab's links start at
+! GigabitEthernet2:
+!   Gi2 -> peer-a   Gi3 -> peer-b   Gi4 -> peer-c
+!
+! It advertises nothing. A looking glass router has no customers, and here it
+! also keeps this router's AS out of peer-c's AS_SET — without which the
+! aggregate comes back as a loop and the most interesting route in the lab is
+! invisible.
+interface GigabitEthernet2
+ ip address 192.0.2.1 255.255.255.252
+ ipv6 address 2001:DB8:0:1::1/64
+ ipv6 enable
+ no shutdown
+!
+interface GigabitEthernet3
+ ip address 192.0.2.5 255.255.255.252
+ ipv6 address 2001:DB8:0:2::1/64
+ ipv6 enable
+ no shutdown
+!
+interface GigabitEthernet4
+ ip address 192.0.2.9 255.255.255.252
+ ipv6 address 2001:DB8:0:3::1/64
+ ipv6 enable
+ no shutdown
+!
+route-map ANNOUNCE-NOTHING deny 10
+!
+router bgp 64499
+ bgp router-id 192.0.2.1
+ bgp log-neighbor-changes
+ no bgp default ipv4-unicast
+ neighbor 192.0.2.2 remote-as 64496
+ neighbor 192.0.2.6 remote-as 64497
+ neighbor 192.0.2.10 remote-as 64498
+ neighbor 192.0.2.126 remote-as 64511
+ neighbor 2001:DB8:0:1::2 remote-as 64496
+ neighbor 2001:DB8:0:2::2 remote-as 64497
+ neighbor 2001:DB8:0:3::2 remote-as 64498
+ !
+ address-family ipv4
+  neighbor 192.0.2.2 activate
+  neighbor 192.0.2.2 route-map ANNOUNCE-NOTHING out
+  neighbor 192.0.2.6 activate
+  neighbor 192.0.2.6 route-map ANNOUNCE-NOTHING out
+  neighbor 192.0.2.10 activate
+  neighbor 192.0.2.10 route-map ANNOUNCE-NOTHING out
+  neighbor 192.0.2.126 activate
+ exit-address-family
+ !
+ address-family ipv6
+  neighbor 2001:DB8:0:1::2 activate
+  neighbor 2001:DB8:0:1::2 route-map ANNOUNCE-NOTHING out
+  neighbor 2001:DB8:0:2::2 activate
+  neighbor 2001:DB8:0:2::2 route-map ANNOUNCE-NOTHING out
+  neighbor 2001:DB8:0:3::2 activate
+  neighbor 2001:DB8:0:3::2 route-map ANNOUNCE-NOTHING out
+ exit-address-family
+!
