@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.1](https://github.com/andrediashexa/looking-glass/compare/v0.6.0...v0.6.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **bird:** read a real BIRD 2, which loses neither prefix nor session ([#123](https://github.com/andrediashexa/looking-glass/issues/123)) ([3bed1b6](https://github.com/andrediashexa/looking-glass/commit/3bed1b6719d3edd0cc908f507d41d9ca57fafbe5))
+* **huawei:** a ping that answered is no longer reported as total loss ([#117](https://github.com/andrediashexa/looking-glass/issues/117)) ([acdeb9c](https://github.com/andrediashexa/looking-glass/commit/acdeb9c9922dd8307577ea784fc15eb778f97cd4))
+* **huawei:** read a real NE40E, and stop calling a down session up ([#124](https://github.com/andrediashexa/looking-glass/issues/124)) ([3523031](https://github.com/andrediashexa/looking-glass/commit/35230315c10096d695fe8e19a70601967b72af9e))
+* **mikrotik:** read what RouterOS 7 actually prints ([#111](https://github.com/andrediashexa/looking-glass/issues/111)) ([8da1bbb](https://github.com/andrediashexa/looking-glass/commit/8da1bbbf0b1240d54fe3c0beac4002e78f675f22))
+* **ssh:** connect to a Huawei, which the default host key order cannot ([#119](https://github.com/andrediashexa/looking-glass/issues/119)) ([8fc0eb3](https://github.com/andrediashexa/looking-glass/commit/8fc0eb314fad33625d348b7c82931772567ebcab))
+* **ssh:** wait for the greeting, or the banner is the answer ([#121](https://github.com/andrediashexa/looking-glass/issues/121)) ([f0ff5b9](https://github.com/andrediashexa/looking-glass/commit/f0ff5b9366ee966fd32d3b134f96a7790f9ffbe4))
+
+
+### Tests
+
+* **lab:** add a containerlab topology built to break parsers ([#109](https://github.com/andrediashexa/looking-glass/issues/109)) ([8af48a4](https://github.com/andrediashexa/looking-glass/commit/8af48a485015b4d5834f8e3eb21a86bdaca5b182))
+
 ## [0.6.0](https://github.com/andrediashexa/looking-glass/compare/v0.5.0...v0.6.0) (2026-09-20)
 
 
