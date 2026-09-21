@@ -44,6 +44,10 @@ async fn try_with(
     println!("{label}");
     let mut preferred = client::Config::default().preferred;
     preferred.key = Cow::Owned(keys);
+    // The product's key exchange list, always: a device that shares no key
+    // exchange with the client never gets as far as its host key, and the
+    // error then says nothing about the algorithms being tried here.
+    preferred.kex = Cow::Owned(looking_glass_core::executor::ssh::kex_preference());
 
     let config = Arc::new(client::Config {
         preferred,
@@ -97,7 +101,11 @@ async fn main() -> ExitCode {
 
     let mut worked = Vec::new();
     for (label, keys) in [
-        ("as shipped (whatever the client prefers)", defaults.clone()),
+        ("the library's defaults", defaults.clone()),
+        (
+            "what this product asks for",
+            looking_glass_core::executor::ssh::host_key_preference(),
+        ),
         (
             "RSA only, newest hash first",
             vec![rsa_sha512.clone(), rsa_sha256.clone(), rsa_sha1.clone()],
