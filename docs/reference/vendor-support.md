@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-Eight drivers, and they are not equally trustworthy. Three have read output from
+Eight drivers, and they are not equally trustworthy. Four have read output from
 a device running the vendor's own software; one of those has answered a query
 through the whole product, SSH and all. The rest have been written from
 documentation and never run against anything, which — on the evidence of the
@@ -47,12 +47,12 @@ flowchart TB
 | Vendor | Driver | Status | Verified against | How it was run |
 |---|---|---|---|---|
 | **Huawei VRP** | `huawei_vrp` | **Verified end to end** | NE40E, VRP 8.180 (V800R011C00SPC607) | `lab/huawei.clab.yml`, vrnetlab |
+| **Cisco IOS-XE** | `cisco_iosxe` | **Verified** | CSR1000v, IOS-XE 17.03.08a | `lab/iosxe.clab.yml`, vrnetlab |
 | **MikroTik RouterOS** | `mikrotik_routeros` | **Verified** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
 | **BIRD** | `bird_routing_daemon` | **Verified** | BIRD 2.15.1 | `lab/bird.clab.yml` |
-| **Juniper Junos** | `juniper_junos` | Unverified | — | vMX in progress |
-| **Cisco IOS-XE** | `cisco_iosxe` | Unverified | — | CSR1000v in progress |
-| **Cisco IOS-XR** | `cisco_iosxr` | Unverified | — | XRv9k available |
-| **Nokia SR OS** | `nokia_sros` | Unverified | — | TiMOS needs a licence |
+| **Cisco IOS-XR** | `cisco_iosxr` | Unverified | — | XRv9k boots and its admin VM times out here; see below |
+| **Juniper Junos** | `juniper_junos` | Unverified | — | Two images tried, neither runs BGP; see below |
+| **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
 | **Datacom DmOS** | `datacom_dmos` | Unverified | — | No public image |
 
 ## What each real device changed
@@ -94,6 +94,19 @@ Worth reading before assuming an unverified driver is fine.
   table rather than its final state.
 - RouterOS prints an AS_SET with **no closing brace** (`64498{64496,64497`).
 
+### Cisco IOS-XE 17.03.08a
+
+- The route query was answered in the **detail format** and the driver read the
+  column one: three paths came back with no prefix, no next hop and an AS path
+  of `[0]`.
+- The column reader — shared with Datacom — put **the first AS of the path into
+  the weight** whenever a row had a blank LocPrf, because it took "the leading
+  numbers of what is left" as the three metric columns.
+- A continuation line of the status-code legend was read as **a route with no
+  prefix**.
+- Ping, traceroute and the session summary were already right, including a
+  silent hop that keeps its number.
+
 ### BIRD 2.15.1
 
 - The prefix is printed **once**; every path after the first came back without
@@ -102,6 +115,60 @@ Worth reading before assuming an unverified driver is fine.
   sessions at all on a router with six.
 - The prefix count had to come from `Routes:` and not from the **cumulative**
   `Route change stats`, which would only ever grow.
+
+## Why the four unverified ones are unverified
+
+Written down because "we did not get to it" and "it cannot be done here" are
+different answers, and an operator deciding what to trust needs to know which
+one applies.
+
+### Cisco IOS-XR — the lab machine is the limit
+
+The XRv9k image builds and starts. Its admin VM (Calvados) reports
+`calvados bootup timer expired` and the router never finishes coming up.
+XRv9k asks for four cores and 24 GB, and it runs its own virtual machines
+inside the one it is given — on a lab host that is already a virtual machine,
+that is a third level of nesting and it is too slow to meet its own timers.
+
+What would fix it: a bare-metal lab host, or Cisco's container-native **XRd**,
+which runs IOS-XR as a container and skips the nesting entirely. The driver is
+shared with IOS-XE, which **is** verified, so the parsing of the detail format
+and the columns has been exercised — but IOS-XR prints neither exactly the same
+way, and until one answers, this says unverified.
+
+### Juniper Junos — two images, neither of them routes
+
+**vJunos-switch 24.4R1.9** boots and answers on SSH. Its forwarding plane runs
+as a virtual machine inside the virtual machine, and that one never comes up:
+`show chassis fpc` reports slot 0 `Present/Absent`, no `ge-` interfaces exist,
+and the addresses cannot be assigned. It also warns
+`License key missing; requires 'BGP' license`, so even with interfaces it would
+not peer.
+
+**vMX 24.4R1.9**, assembled from the VCP and VFP disks that were available,
+boots the routing engine and reaches a usable CLI on the console. It has no
+`fxp0`, so SSH has no address until one is configured by hand, and
+`show bgp summary` answers `the routing subsystem is not running` — the control
+plane is up and `rpd` is not. Those disks are packaged for a different
+hypervisor layout than the one vrnetlab drives.
+
+What would fix it: Juniper's own `vmx-bundle-*.tgz`, which is what vrnetlab's
+vMX build expects and which carries the pieces in the layout it assumes; or
+**vJunos-router**, which unlike vJunos-switch is built to route.
+
+### Nokia SR OS — the software is here, the licence is not
+
+The available distribution is a TiMOS `cflash` tree (24.10.R2), not the
+`sros-vm.qcow2` vrnetlab builds from, and SR OS requires a licence file to run
+as a virtual router at all. No licence came with it.
+
+What would fix it: a `sros-vm-<version>.qcow2` and a licence file.
+
+### Datacom DmOS — nothing to run
+
+No public image exists. This one needs hardware, or a capture from someone who
+has some: `lab/capture.sh` produces exactly what the tests need, and it needs
+nothing from this repository but read-only access to a router.
 
 ## Running a vendor that is not here
 

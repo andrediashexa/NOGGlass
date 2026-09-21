@@ -1,0 +1,86 @@
+! Cisco IOS-XR, the device under test.
+!
+! vrnetlab keeps MgmtEth0/RP0/CPU0/0 for management, so the lab's links are
+! the GigabitEthernet ports:
+!   0/0/0/0 -> peer-a   0/0/0/1 -> peer-b   0/0/0/2 -> peer-c
+!
+! It advertises nothing, which keeps this router's AS out of peer-c's AS_SET.
+interface GigabitEthernet0/0/0/0
+ ipv4 address 192.0.2.1 255.255.255.252
+ ipv6 address 2001:db8:0:1::1/64
+ no shutdown
+!
+interface GigabitEthernet0/0/0/1
+ ipv4 address 192.0.2.5 255.255.255.252
+ ipv6 address 2001:db8:0:2::1/64
+ no shutdown
+!
+interface GigabitEthernet0/0/0/2
+ ipv4 address 192.0.2.9 255.255.255.252
+ ipv6 address 2001:db8:0:3::1/64
+ no shutdown
+!
+route-policy ANNOUNCE-NOTHING
+  drop
+end-policy
+!
+route-policy ACCEPT-EVERYTHING
+  pass
+end-policy
+!
+router bgp 64499
+ bgp router-id 192.0.2.1
+ address-family ipv4 unicast
+ !
+ address-family ipv6 unicast
+ !
+ neighbor 192.0.2.2
+  remote-as 64496
+  address-family ipv4 unicast
+   route-policy ACCEPT-EVERYTHING in
+   route-policy ANNOUNCE-NOTHING out
+  !
+ !
+ neighbor 192.0.2.6
+  remote-as 64497
+  address-family ipv4 unicast
+   route-policy ACCEPT-EVERYTHING in
+   route-policy ANNOUNCE-NOTHING out
+  !
+ !
+ neighbor 192.0.2.10
+  remote-as 64498
+  address-family ipv4 unicast
+   route-policy ACCEPT-EVERYTHING in
+   route-policy ANNOUNCE-NOTHING out
+  !
+ !
+ neighbor 192.0.2.126
+  remote-as 64511
+  address-family ipv4 unicast
+   route-policy ACCEPT-EVERYTHING in
+   route-policy ANNOUNCE-NOTHING out
+  !
+ !
+ neighbor 2001:db8:0:1::2
+  remote-as 64496
+  address-family ipv6 unicast
+   route-policy ACCEPT-EVERYTHING in
+   route-policy ANNOUNCE-NOTHING out
+  !
+ !
+ neighbor 2001:db8:0:2::2
+  remote-as 64497
+  address-family ipv6 unicast
+   route-policy ACCEPT-EVERYTHING in
+   route-policy ANNOUNCE-NOTHING out
+  !
+ !
+ neighbor 2001:db8:0:3::2
+  remote-as 64498
+  address-family ipv6 unicast
+   route-policy ACCEPT-EVERYTHING in
+   route-policy ANNOUNCE-NOTHING out
+  !
+ !
+!
