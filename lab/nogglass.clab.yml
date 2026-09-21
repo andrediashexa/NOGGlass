@@ -1,0 +1,136 @@
+# The NOGGlass test lab.
+#
+#   containerlab deploy -t nogglass.clab.yml
+#   ./capture.sh --node dut --vendor frr        # once BGP has converged
+#   containerlab destroy -t nogglass.clab.yml --cleanup
+#
+# Three BGP speakers around one device under test. The speakers are FRR, which
+# is free and small, so only the DUT ever needs a licensed image. What they
+# announce is chosen to break parsers rather than to look like a real network:
+# see README.md for what each prefix is for.
+#
+#                 +--------+            +--------+
+#                 | peer-a |------------| peer-c |
+#                 +--------+            +--------+
+#                      |  \              /   |
+#                      |   \            /    |
+#                 eth1 |    \   eth3   /     | eth2
+#                 +---------------+   /      |
+#                 |      dut      |---       |
+#                 +---------------+          |
+#                      | eth2                |
+#                 +--------+                 |
+#                 | peer-b |-----------------+
+#                 +--------+
+#
+# To run only part of it — a lab that has no vendor image yet, for instance:
+#
+#   containerlab deploy -t nogglass.clab.yml --node-filter peer-a,peer-b,peer-c,dut
+
+name: nogglass
+
+topology:
+  defaults:
+    kind: linux
+
+  kinds:
+    linux:
+      # Pinned, like every other image in this project: an unpinned peer
+      # changes the output a fixture was captured from.
+      image: quay.io/frrouting/frr:9.1.0
+
+  nodes:
+    peer-a:
+      binds:
+        - conf/peer-a/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+
+    peer-b:
+      binds:
+        - conf/peer-b/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+
+    peer-c:
+      binds:
+        - conf/peer-c/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+        # This hop does not answer traceroute. Not a trick: real routers rate
+        # limit ICMP errors and many operators silence them entirely, which is
+        # why a silent hop in the middle of a working path is the single most
+        # misread output in networking. One ICMP error every 2000 seconds is
+        # silence for any traceroute, and the path still works — which is
+        # exactly the case the parser has to keep numbered.
+        net.ipv4.icmp_ratelimit: "2000000"
+        net.ipv6.icmp.ratelimit: "2000000"
+
+    # The destination behind peer-c, so a traceroute has a middle.
+    far:
+      binds:
+        - conf/far/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+
+    # The device under test.
+    #
+    # As shipped this is FRR, so the lab runs with no licensed image at all and
+    # the capture script can be exercised end to end. FRR is not a vendor
+    # NOGGlass has a driver for; it is the yardstick.
+    #
+    # To test a vendor, replace this block with one of the following and give
+    # it the same three links. The addressing the peers expect is:
+    #
+    #   eth1  192.0.2.1/30    2001:db8:0:1::1/64   to peer-a, AS 64496
+    #   eth2  192.0.2.5/30    2001:db8:0:2::1/64   to peer-b, AS 64497
+    #   eth3  192.0.2.9/30    2001:db8:0:3::1/64   to peer-c, AS 64498
+    #   local AS 64499, router-id 192.0.2.1
+    #   plus one neighbour 192.0.2.126 remote-as 64511, which never answers
+    #
+    #   MikroTik RouterOS, via vrnetlab:
+    #     kind: vr-ros
+    #     image: vrnetlab/mikrotik_routeros:7.14
+    #
+    #   Juniper cRPD (the Junos driver reads its output):
+    #     kind: crpd
+    #     image: crpd:23.4R1.9
+    #     license: /opt/licences/crpd.lic
+    #
+    #   Cisco IOS-XR:
+    #     kind: cisco_xrd
+    #     image: ios-xr/xrd-control-plane:7.10.1
+    #
+    #   Nokia SR Linux — free, but a different CLI from the SR OS this project
+    #   has a driver for. Running it here measures how much a new driver would
+    #   cost, not whether the existing one works:
+    #     kind: nokia_srlinux
+    #     image: ghcr.io/nokia/srlinux:23.10.1
+    dut:
+      binds:
+        - conf/dut-frr/frr.conf:/etc/frr/frr.conf
+        - conf/daemons:/etc/frr/daemons
+        - conf/vtysh.conf:/etc/frr/vtysh.conf
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.forwarding: "1"
+
+  links:
+    - endpoints: ["dut:eth1", "peer-a:eth1"]
+    - endpoints: ["dut:eth2", "peer-b:eth1"]
+    - endpoints: ["dut:eth3", "peer-c:eth1"]
+    - endpoints: ["peer-a:eth2", "peer-c:eth2"]
+    - endpoints: ["peer-b:eth2", "peer-c:eth3"]
+    - endpoints: ["peer-c:eth4", "far:eth1"]
