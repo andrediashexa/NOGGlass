@@ -58,6 +58,7 @@ flowchart LR
 | [Deployment](operations/deployment.md) | Installing, configuring, exposing and upgrading an instance |
 | [Read-only router users](operations/router-users.md) | The account NOGGlass authenticates with, per vendor |
 | [Running this site](operations/documentation-site.md) | Serving these documents as a searchable site, in a container |
+| [Vendor support](reference/vendor-support.md) | Which drivers have read a real router, and which have read a PDF |
 
 ## Design
 

@@ -48,3 +48,4 @@ stateDiagram-v2
 | [0012](0012-standalone-binary-exposure-and-packaging.md) | Standalone binary exposure, ports and container packaging | Accepted |
 | [0013](0013-product-name-and-branding.md) | Product name: NOGGlass | Accepted |
 | [0014](0014-release-every-change-with-patch-prereleases.md) | Every change is released; patch releases are pre-releases | Accepted |
+| [0015](0015-vendor-drivers-are-verified-against-real-devices.md) | A vendor driver is verified against a real device, or it is not verified | Accepted |

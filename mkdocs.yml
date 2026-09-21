@@ -110,5 +110,7 @@ nav:
       - ADR-0012 Exposure and packaging: adr/0012-standalone-binary-exposure-and-packaging.md
       - ADR-0013 Product name: adr/0013-product-name-and-branding.md
       - ADR-0014 Release every change: adr/0014-release-every-change-with-patch-prereleases.md
+      - ADR-0015 Verified against real devices: adr/0015-vendor-drivers-are-verified-against-real-devices.md
   - Reference:
+      - Vendor support: reference/vendor-support.md
       - Imported infrastructure standard (pt-BR): reference/previous-project-infra-standard.pt-BR.md

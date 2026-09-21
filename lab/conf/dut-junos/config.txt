@@ -1,0 +1,93 @@
+/*
+ * Junos, the device under test.
+ *
+ * Hierarchical format on purpose: vrnetlab appends this to its own base
+ * configuration, and a file of `set` commands makes the whole thing a syntax
+ * error — the router then boots on its factory configuration, with no user
+ * and no SSH, and looks like a boot failure rather than a bad file.
+ *
+ * Same addressing as every other device under test in this lab:
+ *   ge-0/0/0 -> peer-a   ge-0/0/1 -> peer-b   ge-0/0/2 -> peer-c
+ *
+ * It exports nothing. A looking glass router has no customers, and here it
+ * also keeps this router's AS out of peer-c's AS_SET — without which the
+ * aggregate comes back as a loop and the most interesting route in the lab is
+ * invisible.
+ */
+interfaces {
+    ge-0/0/0 {
+        unit 0 {
+            family inet {
+                address 192.0.2.1/30;
+            }
+            family inet6 {
+                address 2001:db8:0:1::1/64;
+            }
+        }
+    }
+    ge-0/0/1 {
+        unit 0 {
+            family inet {
+                address 192.0.2.5/30;
+            }
+            family inet6 {
+                address 2001:db8:0:2::1/64;
+            }
+        }
+    }
+    ge-0/0/2 {
+        unit 0 {
+            family inet {
+                address 192.0.2.9/30;
+            }
+            family inet6 {
+                address 2001:db8:0:3::1/64;
+            }
+        }
+    }
+}
+routing-options {
+    autonomous-system 64499;
+    router-id 192.0.2.1;
+}
+policy-options {
+    policy-statement ANNOUNCE-NOTHING {
+        then reject;
+    }
+}
+protocols {
+    bgp {
+        group peers {
+            type external;
+            export ANNOUNCE-NOTHING;
+            neighbor 192.0.2.2 {
+                peer-as 64496;
+            }
+            neighbor 192.0.2.6 {
+                peer-as 64497;
+            }
+            neighbor 192.0.2.10 {
+                peer-as 64498;
+            }
+            neighbor 192.0.2.126 {
+                peer-as 64511;
+            }
+        }
+        group peers6 {
+            type external;
+            export ANNOUNCE-NOTHING;
+            family inet6 {
+                unicast;
+            }
+            neighbor 2001:db8:0:1::2 {
+                peer-as 64496;
+            }
+            neighbor 2001:db8:0:2::2 {
+                peer-as 64497;
+            }
+            neighbor 2001:db8:0:3::2 {
+                peer-as 64498;
+            }
+        }
+    }
+}
