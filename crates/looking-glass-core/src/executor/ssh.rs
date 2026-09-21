@@ -245,17 +245,6 @@ impl Transport for SshTransport {
             .await
             .map_err(|e| DriverError::IoError(e.to_string()))?;
 
-        if let Some(paging) = paging_command {
-            channel
-                .data_bytes(format!("{paging}\n").into_bytes())
-                .await
-                .map_err(|e| DriverError::IoError(e.to_string()))?;
-        }
-        channel
-            .data_bytes(format!("{command}\n").into_bytes())
-            .await
-            .map_err(|e| DriverError::IoError(e.to_string()))?;
-
         let prompt = Regex::new(
             &crate::catalogue::BUILTIN
                 .vendor(&router.vendor)
@@ -264,7 +253,42 @@ impl Transport for SshTransport {
         )
         .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
-        let output = read_until_prompt(&mut channel, &prompt, self.idle_timeout).await?;
+        // Wait for the router to finish greeting before asking it anything.
+        //
+        // A shell opens with a banner — the VTY count, the last login, a
+        // legal notice — and that banner ends with a prompt. Sending the
+        // command first and then reading until a prompt matches the banner's
+        // prompt, so the greeting comes back as the answer and the answer is
+        // thrown away when the channel closes. A Huawei answered every query
+        // with its own "last login" line.
+        //
+        // Nothing is sent to provoke this. An extra newline earns an extra
+        // prompt, and then every later read stops one exchange early: the
+        // paging command's echo was returned as the answer to the query.
+        //
+        // The wait is short because it only matters when the router says
+        // nothing: with a banner the read ends at its prompt, and without one
+        // there is no reason to hold the session open for the full idle
+        // timeout.
+        let _greeting = read_until_prompt(&mut channel, &prompt, GREETING_TIMEOUT, false).await?;
+
+        // The paging command's own echo and prompt are consumed too: left in
+        // the stream, the query's answer would start with the tail of this
+        // exchange.
+        if let Some(paging) = paging_command {
+            channel
+                .data_bytes(format!("{paging}\n").into_bytes())
+                .await
+                .map_err(|e| DriverError::IoError(e.to_string()))?;
+            let _ = read_until_prompt(&mut channel, &prompt, self.idle_timeout, false).await?;
+        }
+
+        channel
+            .data_bytes(format!("{command}\n").into_bytes())
+            .await
+            .map_err(|e| DriverError::IoError(e.to_string()))?;
+
+        let output = read_until_prompt(&mut channel, &prompt, self.idle_timeout, true).await?;
 
         // Best effort: the answer is already in hand, so a failure to say
         // goodbye politely is not the visitor's problem.
@@ -277,12 +301,23 @@ impl Transport for SshTransport {
     }
 }
 
+/// How long to wait for a router's opening banner.
+///
+/// Only reached by a router that greets with nothing at all; one that prints a
+/// banner ends this read at its prompt, whenever that arrives.
+const GREETING_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Reads until the prompt reappears, the channel closes, or the router goes
 /// quiet for longer than the idle timeout.
+///
+/// `require_output` is false for the reads whose content is discarded — the
+/// greeting and the paging command — because a router that prints no banner is
+/// perfectly normal and must not be reported as an empty response.
 async fn read_until_prompt(
     channel: &mut russh::Channel<client::Msg>,
     prompt: &Regex,
     idle: Duration,
+    require_output: bool,
 ) -> Result<String, DriverError> {
     let mut output = String::new();
 
@@ -310,7 +345,7 @@ async fn read_until_prompt(
         }
     }
 
-    if output.is_empty() {
+    if require_output && output.is_empty() {
         return Err(DriverError::EmptyResponse);
     }
     Ok(output)
