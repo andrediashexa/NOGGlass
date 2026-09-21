@@ -1,4 +1,4 @@
-# The NOGGlass test lab, with a Juniper vMX as the device under test.
+# The NOGGlass test lab, with Cisco IOS-XE as the device under test.
 #
 #   containerlab deploy -t nogglass.clab.yml
 #   ./capture.sh --node dut --vendor frr        # once BGP has converged
@@ -27,7 +27,7 @@
 #
 #   containerlab deploy -t nogglass.clab.yml --node-filter peer-a,peer-b,peer-c,dut
 
-name: nogglass-vmx
+name: nogglass-iosxe
 
 topology:
   defaults:
@@ -85,23 +85,13 @@ topology:
         net.ipv4.ip_forward: "1"
         net.ipv6.conf.all.forwarding: "1"
 
-    # Juniper vMX as the device under test, via vrnetlab. Two virtual
-    # machines: the routing engine and the forwarding plane, which is why this
-    # one works here where vJunos-switch does not — that image runs its
-    # forwarding plane as a machine inside the machine, and the nesting does
-    # not come up.
-    #
-    # 4 cores, 6 GB, and ten to twenty minutes to boot. The image is assembled
-    # from the VCP and VFP disks; see lab/README.md.
-    #
-    # Its configuration is `set` commands with no comments: vrnetlab types the
-    # file into the CLI line by line, so a comment is typed as a command and
-    # the load fails. The vJunos node next door takes the hierarchical format
-    # instead, because that one is appended to a configuration file.
+    # Cisco CSR1000v as the device under test, via vrnetlab: IOS-XE, the
+    # driver's `cisco_iosxe` vendor. A virtual machine, so /dev/kvm, 4 GB and
+    # a few minutes to boot.
     dut:
-      kind: juniper_vmx
-      image: vrnetlab/juniper_vmx:24.4R1.9
-      startup-config: conf/dut-vmx/config.set
+      kind: cisco_csr1000v
+      image: vrnetlab/cisco_csr1000v:17.03.08a
+      startup-config: conf/dut-iosxe/config.ios
 
   links:
     - endpoints: ["dut:eth1", "peer-a:eth1"]

@@ -35,6 +35,10 @@ PREFIX_V6="2001:db8:beef::/48"
 PREFIX_ASSET="198.51.100.0/24"
 ASN="64496"
 COUNT=4
+# Seconds to keep an interactive session open after sending a command, for
+# the answers that take a while: a traceroute across a silent hop is 15 of
+# them before it gives up.
+SESSION_HOLD=40
 
 usage() { sed -n '2,18p' "$0"; }
 
@@ -176,7 +180,15 @@ run_ssh() {
       # The paging command has to travel in the same session as the query, the
       # way the product sends it. Sent as its own connection it does nothing,
       # and the capture then stops at a full screen waiting for a keypress.
-      printf '%s\n%s\n' "$PAGING" "$command" |
+      {
+        printf '%s\n%s\n' "$PAGING" "$command"
+        # Hold the session open. Closing stdin ends the SSH session, and a
+        # router that is still working ends with it: an IOS-XE ping came back
+        # as a single `!` and a traceroute as its first hop, both cut off
+        # mid-answer. The wait is dead time on a fast query and the difference
+        # between a capture and half a capture on a slow one.
+        sleep "$SESSION_HOLD"
+      } |
         sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
           -o LogLevel=ERROR -o PreferredAuthentications=password "${legacy[@]}" \
           -o ConnectTimeout=10 -p "$PORT" "$USER_NAME@$container" 2>&1
