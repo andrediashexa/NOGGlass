@@ -376,11 +376,15 @@ mod tests {
                 .unwrap(),
             "display bgp routing-table 198.51.100.0 255.255.255.0"
         );
+        // And separately for IPv6 too. Written with a slash, an NE40E answers
+        // `Wrong parameter found at '^' position` and every IPv6 route query
+        // on every Huawei comes back empty — which the interface shows as no
+        // route to that prefix.
         assert_eq!(
             catalogue
                 .bgp_route("huawei_vrp", &parse_target("2001:db8::/32").unwrap())
                 .unwrap(),
-            "display bgp ipv6 routing-table 2001:db8::/32"
+            "display bgp ipv6 routing-table 2001:db8:: 32"
         );
         assert_eq!(
             catalogue

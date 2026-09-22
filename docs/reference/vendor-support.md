@@ -80,6 +80,10 @@ Worth reading before assuming an unverified driver is fine.
 - Once connected, the **login banner came back as the answer**, because the
   executor sent its command before reading the greeting, and a banner ends with
   a prompt.
+- **Every IPv6 route query failed**, because VRP wants the prefix and its length
+  as two arguments and the catalogue sent them with a slash. The router answered
+  `Wrong parameter found` and the interface showed "no route" for every IPv6
+  prefix.
 
 ### MikroTik RouterOS 7.16.2
 
