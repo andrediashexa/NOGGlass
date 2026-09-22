@@ -53,7 +53,7 @@ flowchart TB
 | **Cisco IOS-XR** | `cisco_iosxr` | Unverified | — | XRv9k boots and its admin VM times out here; see below |
 | **Juniper Junos** | `juniper_junos` | Unverified | — | Two images tried, neither runs BGP; see below |
 | **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
-| **Datacom DmOS** | `datacom_dmos` | Unverified | — | No public image |
+| **Datacom DmOS** | `datacom_dmos` | Unverified | — | Cannot be virtualised; needs hardware |
 
 ## What each real device changed
 
@@ -169,11 +169,30 @@ as a virtual router at all. No licence came with it.
 
 What would fix it: a `sros-vm-<version>.qcow2` and a licence file.
 
-### Datacom DmOS — nothing to run
+### Datacom DmOS — there is nothing to run, and there will not be
 
-No public image exists. This one needs hardware, or a capture from someone who
-has some: `lab/capture.sh` produces exactly what the tests need, and it needs
-nothing from this repository but read-only access to a router.
+DmOS does not run virtualised. This is not an image nobody has found; there is
+no image. Verifying this driver needs a router, and the only question is whose.
+
+It is a low bar. `lab/capture.sh` runs from any machine that can reach one:
+
+```bash
+./capture.sh --node dmos --host <address> --user <read-only user> \
+    --vendor datacom_dmos --via ssh
+```
+
+It sends exactly what the product sends, paging command included, and writes
+each answer to a file. Those files are what the tests are written from — see
+[ADR-0015](../adr/0015-vendor-drivers-are-verified-against-real-devices.md).
+Nothing else from this repository is needed, and nothing is sent anywhere.
+
+The account it uses SHOULD be the read-only one described in
+[read-only router users](../operations/router-users.md). A capture from a
+router in production is fine; every command in the catalogue is read-only, and
+the capture is one session of `display`-style commands.
+
+Until someone runs that, this driver has been read by a human and by nothing
+else, and the table says so.
 
 ## Running a vendor that is not here
 
