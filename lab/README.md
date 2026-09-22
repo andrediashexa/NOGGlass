@@ -232,8 +232,9 @@ project live beside the parser they exercise, not in a directory of their own.
 
 ### What the lab cannot do
 
-- **Huawei VRP and Datacom DmOS** have no public container image. Those two need
-  real hardware, and until then their parsers stay unverified.
+- **Datacom DmOS** does not run virtualised — there is no image and there will
+  not be one. That driver needs a capture from a router; `capture.sh` runs from
+  any machine that can reach one, and needs nothing from this repository.
 - **RPKI states** are not produced here: there is no validator in the topology,
   so the router reports nothing and NOGGlass falls back (ADR-0010). Testing the
   router-first path needs an RTR session, which is worth adding later.
