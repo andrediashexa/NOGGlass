@@ -30,9 +30,12 @@ ping_v4 = "ping -c {count} {target}"
 ping_v6 = "ping ipv6 -c {count} {target}"
 traceroute_v4 = "tracert {target}"
 traceroute_v6 = "tracert ipv6 {target}"
-# VRP takes address and mask as separate arguments for IPv4.
+# VRP takes the address and its length as separate arguments, for IPv6 as well
+# as for IPv4. Written with a slash, the router answers "Wrong parameter found"
+# and every IPv6 route query on every Huawei returns nothing — which the
+# interface then shows as "no route to that prefix".
 bgp_route_v4 = "display bgp routing-table {network} {netmask}"
-bgp_route_v6 = "display bgp ipv6 routing-table {network}/{prefix_len}"
+bgp_route_v6 = "display bgp ipv6 routing-table {network} {prefix_len}"
 bgp_route_asn = "display bgp routing-table regular-expression _{asn}_"
 bgp_summary = "display bgp peer"
 
