@@ -45,6 +45,18 @@ fn hijacked_prefix() -> IpNet {
     "203.0.113.0/24".parse().expect("RFC 5737 prefix")
 }
 
+/// An aggregate, so the interface meets an answer it cannot fully model: its
+/// AS path stops at an AS_SET and the result says it is partial.
+///
+/// IPv6, because only a single /24 of each IPv4 documentation range is
+/// reserved and an aggregate has to be shorter than its components — a /16
+/// around 198.51.100.0/24 covers a great deal of space that belongs to
+/// somebody. Every address this mock prints is reserved, and the test beside
+/// it is what caught the first attempt.
+fn aggregate_prefix() -> IpNet {
+    "2001:db8:a::/48".parse().expect("RFC 3849 prefix")
+}
+
 /// The IPv6 prefix, RFC 3849.
 fn documentation_prefix_v6() -> IpNet {
     "2001:db8::/32".parse().expect("RFC 3849 prefix")
@@ -114,7 +126,52 @@ impl MockDriver {
                     communities: vec![Community::parse("65001:200")],
                     rpki: RpkiValidation::from_router(RpkiStatus::Valid),
                 },
+                // A prepended path, with a 32-bit AS in it.
+                //
+                // Prepending is how an operator steers traffic and it is in
+                // every real routing table. It was in none of this mock's,
+                // and the interface crashed on the first real router it met:
+                // the graph could not place an AS that appears three times,
+                // and reported the failure as an unreachable router. The
+                // fixtures the interface is developed against should look
+                // like what it will be shown.
+                BgpPath {
+                    prefix: Some(wanted),
+                    next_hop: Some(addr("192.0.2.251")),
+                    peer: Some(addr("192.0.2.251")),
+                    is_best: false,
+                    is_valid: Some(true),
+                    as_path: vec![65200, 65200, 65200, 65536, 65537, 65500],
+                    local_pref: Some(100),
+                    med: Some(200),
+                    weight: Some(0),
+                    origin: Some(Origin::Igp),
+                    communities: vec![Community::parse("65001:300")],
+                    rpki: RpkiValidation::from_router(RpkiStatus::Valid),
+                },
             ]
+        } else if wanted == aggregate_prefix() {
+            // An aggregate carrying an AS_SET.
+            //
+            // The members are a set rather than a sequence, the model cannot
+            // hold one yet, and the sequence therefore stops at the
+            // aggregator — so the answer is partial and says so. Three
+            // vendors print this and the interface had nothing to show it
+            // with, because nothing produced it.
+            vec![BgpPath {
+                prefix: Some(wanted),
+                next_hop: Some(addr("2001:db8::250")),
+                peer: Some(addr("2001:db8::250")),
+                is_best: true,
+                is_valid: Some(true),
+                as_path: vec![65300],
+                local_pref: Some(100),
+                med: Some(0),
+                weight: Some(0),
+                origin: Some(Origin::Igp),
+                communities: vec![],
+                rpki: RpkiValidation::from_router(RpkiStatus::NotFound),
+            }]
         } else if wanted == hijacked_prefix() {
             vec![BgpPath {
                 prefix: Some(wanted),
@@ -163,10 +220,22 @@ impl MockDriver {
                 paths.len()
             )
         };
+        // The aggregate's path stops at an AS_SET the model cannot hold, so
+        // the answer is partial — which the interface has a message for and
+        // had nothing to produce it with.
+        let completeness = if matches!(target, QueryTarget::Prefix(net) if *net == aggregate_prefix())
+        {
+            Completeness::Partial {
+                unreadable_lines: 1,
+            }
+        } else {
+            Completeness::Complete
+        };
+
         BgpRouteResult {
             paths,
             raw_output: raw,
-            completeness: Completeness::Complete,
+            completeness,
             truncated: false,
         }
     }
@@ -311,6 +380,7 @@ mod tests {
         let targets = [
             parse_target("198.51.100.0/24").unwrap(),
             parse_target("203.0.113.0/24").unwrap(),
+            parse_target("2001:db8:a::/48").unwrap(),
             parse_target("2001:db8::/32").unwrap(),
         ];
 
@@ -328,9 +398,15 @@ mod tests {
                     );
                 }
                 for asn in &path.as_path {
+                    // Private (RFC 6996) or documentation (RFC 5398). The
+                    // 32-bit documentation range is what lets the mock carry
+                    // an AS above 65535, which several vendors print in a
+                    // notation that drops it.
                     assert!(
-                        (64512..=65534).contains(asn),
-                        "AS{asn} is outside the RFC 6996 private range"
+                        (64512..=65534).contains(asn)
+                            || (64496..=64511).contains(asn)
+                            || (65536..=65551).contains(asn),
+                        "AS{asn} is in neither a private nor a documentation range"
                     );
                 }
             }
@@ -340,7 +416,7 @@ mod tests {
     #[test]
     fn answers_the_prefix_it_knows_with_a_best_path_and_an_alternative() {
         let result = MockDriver.bgp_route(&parse_target("198.51.100.0/24").unwrap());
-        assert_eq!(result.paths.len(), 2);
+        assert_eq!(result.paths.len(), 3);
         assert_eq!(result.completeness, Completeness::Complete);
 
         let best = result.best().expect("one path is marked best");
@@ -348,10 +424,43 @@ mod tests {
         assert_eq!(best.origin_as(), Some(65500));
         assert_eq!(best.rpki.status, RpkiStatus::Valid);
 
-        // The alternative path has no MED, so the interface has to render an
-        // unknown attribute rather than a zero.
-        let alternative = result.paths.iter().find(|p| !p.is_best).unwrap();
-        assert_eq!(alternative.med, None);
+        // One path has no MED, so the interface has to render an unknown
+        // attribute rather than a zero.
+        assert!(result.paths.iter().any(|p| p.med.is_none()));
+    }
+
+    /// The interface crashed on the first real router it met, drawing a path
+    /// with prepending, and could not have met one here: the mock's longest
+    /// path was three ASNs and none repeated.
+    #[test]
+    fn a_path_is_prepended_and_carries_a_32_bit_as() {
+        let result = MockDriver.bgp_route(&parse_target("198.51.100.0/24").unwrap());
+
+        let prepended = result
+            .paths
+            .iter()
+            .find(|p| p.as_path.len() > 3)
+            .expect("one path is prepended");
+
+        let first = prepended.as_path[0];
+        assert!(
+            prepended.as_path.iter().filter(|a| **a == first).count() >= 3,
+            "the path repeats its first AS, the way an operator steers traffic"
+        );
+        assert!(
+            prepended.as_path.iter().any(|asn| *asn > 65535),
+            "and carries an AS above 65535, which some vendors print in asdot"
+        );
+    }
+
+    /// An aggregate whose AS path stops at a set the model cannot hold. The
+    /// interface has a message for a partial answer and nothing produced one.
+    #[test]
+    fn the_aggregate_is_partial_and_says_so() {
+        let result = MockDriver.bgp_route(&parse_target("2001:db8:a::/48").unwrap());
+
+        assert_eq!(result.paths.len(), 1);
+        assert!(matches!(result.completeness, Completeness::Partial { .. }));
     }
 
     #[test]

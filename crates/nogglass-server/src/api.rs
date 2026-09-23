@@ -580,7 +580,7 @@ queries = ["bgp_route"]
 
         let body = body_json(response).await;
         assert_eq!(body["kind"], "bgp_route");
-        assert_eq!(body["result"]["paths"].as_array().unwrap().len(), 2);
+        assert_eq!(body["result"]["paths"].as_array().unwrap().len(), 3);
         assert!(
             body["result"]["raw_output"].is_string(),
             "raw output is always returned"
