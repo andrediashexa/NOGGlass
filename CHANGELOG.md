@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/andrediashexa/looking-glass/compare/v0.6.3...v0.6.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* **ssh:** stop cutting a traceroute off while the silent hop is silent ([#147](https://github.com/andrediashexa/looking-glass/issues/147)) ([5f6e50c](https://github.com/andrediashexa/looking-glass/commit/5f6e50c022671c78a22b3c5dbf469c15cdb75b5c))
+
 ## [0.6.3](https://github.com/andrediashexa/looking-glass/compare/v0.6.2...v0.6.3) (2026-09-23)
 
 
