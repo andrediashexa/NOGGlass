@@ -120,8 +120,16 @@ bgp_route_v4 = "show ip bgp {target}"
 bgp_route_v6 = "show ipv6 bgp {target}"
 bgp_summary = "show ip bgp summary"
 
+# BIRD's commands run in a shell, not inside birdc: `birdc show ...` prints and
+# exits. Given a terminal, the product waited the full idle timeout for a
+# `bird>` prompt that only appears if you run birdc with no arguments and sit
+# in its interpreter — so every answer arrived late and a ping, still printing
+# when the timeout landed, arrived without its statistics.
 [bird_routing_daemon]
 display_name = "BIRD 2"
+session = "exec"
+# Kept because the catalogue requires one, and describing what birdc's own
+# interpreter prints. The product never enters it.
 prompt = 'bird>'
 ping_v4 = "ping -c {count} {target}"
 ping_v6 = "ping6 -c {count} {target}"

@@ -46,6 +46,13 @@ pub struct SshTransport {
     /// A router that never prints its prompt again — because the command paged,
     /// or the session hung — would otherwise hold the slot until the executor's
     /// timeout fires. This ends it sooner, with what was read so far.
+    ///
+    /// It has to outlast a silence the router is entitled to. A traceroute
+    /// across a hop that does not answer prints nothing while its probes time
+    /// out — around five seconds each — so a five second idle cut the answer
+    /// off after the first probe and returned a traceroute with no hops at
+    /// all. The executor's own timeout is what bounds a genuinely stuck
+    /// session; this only decides when to stop waiting for more.
     idle_timeout: Duration,
     host_keys: HostKeyPolicy,
 }
@@ -54,7 +61,7 @@ impl Default for SshTransport {
     fn default() -> Self {
         Self {
             connect_timeout: Duration::from_secs(10),
-            idle_timeout: Duration::from_secs(5),
+            idle_timeout: Duration::from_secs(20),
             host_keys: HostKeyPolicy::default(),
         }
     }

@@ -8,6 +8,27 @@ a starting point, not a policy: check them against your own hardening standard
 before pasting. Whatever you configure, verify it from a shell first — if the
 account can enter configuration mode, it is too strong.
 
+## One thing that is not about BGP
+
+On a router whose operating system is Linux — BIRD, FRR, VyOS and anything else
+where the looking glass logs into a shell — **traceroute opens a raw socket**,
+and an unprivileged account may not. The query comes back with no hops and the
+router's own message explains why:
+
+```
+traceroute: socket(AF_INET,3,1): Operation not permitted
+```
+
+Ping is usually fine, because the kernel allows it for a group range without
+any privilege. Traceroute needs `CAP_NET_RAW` on the binary:
+
+```bash
+setcap cap_net_raw+ep /usr/bin/traceroute
+```
+
+A vendor CLI does not have this problem: there the privilege model is the
+vendor's, and a read-only account that can run `traceroute` runs it.
+
 ## 5W2H
 
 | Question | Answer |

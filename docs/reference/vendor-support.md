@@ -3,8 +3,8 @@
 ## TL;DR
 
 Eight drivers, and they are not equally trustworthy. Five have read output from
-a device running the vendor's own software; four of those have answered every
-query through the whole product, SSH and all. The rest have been written from
+a device running the vendor's own software, and **all five** have answered
+every query through the whole product, SSH and all. The rest have been written from
 documentation and never run against anything, which — on the evidence of the
 three — means they are probably wrong in ways nobody has noticed yet
 ([ADR-0015](../adr/0015-vendor-drivers-are-verified-against-real-devices.md)).
@@ -50,7 +50,7 @@ flowchart TB
 | **Cisco IOS-XE** | `cisco_iosxe` | **Verified end to end** | CSR1000v, IOS-XE 17.03.08a | `lab/iosxe.clab.yml`, vrnetlab |
 | **MikroTik RouterOS 7** | `mikrotik_routeros` | **Verified end to end** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
 | **MikroTik RouterOS 6** | `mikrotik_routeros` | Unverified | — | The image will not start under vrnetlab; see below |
-| **BIRD** | `bird_routing_daemon` | **Verified** | BIRD 2.15.1 | `lab/bird.clab.yml` |
+| **BIRD** | `bird_routing_daemon` | **Verified end to end** | BIRD 2.15.1 | `lab/bird.clab.yml` |
 | **Cisco IOS-XR** | `cisco_iosxr` | **Verified end to end** | XRv9k, IOS-XR 7.9.2 | `lab/iosxr.clab.yml`, vrnetlab |
 | **Juniper Junos** | `juniper_junos` | Unverified | — | Two images tried, neither runs BGP; see below |
 | **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
@@ -152,6 +152,14 @@ the same as a peer shown as down — and no other vendor here behaves this way.
   sessions at all on a router with six.
 - The prefix count had to come from `Routes:` and not from the **cumulative**
   `Route change stats`, which would only ever grow.
+- Its commands run in a **shell**, not inside `birdc`, so the `bird>` prompt the
+  catalogue names never appears. Every query waited the full idle timeout and a
+  ping — still printing when that landed — arrived without its statistics.
+- **Every traceroute across a silent hop was truncated**, on every vendor. The
+  reader gave up after five seconds without output, and a probe to a hop that
+  does not answer is silent for about that long: the answer came back with no
+  hops at all. Found here because busybox waits five seconds per probe, where a
+  router's own CLI prints sooner.
 
 ## Why the four unverified ones are unverified
 
