@@ -10,6 +10,7 @@
 //! output with the prompt pattern from the catalogue. That is why the catalogue
 //! carries a prompt regex per vendor.
 
+use crate::catalogue::SessionMode;
 use crate::driver::DriverError;
 use crate::executor::Transport;
 use crate::inventory::{Credentials, Router};
@@ -268,10 +269,34 @@ impl Transport for SshTransport {
 
         self.authenticate(&mut session, router).await?;
 
+        let vendor = crate::catalogue::BUILTIN
+            .vendor(&router.vendor)
+            .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?;
+
         let mut channel = session
             .channel_open_session()
             .await
             .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?;
+
+        // One exec request, no terminal, read until the channel closes.
+        //
+        // RouterOS answers this immediately. Given a shell on a terminal it
+        // probes what it has been given — `ESC [ 9999 B`, `ESC Z`,
+        // `ESC [ 6 n` — and waits for the client to report its cursor
+        // position before printing anything, so every query came back empty.
+        if vendor.session == SessionMode::Exec {
+            channel
+                .exec(true, command)
+                .await
+                .map_err(|e| DriverError::IoError(e.to_string()))?;
+
+            let output = read_until_close(&mut channel, self.idle_timeout).await?;
+            let _ = channel.close().await;
+            let _ = session
+                .disconnect(Disconnect::ByApplication, "done", "en")
+                .await;
+            return Ok(output);
+        }
 
         // A wide terminal with no scrolling: routers wrap their tables to the
         // terminal width, and a narrow one would corrupt every column.
@@ -284,13 +309,8 @@ impl Transport for SshTransport {
             .await
             .map_err(|e| DriverError::IoError(e.to_string()))?;
 
-        let prompt = Regex::new(
-            &crate::catalogue::BUILTIN
-                .vendor(&router.vendor)
-                .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?
-                .prompt,
-        )
-        .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let prompt =
+            Regex::new(&vendor.prompt).map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         // Wait for the router to finish greeting before asking it anything.
         //
@@ -345,6 +365,39 @@ impl Transport for SshTransport {
 /// Only reached by a router that greets with nothing at all; one that prints a
 /// banner ends this read at its prompt, whenever that arrives.
 const GREETING_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Reads an exec channel until the router closes it.
+///
+/// There is no prompt to wait for here: the command was the request, and the
+/// answer ends when the channel does.
+async fn read_until_close(
+    channel: &mut russh::Channel<client::Msg>,
+    idle: Duration,
+) -> Result<String, DriverError> {
+    let mut output = String::new();
+
+    loop {
+        let message = match tokio::time::timeout(idle, channel.wait()).await {
+            // Quiet for too long: return what we have rather than hold the slot.
+            Err(_) => break,
+            Ok(None) => break,
+            Ok(Some(message)) => message,
+        };
+
+        match message {
+            ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
+                output.push_str(&String::from_utf8_lossy(&data));
+            }
+            ChannelMsg::Eof | ChannelMsg::Close => break,
+            _ => {}
+        }
+    }
+
+    if output.is_empty() {
+        return Err(DriverError::EmptyResponse);
+    }
+    Ok(output)
+}
 
 /// Reads until the prompt reappears, the channel closes, or the router goes
 /// quiet for longer than the idle timeout.

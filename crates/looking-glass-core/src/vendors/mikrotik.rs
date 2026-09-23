@@ -1,6 +1,6 @@
 use crate::driver::{
-    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
-    Origin, PingResult, TracerouteResult, VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpPeerSummary, BgpRouteResult, BgpSummaryResult, Community,
+    DriverError, Origin, PingResult, TracerouteResult, VendorDriver,
 };
 
 /// Reads MikroTik RouterOS.
@@ -186,9 +186,108 @@ impl VendorDriver for MikrotikDriver {
         Ok(BgpRouteResult::new(paths, raw).partial(unreadable))
     }
 
+    /// Reads `/routing/bgp/session/print detail`.
+    ///
+    /// Not a table, so the shared reader found no sessions at all on a router
+    /// with seven. RouterOS prints one numbered entry per session, with the
+    /// flags after the number and the attributes as dotted sub-properties:
+    ///
+    ///   Flags: E - established
+    ///    1 E name="peer-a-1"
+    ///        remote.address=192.0.2.2 .as=64496 .id=192.0.2.2
+    ///        local.address=192.0.2.1 .as=64499 .id=192.0.2.1
+    ///        hold-time=3m keepalive-time=1m uptime=4m48s290ms
+    ///        last-started=2026-09-20 23:13:07 prefix-count=4
+    ///
+    /// The dot matters: `.as=` belongs to whichever of `remote` or `local` was
+    /// last named, and reading it without tracking that gives every session
+    /// this router's own AS.
     fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
-        // Shared reader: the tables differ in headers, not in what a row means.
-        Ok(crate::summary::parse(&normalise(raw)))
+        let raw_normalised = normalise(raw);
+        let mut peers: Vec<BgpPeerSummary> = Vec::new();
+        let mut local_as = None;
+        let mut router_id = None;
+        let mut current: Option<BgpPeerSummary> = None;
+        // Which group the dotted properties belong to.
+        let mut group = "";
+
+        for line in raw_normalised.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("Flags:") {
+                continue;
+            }
+
+            // A new entry starts at a number, then its flags, then `name=`.
+            let mut tokens = trimmed.split_whitespace().peekable();
+            if tokens
+                .peek()
+                .is_some_and(|first| first.bytes().all(|b| b.is_ascii_digit()))
+            {
+                if let Some(peer) = current.take() {
+                    peers.push(peer);
+                }
+                let established = trimmed.contains(" E ");
+                current = Some(BgpPeerSummary {
+                    peer_ip: String::new(),
+                    peer_as: 0,
+                    // `E` is the only flag RouterOS sets for a session that is
+                    // up; anything else is a session that is not.
+                    state: if established {
+                        "Established".to_string()
+                    } else {
+                        "Idle".to_string()
+                    },
+                    uptime: String::new(),
+                    prefixes_received: 0,
+                    prefixes_accepted: None,
+                });
+                group = "";
+            }
+
+            let Some(peer) = current.as_mut() else {
+                continue;
+            };
+
+            for token in trimmed.split_whitespace() {
+                if let Some((key, value)) = token.split_once('=') {
+                    let value = value.trim_matches('"');
+                    match key {
+                        "remote.address" => {
+                            group = "remote";
+                            peer.peer_ip = value.to_string();
+                        }
+                        "local.address" => group = "local",
+                        ".as" => match group {
+                            "remote" => peer.peer_as = value.parse().unwrap_or(0),
+                            "local" => local_as = value.parse().ok(),
+                            _ => {}
+                        },
+                        ".id" if group == "local" => router_id = Some(value.to_string()),
+                        "uptime" => peer.uptime = value.to_string(),
+                        "prefix-count" => peer.prefixes_received = value.parse().unwrap_or(0),
+                        // A group named on its own, with its properties on the
+                        // lines that follow.
+                        "output.procid" => group = "output",
+                        "input.procid" => group = "input",
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        if let Some(peer) = current.take() {
+            peers.push(peer);
+        }
+
+        // An entry with no remote address is not a session.
+        peers.retain(|peer| !peer.peer_ip.is_empty());
+
+        Ok(BgpSummaryResult {
+            router_id,
+            local_as,
+            peers,
+            raw_output: raw.to_string(),
+        })
     }
 }
 
@@ -617,5 +716,77 @@ Columns: ADDRESS, LOSS, SENT, LAST, AVG, BEST, WORST, STD-DEV
             Some(0.397),
             "the summary wraps onto a second line and the value is still read"
         );
+    }
+
+    /// Captured from the same router. `/routing/bgp/session/print detail` is
+    /// not a table, and the shared table reader found no sessions at all on a
+    /// router with six.
+    const REAL_SESSIONS: &str = r#"Flags: E - established 
+ 0 E name="peer-a-v6-1" 
+     remote.address=2001:db8:0:1::2 .as=64496 .id=192.0.2.2 
+     .capabilities=mp,rr,em,gr,as4,ap,err,llgr,fqdn .afi=ipv6 .messages=7 
+     local.address=2001:db8:0:1::1 .as=64499 .id=192.0.2.1 
+     .cluster-id=192.0.2.1 .capabilities=mp,rr,gr,as4 .afi=ipv6 .messages=7 
+     output.procid=21 .filter-chain=BGP-OUT 
+     input.procid=21 ebgp 
+     hold-time=3m keepalive-time=1m uptime=4m48s290ms 
+     last-started=2026-09-20 23:13:07 prefix-count=2 
+
+ 1 E name="peer-a-1" 
+     remote.address=192.0.2.2 .as=64496 .id=192.0.2.2 
+     .capabilities=mp,rr,em,gr,as4,ap,err,llgr,fqdn .afi=ip .messages=10 
+     local.address=192.0.2.1 .as=64499 .id=192.0.2.1 .cluster-id=192.0.2.1 
+     output.procid=22 .filter-chain=BGP-OUT 
+     input.procid=22 ebgp 
+     hold-time=3m keepalive-time=1m uptime=4m48s290ms 
+     last-started=2026-09-20 23:13:07 prefix-count=4 
+"#;
+
+    #[test]
+    fn the_sessions_are_read() {
+        let result = MikrotikDriver
+            .parse_bgp_summary(&as_routeros_sends_it(REAL_SESSIONS))
+            .expect("real RouterOS output");
+
+        assert_eq!(result.peers.len(), 2);
+        assert_eq!(result.peers[0].peer_ip, "2001:db8:0:1::2");
+        assert_eq!(result.peers[0].prefixes_received, 2);
+        assert_eq!(result.peers[1].peer_ip, "192.0.2.2");
+        assert_eq!(result.peers[1].prefixes_received, 4);
+        assert_eq!(result.peers[1].uptime, "4m48s290ms");
+    }
+
+    /// `.as=` belongs to whichever of `remote` or `local` was named last.
+    /// Reading it without tracking that gives every session this router's own
+    /// AS, which looks plausible and is never right.
+    #[test]
+    fn the_peer_as_is_the_remote_one() {
+        let result = MikrotikDriver
+            .parse_bgp_summary(&as_routeros_sends_it(REAL_SESSIONS))
+            .expect("real RouterOS output");
+
+        assert_eq!(result.peers[0].peer_as, 64496, "the peer's AS, not ours");
+        assert_eq!(result.local_as, Some(64499));
+        assert_eq!(result.router_id.as_deref(), Some("192.0.2.1"));
+    }
+
+    /// `E` is the only flag RouterOS sets for a session that is up.
+    #[test]
+    fn a_session_without_the_established_flag_is_not_established() {
+        let raw = as_routeros_sends_it(
+            r#"Flags: E - established 
+ 0   name="never-1" 
+     remote.address=192.0.2.126 .as=64511 
+     local.address=192.0.2.1 .as=64499 
+"#,
+        );
+
+        let result = MikrotikDriver
+            .parse_bgp_summary(&raw)
+            .expect("real RouterOS output");
+
+        assert_eq!(result.peers.len(), 1);
+        assert_eq!(result.peers[0].state, "Idle");
+        assert_eq!(result.peers[0].prefixes_received, 0);
     }
 }
