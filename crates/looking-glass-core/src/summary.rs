@@ -95,8 +95,14 @@ fn parse_peer_row(line: &str) -> Option<BgpPeerSummary> {
     peer_ip.parse::<std::net::IpAddr>().ok()?;
 
     // The peer AS is the first number after the address that could be one.
-    // Version columns (`4`) come first on Cisco and Huawei, so a bare 4 with
-    // more numbers after it is skipped.
+    // What sits in between differs by platform: Cisco and Huawei print a
+    // version column (`4`), and IOS-XR prints a speaker instance (`Spk`, `0`)
+    // as well:
+    //
+    //   Neighbor        V          AS   ...          (IOS-XE, VRP)
+    //   Neighbor        Spk    AS ...                (IOS-XR)
+    //
+    // Reading the first number found made every XR peer AS 0.
     let peer_as = fields[1..]
         .iter()
         .enumerate()
@@ -104,6 +110,11 @@ fn parse_peer_row(line: &str) -> Option<BgpPeerSummary> {
             let value: u32 = token.parse().ok()?;
             // The version column is 4 and is always followed by the AS.
             if value == 4 && index + 2 < fields.len() {
+                return None;
+            }
+            // AS 0 is reserved (RFC 7607) and never a peer's. A zero here is
+            // a column that is not the AS — the speaker instance on IOS-XR.
+            if value == 0 {
                 return None;
             }
             Some(value)
@@ -258,6 +269,38 @@ Neighbor        V           AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State
     }
 
     /// Huawei prints the same shape with different headers.
+    /// Captured from an XRv9k running IOS-XR 7.9.2 in `lab/`. XR prints a
+    /// speaker instance between the neighbour and its AS, and reading the
+    /// first number found made every peer AS 0 — RFC 7607 reserves that
+    /// number, so it is never a peer's.
+    #[test]
+    fn reads_ios_xr_tables_with_their_speaker_column() {
+        let raw = r#"BGP router identifier 192.0.2.1, local AS number 64499
+BGP is operating in STANDALONE mode.
+
+Process       RcvTblVer   bRIB/RIB   LabelVer  ImportVer  SendTblVer  StandbyVer
+Speaker               8          8          8          8           8           0
+
+Neighbor        Spk    AS MsgRcvd MsgSent   TblVer  InQ OutQ  Up/Down  St/PfxRcd
+192.0.2.2         0 64496      14      12        8    0    0 00:09:43          4
+192.0.2.6         0 64497      14      12        8    0    0 00:09:43          3
+192.0.2.126       0 64511       0       0        0    0    0 00:00:00 Idle
+"#;
+
+        let result = parse(raw);
+
+        assert_eq!(result.local_as, Some(64499));
+        assert_eq!(result.peers.len(), 3);
+        assert_eq!(result.peers[0].peer_as, 64496);
+        assert_eq!(result.peers[0].prefixes_received, 4);
+        assert_eq!(result.peers[1].peer_as, 64497);
+
+        let down = &result.peers[2];
+        assert_eq!(down.peer_as, 64511, "the down session has an AS too");
+        assert_eq!(down.state, "Idle");
+        assert_eq!(down.prefixes_received, 0);
+    }
+
     #[test]
     fn reads_huawei_tables() {
         let raw = "\

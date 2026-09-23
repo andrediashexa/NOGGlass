@@ -2,8 +2,8 @@
 
 ## TL;DR
 
-Eight drivers, and they are not equally trustworthy. Four have read output from
-a device running the vendor's own software; two of those have answered every
+Eight drivers, and they are not equally trustworthy. Five have read output from
+a device running the vendor's own software; three of those have answered every
 query through the whole product, SSH and all. The rest have been written from
 documentation and never run against anything, which — on the evidence of the
 three — means they are probably wrong in ways nobody has noticed yet
@@ -51,7 +51,7 @@ flowchart TB
 | **MikroTik RouterOS 7** | `mikrotik_routeros` | **Verified** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
 | **MikroTik RouterOS 6** | `mikrotik_routeros` | Unverified | — | The image will not start under vrnetlab; see below |
 | **BIRD** | `bird_routing_daemon` | **Verified** | BIRD 2.15.1 | `lab/bird.clab.yml` |
-| **Cisco IOS-XR** | `cisco_iosxr` | Unverified | — | XRv9k boots and its admin VM times out here; see below |
+| **Cisco IOS-XR** | `cisco_iosxr` | **Verified end to end** | XRv9k, IOS-XR 7.9.2 | `lab/iosxr.clab.yml`, vrnetlab |
 | **Juniper Junos** | `juniper_junos` | Unverified | — | Two images tried, neither runs BGP; see below |
 | **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
 | **Datacom DmOS** | `datacom_dmos` | Unverified | — | Cannot be virtualised; needs hardware |
@@ -99,6 +99,18 @@ Worth reading before assuming an unverified driver is fine.
   table rather than its final state.
 - RouterOS prints an AS_SET with **no closing brace** (`64498{64496,64497`).
 
+### Cisco IOS-XR 7.9.2
+
+- **Every peer was reported as `AS0`.** XR prints a speaker instance (`Spk`)
+  between the neighbour and its AS, and the shared reader took the first number
+  it found. AS 0 is reserved by RFC 7607 and is never a peer's, so a zero there
+  is a column that is not the AS.
+- Everything else was already right: ping, traceroute with its silent hop, and
+  the route detail including the 32-bit ASNs.
+- Version **7.7.1 never finished booting** here — its admin VM reported
+  `calvados bootup timer expired` until it gave up. 7.9.2 boots in 26 minutes
+  on the same machine, which is worth knowing before blaming the host.
+
 ### Cisco IOS-XE 17.03.08a
 
 - The route query was answered in the **detail format** and the driver read the
@@ -131,20 +143,6 @@ Worth reading before assuming an unverified driver is fine.
 Written down because "we did not get to it" and "it cannot be done here" are
 different answers, and an operator deciding what to trust needs to know which
 one applies.
-
-### Cisco IOS-XR — the lab machine is the limit
-
-The XRv9k image builds and starts. Its admin VM (Calvados) reports
-`calvados bootup timer expired` and the router never finishes coming up.
-XRv9k asks for four cores and 24 GB, and it runs its own virtual machines
-inside the one it is given — on a lab host that is already a virtual machine,
-that is a third level of nesting and it is too slow to meet its own timers.
-
-What would fix it: a bare-metal lab host, or Cisco's container-native **XRd**,
-which runs IOS-XR as a container and skips the nesting entirely. The driver is
-shared with IOS-XE, which **is** verified, so the parsing of the detail format
-and the columns has been exercised — but IOS-XR prints neither exactly the same
-way, and until one answers, this says unverified.
 
 ### Juniper Junos — two images, neither of them routes
 
