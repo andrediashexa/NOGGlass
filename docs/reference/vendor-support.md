@@ -3,7 +3,7 @@
 ## TL;DR
 
 Eight drivers, and they are not equally trustworthy. Five have read output from
-a device running the vendor's own software; three of those have answered every
+a device running the vendor's own software; four of those have answered every
 query through the whole product, SSH and all. The rest have been written from
 documentation and never run against anything, which — on the evidence of the
 three — means they are probably wrong in ways nobody has noticed yet
@@ -48,7 +48,7 @@ flowchart TB
 |---|---|---|---|---|
 | **Huawei VRP** | `huawei_vrp` | **Verified end to end** | NE40E, VRP 8.180 (V800R011C00SPC607) | `lab/huawei.clab.yml`, vrnetlab |
 | **Cisco IOS-XE** | `cisco_iosxe` | **Verified end to end** | CSR1000v, IOS-XE 17.03.08a | `lab/iosxe.clab.yml`, vrnetlab |
-| **MikroTik RouterOS 7** | `mikrotik_routeros` | **Verified** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
+| **MikroTik RouterOS 7** | `mikrotik_routeros` | **Verified end to end** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
 | **MikroTik RouterOS 6** | `mikrotik_routeros` | Unverified | — | The image will not start under vrnetlab; see below |
 | **BIRD** | `bird_routing_daemon` | **Verified** | BIRD 2.15.1 | `lab/bird.clab.yml` |
 | **Cisco IOS-XR** | `cisco_iosxr` | **Verified end to end** | XRv9k, IOS-XR 7.9.2 | `lab/iosxr.clab.yml`, vrnetlab |
@@ -98,6 +98,21 @@ Worth reading before assuming an unverified driver is fine.
 - A hop that **timed out** was reported as 0.0 ms, read from a redraw of the
   table rather than its final state.
 - RouterOS prints an AS_SET with **no closing brace** (`64498{64496,64497`).
+- **The product could not query it at all.** Given a shell on a terminal,
+  RouterOS probes what it has been given — `ESC [ 9999 B`, `ESC Z`,
+  `ESC [ 6 n` — and waits for the client to report its cursor position before
+  printing anything. Every query came back empty. It answers an exec request
+  immediately, which is what the catalogue now asks for.
+- The session summary is **not a table** either: one numbered entry per
+  session, attributes as dotted sub-properties, and `.as=` belonging to
+  whichever of `remote` or `local` was named last — read without tracking
+  that, every session reports this router's own AS.
+
+**One thing to know when reading a RouterOS summary:** `/routing/bgp/session`
+lists sessions, not configured neighbours, so a neighbour that has **never**
+come up does not appear at all. On the lab router that is six rows for seven
+configured connections. An absent peer means "never established", which is not
+the same as a peer shown as down — and no other vendor here behaves this way.
 
 ### Cisco IOS-XR 7.9.2
 

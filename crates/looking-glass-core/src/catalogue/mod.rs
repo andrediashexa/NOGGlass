@@ -15,7 +15,7 @@
 
 use crate::driver::QueryTarget;
 use crate::target::QueryLimits;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -96,6 +96,9 @@ pub struct VendorCommands {
     pub disable_paging: Option<String>,
     /// Regex matching the router prompt, used to detect end of output.
     pub prompt: String,
+    /// How to ask this vendor for an answer.
+    #[serde(default)]
+    pub session: SessionMode,
 
     pub ping_v4: Option<String>,
     pub ping_v6: Option<String>,
@@ -122,6 +125,25 @@ impl VendorCommands {
         .into_iter()
         .filter_map(|(name, tpl)| tpl.map(|t| (name, t)))
     }
+}
+
+/// How a command reaches a router.
+///
+/// Most platforms want an interactive shell on a terminal: they refuse an exec
+/// request, or they need a paging command sent first, and their answer ends at
+/// a prompt. Some want the opposite, and giving them a shell is worse than
+/// useless — RouterOS probes the terminal it has been given and **waits for
+/// the client to answer** a Device Status Report before printing anything, and
+/// IOS-XR closes a session that is fed a paging command and a query together.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionMode {
+    /// A shell on a pseudo-terminal, read until the prompt returns.
+    #[default]
+    Shell,
+    /// One exec request per command, read until the channel closes. No
+    /// terminal, so nothing to negotiate and no prompt to wait for.
+    Exec,
 }
 
 /// Every vendor the binary knows how to talk to.

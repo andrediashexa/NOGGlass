@@ -92,7 +92,12 @@ bgp_route_v6 = "show router bgp routes {target} ipv6"
 bgp_route_asn = "show router bgp routes aspath-regex \".*{asn}.*\""
 bgp_summary = "show router bgp summary"
 
+# RouterOS answers an exec request immediately and pages nothing. Given a
+# terminal instead, it probes it — `ESC [ 9999 B`, `ESC Z`, `ESC [ 6 n` — and
+# waits for the client to report its cursor position before printing anything,
+# so every query came back empty.
 [mikrotik_routeros]
+session = "exec"
 display_name = "MikroTik RouterOS"
 prompt = '\[[\w\.\-]+@[\w\.\-]+\] >'
 ping_v4 = "/ping address={target} count={count}"
