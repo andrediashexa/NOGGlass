@@ -48,7 +48,8 @@ flowchart TB
 |---|---|---|---|---|
 | **Huawei VRP** | `huawei_vrp` | **Verified end to end** | NE40E, VRP 8.180 (V800R011C00SPC607) | `lab/huawei.clab.yml`, vrnetlab |
 | **Cisco IOS-XE** | `cisco_iosxe` | **Verified end to end** | CSR1000v, IOS-XE 17.03.08a | `lab/iosxe.clab.yml`, vrnetlab |
-| **MikroTik RouterOS** | `mikrotik_routeros` | **Verified** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
+| **MikroTik RouterOS 7** | `mikrotik_routeros` | **Verified** | RouterOS 7.16.2 (CHR) | `lab/mikrotik.clab.yml`, vrnetlab |
+| **MikroTik RouterOS 6** | `mikrotik_routeros` | Unverified | — | The image will not start under vrnetlab; see below |
 | **BIRD** | `bird_routing_daemon` | **Verified** | BIRD 2.15.1 | `lab/bird.clab.yml` |
 | **Cisco IOS-XR** | `cisco_iosxr` | Unverified | — | XRv9k boots and its admin VM times out here; see below |
 | **Juniper Junos** | `juniper_junos` | Unverified | — | Two images tried, neither runs BGP; see below |
@@ -172,6 +173,23 @@ The available distribution is a TiMOS `cflash` tree (24.10.R2), not the
 as a virtual router at all. No licence came with it.
 
 What would fix it: a `sros-vm-<version>.qcow2` and a licence file.
+
+### MikroTik RouterOS 6 — the same driver, and nobody knows if that is right
+
+RouterOS 6 is not version 7 with a smaller number: it keeps BGP under
+`/routing/bgp/peer` where 7 uses `/routing/bgp/connection`, and it may print it
+differently. The catalogue has one entry for both and the driver has one code
+path, which is honest only so long as nobody assumes otherwise — the driver used
+to carry an `is_v7` flag that nothing read, promising a distinction it did not
+make. That flag is gone.
+
+A 6.48.6 CHR was built to settle it with a capture and does not come up:
+vrnetlab's launcher answers the licence prompt, the router prints its CLI help,
+and the bootstrap never finishes. The image is in the list vrnetlab says it
+supports, so this is worth another attempt rather than a conclusion.
+
+Until then, a RouterOS 6 router is served by a parser written for 7. If its
+output differs, that is a bug report with a capture attached.
 
 ### Datacom DmOS — there is nothing to run, and there will not be
 

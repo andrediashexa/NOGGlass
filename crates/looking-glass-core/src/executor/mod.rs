@@ -399,7 +399,7 @@ pub fn driver_for(vendor: &str) -> Option<Box<dyn VendorDriver>> {
         "cisco_iosxr" => Box::new(CiscoDriver::new(true)),
         "juniper_junos" => Box::new(JuniperDriver),
         "nokia_sros" => Box::new(NokiaSrosDriver),
-        "mikrotik_routeros" => Box::new(MikrotikDriver::new(true)),
+        "mikrotik_routeros" => Box::new(MikrotikDriver),
         "datacom_dmos" => Box::new(DatacomDriver),
         "bird_routing_daemon" => Box::new(BirdDriver),
         MOCK_VENDOR => Box::new(MockDriver),

@@ -3,15 +3,19 @@ use crate::driver::{
     Origin, PingResult, TracerouteResult, VendorDriver,
 };
 
-pub struct MikrotikDriver {
-    pub is_v7: bool,
-}
-
-impl MikrotikDriver {
-    pub fn new(is_v7: bool) -> Self {
-        Self { is_v7 }
-    }
-}
+/// Reads MikroTik RouterOS.
+///
+/// The parsing here was checked against **RouterOS 7.16.2**, and that is the
+/// only version it has ever read. RouterOS 6 keeps BGP somewhere else entirely
+/// — `/routing/bgp/peer` rather than `/routing/bgp/connection` — and may well
+/// print it differently. There is no branch for it, because there is no
+/// capture from it: if version 6 turns out to differ, that is a bug report
+/// with a capture attached, and the branch will exist for a reason rather than
+/// in case (ADR-0015).
+///
+/// This type carried an `is_v7` flag that nothing read, which promised exactly
+/// that branch.
+pub struct MikrotikDriver;
 
 impl VendorDriver for MikrotikDriver {
     fn vendor_name(&self) -> &'static str {
@@ -301,7 +305,7 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
  1  Db dst-address=198.51.100.0/24 gateway=192.0.2.253
        as-path=\"65200,65300,65500\" local-pref=100 origin=igp
 ";
-        let result = MikrotikDriver::new(true)
+        let result = MikrotikDriver
             .parse_bgp_route(raw)
             .expect("RouterOS output should parse");
 
@@ -332,14 +336,14 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
     #[test]
     fn flags_are_read_from_the_flags_token_only() {
         let raw = " 0  Db dst-address=198.51.100.0/24 gateway=192.0.2.254 as-path=\"65100\" comment=\"backup A\"\n";
-        let result = MikrotikDriver::new(true).parse_bgp_route(raw).unwrap();
+        let result = MikrotikDriver.parse_bgp_route(raw).unwrap();
         assert!(!result.paths[0].is_best, "the A in a comment is not a flag");
     }
 
     #[test]
     fn a_gateway_that_is_an_interface_is_not_a_next_hop() {
         let raw = " 0 ADb dst-address=198.51.100.0/24 gateway=ether1 as-path=\"65100\"\n";
-        let result = MikrotikDriver::new(true).parse_bgp_route(raw).unwrap();
+        let result = MikrotikDriver.parse_bgp_route(raw).unwrap();
         assert_eq!(
             result.paths[0].next_hop, None,
             "an interface name is not an address, and must not be invented into one"
@@ -355,7 +359,7 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
     1 198.51.100.1                               56  58 1ms456us
     sent=5 received=5 packet-loss=0% min-rtt=1ms234us avg-rtt=1ms456us max-rtt=2ms12us
 ";
-        let result = MikrotikDriver::new(true).parse_ping(raw).unwrap();
+        let result = MikrotikDriver.parse_ping(raw).unwrap();
         assert_eq!(result.packets_sent, 5);
         assert_eq!(result.packets_received, 5);
         assert_eq!(result.packet_loss_percent, 0.0);
@@ -367,7 +371,7 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
     #[test]
     fn a_ping_that_lost_everything_says_so() {
         let raw = "    sent=5 received=0 packet-loss=100%\n";
-        let result = MikrotikDriver::new(true).parse_ping(raw).unwrap();
+        let result = MikrotikDriver.parse_ping(raw).unwrap();
         assert_eq!(result.packets_received, 0);
         assert_eq!(result.packet_loss_percent, 100.0);
         assert_eq!(result.avg_rtt_ms, None, "there were no round trips to time");
@@ -378,7 +382,7 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
     #[test]
     fn rpki_state_is_left_unchecked() {
         let raw = " 0 ADb dst-address=198.51.100.0/24 gateway=192.0.2.254 as-path=\"65100\"\n";
-        let result = MikrotikDriver::new(true).parse_bgp_route(raw).unwrap();
+        let result = MikrotikDriver.parse_bgp_route(raw).unwrap();
         assert_eq!(result.paths[0].rpki.status, RpkiStatus::NotChecked);
     }
 
@@ -398,7 +402,7 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
 
         // The driver name and the catalogue key have to match, or an error
         // quotes a vendor that does not exist.
-        assert_eq!(MikrotikDriver::new(true).vendor_name(), "mikrotik_routeros");
+        assert_eq!(MikrotikDriver.vendor_name(), "mikrotik_routeros");
         let _ = QueryType::BgpRoute;
     }
 
@@ -444,7 +448,7 @@ H - hw-offloaded; + - ecmp, B - blackhole
     /// skipped it. A router holding the route answered "no route".
     #[test]
     fn carriage_returns_do_not_empty_the_result() {
-        let driver = MikrotikDriver::new(true);
+        let driver = MikrotikDriver;
         let result = driver
             .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
             .expect("real RouterOS output");
@@ -461,7 +465,7 @@ H - hw-offloaded; + - ecmp, B - blackhole
     /// route away with it.
     #[test]
     fn the_route_glued_to_the_legend_is_not_lost() {
-        let driver = MikrotikDriver::new(true);
+        let driver = MikrotikDriver;
         let result = driver
             .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
             .expect("real RouterOS output");
@@ -478,7 +482,7 @@ H - hw-offloaded; + - ecmp, B - blackhole
     /// nobody sent is describing a route that does not exist (ADR-0006).
     #[test]
     fn an_absent_med_is_not_a_med_of_zero() {
-        let driver = MikrotikDriver::new(true);
+        let driver = MikrotikDriver;
         let result = driver
             .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
             .expect("real RouterOS output");
@@ -491,7 +495,7 @@ H - hw-offloaded; + - ecmp, B - blackhole
     /// token as the flags found none, so no path was ever marked best.
     #[test]
     fn the_active_path_is_the_one_flagged_active() {
-        let driver = MikrotikDriver::new(true);
+        let driver = MikrotikDriver;
         let result = driver
             .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
             .expect("real RouterOS output");
@@ -511,7 +515,7 @@ H - hw-offloaded; + - ecmp, B - blackhole
     /// on every line after the first. Matching `as-path=` alone read none.
     #[test]
     fn dotted_attributes_are_read() {
-        let driver = MikrotikDriver::new(true);
+        let driver = MikrotikDriver;
         let result = driver
             .parse_bgp_route(&as_routeros_sends_it(REAL_THREE_PATHS))
             .expect("real RouterOS output");
@@ -539,7 +543,7 @@ H - hw-offloaded; + - ecmp, B - blackhole
 "#,
         );
 
-        let result = MikrotikDriver::new(true)
+        let result = MikrotikDriver
             .parse_bgp_route(&raw)
             .expect("real RouterOS output");
 
@@ -573,7 +577,7 @@ Columns: ADDRESS, LOSS, SENT, LAST, AVG, BEST, WORST, STD-DEV
 "#,
         );
 
-        let result = MikrotikDriver::new(true)
+        let result = MikrotikDriver
             .parse_traceroute(&raw)
             .expect("real RouterOS output");
 
@@ -600,7 +604,7 @@ Columns: ADDRESS, LOSS, SENT, LAST, AVG, BEST, WORST, STD-DEV
 "#,
         );
 
-        let result = MikrotikDriver::new(true)
+        let result = MikrotikDriver
             .parse_ping(&raw)
             .expect("real RouterOS output");
 
