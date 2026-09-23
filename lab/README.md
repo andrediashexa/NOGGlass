@@ -134,6 +134,46 @@ containerlab deploy -t iosxe.clab.yml
 containerlab destroy -t iosxe.clab.yml --cleanup
 ```
 
+## Checking a router that is already running
+
+`verify.sh` asks the product the four queries and checks the answers against
+everything that has gone wrong before:
+
+```bash
+./verify.sh lab-ne40e
+./verify.sh lab-csr http://127.0.0.1:8080
+```
+
+```
+bgp_summary
+  ok   the router lists its sessions (4)
+  ok   every session carries a real AS number
+  ok   a session that is not established is reported as such (1)
+
+bgp_route 203.0.113.0/24
+  ok   all three paths are read
+  ok   exactly one path is the best one
+  ok   the MEDs are absent, 0 and 100 — absent is not zero
+  ok   the 32-bit AS numbers survive the path
+...
+10 checks passed against lab-ne40e
+```
+
+Every line is a bug that shipped — a session in Idle reported as
+established, every peer as `AS0`, a prefix with three paths reported as no
+route, a MED nobody set read as zero, asdot AS numbers dropped, a ping that
+answered called total loss, a hop that timed out given a round trip of 0.0 ms.
+None of them is "did it return 200", because all of them returned 200.
+
+The router has to be configured in the running instance and wired into this
+topology: the checks are about what this lab announces.
+
+It runs the traceroute twice and reads the second. The silent hop is a rate
+limit rather than a block — one ICMP error every two thousand seconds, which is
+how a real router behaves — so after a long idle it has a token saved and
+answers the first probe. Checking the first trace would pass or fail on how
+long the lab had been sitting there.
+
 ## Building the images
 
 None of the vendor images comes ready. [vrnetlab](https://github.com/srl-labs/vrnetlab)
