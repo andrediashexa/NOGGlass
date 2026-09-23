@@ -195,6 +195,8 @@ async function onSubmit(event) {
   event?.preventDefault();
   hidePanels();
 
+  let answer = null;
+
   const button = document.getElementById("submit");
   const label = button.querySelector("span");
   button.disabled = true;
@@ -218,12 +220,20 @@ async function onSubmit(event) {
       showError(body.code, body.message);
       return;
     }
-    render(body);
+    answer = body;
   } catch (error) {
     showError("unreachable", String(error));
   } finally {
     button.disabled = false;
     label.textContent = t("form.submit");
+  }
+
+  // Drawing happens outside the catch above, which is about reaching the
+  // router. A bug in rendering used to land there and tell the visitor the
+  // router could not be reached — while its answer sat on the screen
+  // underneath, looking stale and not being.
+  if (answer) {
+    render(answer);
   }
 }
 
@@ -486,15 +496,32 @@ function renderGraph(paths) {
   }
 
   const maxDepth = Math.max(...seen.values(), 1);
-  const nodes = new Map();
+  const placed = new Map();
   for (const [asn, depth] of seen) {
     const column = maxDepth - depth + 1;
-    if (!columns[column]) columns[column] = [];
-    columns[column].push(asn);
-    nodes.set(asn, { asn, column });
+    if (!placed.has(column)) placed.set(column, []);
+    placed.get(column).push(asn);
   }
-  columns[0] = ["local"];
+
+  // Columns with nobody in them are dropped rather than left as holes.
+  //
+  // A prepended path — `64496 64496 64496 65536 …` — gives one AS three
+  // depths and the node keeps the deepest, so the columns the other two would
+  // have filled belong to nobody. Iterating an array with holes yields
+  // `undefined` for them, and drawing threw on the first one: prepending is in
+  // every real routing table and in none of the mock's, which is why this only
+  // appeared against a router.
+  const nodes = new Map();
+  columns.push(["local"]);
   nodes.set("local", { asn: "local", column: 0 });
+  for (const column of [...placed.keys()].sort((a, b) => a - b)) {
+    const members = placed.get(column);
+    const index = columns.length;
+    columns.push(members);
+    for (const asn of members) {
+      nodes.set(asn, { asn, column: index });
+    }
+  }
 
   const columnWidth = 190;
   const rowHeight = 96;
