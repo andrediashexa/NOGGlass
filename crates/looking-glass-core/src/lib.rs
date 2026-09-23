@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_mikrotik_parsing() {
-        let driver = MikrotikDriver::new(true);
+        let driver = MikrotikDriver;
         let raw = "0 ADb dst=198.51.100.0/24 gateway=192.0.2.254 as-path=65100,65500 local-pref=150 med=10";
         let result = driver
             .parse_bgp_route(raw)
@@ -211,7 +211,7 @@ mod tests {
             Box::new(DatacomDriver),
             Box::new(BirdDriver),
             Box::new(CiscoDriver::new(false)),
-            Box::new(MikrotikDriver::new(true)),
+            Box::new(MikrotikDriver),
         ];
 
         for driver in drivers {
@@ -239,7 +239,7 @@ mod tests {
             Box::new(HuaweiVrpDriver),
             Box::new(CiscoDriver::new(false)),
             Box::new(JuniperDriver),
-            Box::new(MikrotikDriver::new(true)),
+            Box::new(MikrotikDriver),
             Box::new(NokiaSrosDriver),
             Box::new(DatacomDriver),
             Box::new(BirdDriver),

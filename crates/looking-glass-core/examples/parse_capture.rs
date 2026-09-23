@@ -29,7 +29,7 @@ fn driver_for(vendor: &str) -> Option<Box<dyn VendorDriver>> {
         "cisco_iosxr" => Some(Box::new(CiscoDriver::new(true))),
         "juniper_junos" => Some(Box::new(JuniperDriver)),
         "nokia_sros" => Some(Box::new(NokiaSrosDriver)),
-        "mikrotik_routeros" => Some(Box::new(MikrotikDriver::new(true))),
+        "mikrotik_routeros" => Some(Box::new(MikrotikDriver)),
         "datacom_dmos" => Some(Box::new(DatacomDriver)),
         "bird_routing_daemon" => Some(Box::new(BirdDriver)),
         _ => None,
