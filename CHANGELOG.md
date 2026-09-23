@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.5](https://github.com/andrediashexa/looking-glass/compare/v0.6.4...v0.6.5) (2026-09-23)
+
+
+### Bug Fixes
+
+* **ui:** draw a prepended path, and stop calling a drawing bug unreachable ([#153](https://github.com/andrediashexa/looking-glass/issues/153)) ([7662420](https://github.com/andrediashexa/looking-glass/commit/7662420989cb5b9504244f1b7741060741110ca3))
+
+
+### Tests
+
+* **lab:** one command that checks a router against what went wrong ([#150](https://github.com/andrediashexa/looking-glass/issues/150)) ([4ae2f41](https://github.com/andrediashexa/looking-glass/commit/4ae2f41f0d5dbfc1dd33e0ef198c8553315c3542))
+* **mock:** answer with the shapes a real routing table has ([#155](https://github.com/andrediashexa/looking-glass/issues/155)) ([9cf0331](https://github.com/andrediashexa/looking-glass/commit/9cf03317ada4fa2a2567488ca2933afcaae2c8dd))
+
 ## [0.6.4](https://github.com/andrediashexa/looking-glass/compare/v0.6.3...v0.6.4) (2026-09-23)
 
 
