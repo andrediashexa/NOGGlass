@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.3](https://github.com/andrediashexa/looking-glass/compare/v0.6.2...v0.6.3) (2026-09-23)
+
+
+### Bug Fixes
+
+* **catalogue:** send an IPv6 route query a Huawei accepts ([#139](https://github.com/andrediashexa/looking-glass/issues/139)) ([c655037](https://github.com/andrediashexa/looking-glass/commit/c6550373fc2b75fc504d57fe04f933a34b0dccf1))
+* **mikrotik:** drop a RouterOS 6 flag the driver never read ([#141](https://github.com/andrediashexa/looking-glass/issues/141)) ([0a1a378](https://github.com/andrediashexa/looking-glass/commit/0a1a378915e9b48599431f9fd9531ba63a89aedf))
+* **ssh:** ask RouterOS with an exec request, and read its sessions ([#145](https://github.com/andrediashexa/looking-glass/issues/145)) ([34f4737](https://github.com/andrediashexa/looking-glass/commit/34f47374ffc3d3f35f6ac384aa4312dc80395e21))
+* **summary:** read an IOS-XR peer's AS instead of its speaker number ([#143](https://github.com/andrediashexa/looking-glass/issues/143)) ([aed54c2](https://github.com/andrediashexa/looking-glass/commit/aed54c21c16ec89c638b856ef87928a0d7d4bcb0))
+
+
+### Documentation
+
+* Datacom needs hardware, and that is not going to change ([#136](https://github.com/andrediashexa/looking-glass/issues/136)) ([65a9d44](https://github.com/andrediashexa/looking-glass/commit/65a9d449666ca2cbb76ee9971df303d95eebb7a8))
+
 ## [0.6.2](https://github.com/andrediashexa/looking-glass/compare/v0.6.1...v0.6.2) (2026-09-21)
 
 
