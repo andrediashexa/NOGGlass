@@ -91,7 +91,7 @@ topology:
     # and the better part of twenty minutes to boot.
     dut:
       kind: cisco_xrv9k
-      image: vrnetlab/cisco_xrv9k:7.7.1
+      image: vrnetlab/cisco_xrv9k:7.9.2
       startup-config: conf/dut-iosxr/config.iosxr
       env:
         # The defaults are not enough: the admin VM (Calvados) timed out

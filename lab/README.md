@@ -123,7 +123,7 @@ file so a run is one command, and `conf/dut-*/` holds its configuration.
 | MikroTik RouterOS | `mikrotik.clab.yml` | `vrnetlab/mikrotik_routeros:7.16.2` | `/dev/kvm`, ~1 GB, boots in a minute |
 | Huawei VRP | `huawei.clab.yml` | `vrnetlab/huawei_vrp:ne40e-8.180` | `/dev/kvm`, 4 GB, boots in four minutes |
 | Cisco IOS-XE | `iosxe.clab.yml` | `vrnetlab/cisco_csr1000v:17.03.08a` | `/dev/kvm`, 4 GB, boots in five minutes |
-| Cisco IOS-XR | `iosxr.clab.yml` | `vrnetlab/cisco_xrv9k:7.7.1` | `/dev/kvm`, 24 GB — **does not finish booting here**, see below |
+| Cisco IOS-XR | `iosxr.clab.yml` | `vrnetlab/cisco_xrv9k:7.9.2` | `/dev/kvm`, 20 GB, five cores, **26 minutes** to boot |
 | Juniper | `vmx.clab.yml`, `junos.clab.yml` | `vrnetlab/juniper_vmx`, `vrnetlab/juniper_vjunos-switch` | `/dev/kvm`, 6 GB — **neither routes here**, see below |
 
 Deploy one at a time. Two of these want most of a lab host to themselves:
@@ -185,6 +185,21 @@ configuration, so the same content must be in **hierarchical** format. A file of
 its factory configuration with no user and no SSH, and it looks like a boot
 failure rather than a bad file.
 
+**IOS-XR** brings its line card up minutes after its route processor, and
+`show platform` is what says so. A startup configuration naming
+`GigabitEthernet0/0/0/0` is rejected at boot because that interface does not
+exist yet, so the configuration has to be sent again once `0/0/CPU0` appears.
+It also **closes an interactive session** that is fed a paging command and a
+query together — `Received disconnect ... 22:11` — so a capture from XR needs
+one command per session, which is what `ssh host 'command'` does by default.
+The product is unaffected: it opens a shell, waits for the greeting and sends
+one query.
+
+**Version matters more than the vendor's own documentation suggests.** XRv9k
+**7.7.1** never finished booting on this machine: its admin VM reported
+`calvados bootup timer expired` until it gave up. **7.9.2** boots in 26 minutes
+on the same host with the same resources.
+
 **Every device under test must announce nothing to the peers.** A looking glass
 router has no customers, and here it also matters mechanically: with the DUT
 re-advertising between peers, its own AS lands inside peer-c's AS_SET, the
@@ -194,12 +209,6 @@ own dialect: a `deny` route-map on FRR and IOS-XE, a `reject` filter chain on
 RouterOS, a `deny node 10` route-policy on VRP, `then reject` on Junos.
 
 ## What does not work here, and why
-
-**Cisco IOS-XR.** The XRv9k image builds and starts, and its admin VM reports
-`calvados bootup timer expired` until it gives up. XRv9k runs virtual machines
-inside the one it is given; on a lab host that is itself a virtual machine that
-is a third level of nesting, and it is too slow to meet its own timers. A
-bare-metal host would settle it, and so would Cisco's container-native XRd.
 
 **Juniper.** Two images, neither routes. vJunos-switch boots and answers on SSH,
 but its forwarding plane is a virtual machine inside the virtual machine and
