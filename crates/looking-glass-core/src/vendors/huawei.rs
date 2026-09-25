@@ -398,7 +398,9 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
         } else if let Some(rest) = line.strip_prefix("Community:") {
             path.communities.extend(
                 rest.split(',')
-                    .map(|c| Community::parse(c.trim().trim_matches(|c| c == '<' || c == '>'))),
+                    .map(|c| c.trim().trim_matches(|c| c == '<' || c == '>').trim())
+                    .filter(|c| !c.is_empty() && *c != "...")
+                    .map(Community::parse),
             );
         } else if let Some(rest) = line.strip_prefix("AS-path") {
             match read_attributes(rest, path) {
