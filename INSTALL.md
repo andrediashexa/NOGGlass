@@ -87,12 +87,15 @@ NOGGlass loads its topology and operational limits from a TOML configuration fil
 
 ### 3.1. Directory Structure
 
-Recommended production filesystem layout:
+Recommended production filesystem layout with restricted permissions:
 
 ```bash
+sudo useradd -r -s /bin/false nogglass 2>/dev/null || true
 sudo mkdir -p /etc/nogglass /var/log/nogglass
 sudo cp nogglass.example.toml /etc/nogglass/nogglass.toml
-sudo chmod 644 /etc/nogglass/nogglass.toml
+sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
+sudo chmod 750 /etc/nogglass /var/log/nogglass
+sudo chmod 640 /etc/nogglass/nogglass.toml
 ```
 
 ### 3.2. Configuration File Anatomy (`nogglass.toml`)
@@ -174,10 +177,11 @@ trusted_proxies = ["127.0.0.1", "::1"]
    sudo chmod +x /usr/local/bin/nogglass
    ```
 
-2. Create a dedicated system user:
+2. Create a dedicated system user (if not already created in section 3.1):
    ```bash
-   sudo useradd -r -s /bin/false nogglass
-   sudo chown -R nogglass:nogglass /etc/nogglass
+   sudo useradd -r -s /bin/false nogglass 2>/dev/null || true
+   sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
+   sudo chmod 750 /etc/nogglass /var/log/nogglass
    ```
 
 3. Create the environment file `/etc/nogglass/nogglass.env` (permissions `0600`):
