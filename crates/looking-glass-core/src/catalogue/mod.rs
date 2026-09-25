@@ -106,6 +106,12 @@ pub struct VendorCommands {
     pub traceroute_v6: Option<String>,
     pub bgp_route_v4: Option<String>,
     pub bgp_route_v6: Option<String>,
+    /// Dedicated command when querying a single host IP (Longest Prefix Match)
+    /// rather than a network prefix. When absent, falls back to `bgp_route_v4`.
+    pub bgp_route_ip_v4: Option<String>,
+    /// Dedicated command when querying a single IPv6 host (Longest Prefix Match).
+    /// When absent, falls back to `bgp_route_v6`.
+    pub bgp_route_ip_v6: Option<String>,
     pub bgp_route_asn: Option<String>,
     pub bgp_summary: Option<String>,
 }
@@ -119,6 +125,8 @@ impl VendorCommands {
             ("traceroute_v6", self.traceroute_v6.as_ref()),
             ("bgp_route_v4", self.bgp_route_v4.as_ref()),
             ("bgp_route_v6", self.bgp_route_v6.as_ref()),
+            ("bgp_route_ip_v4", self.bgp_route_ip_v4.as_ref()),
+            ("bgp_route_ip_v6", self.bgp_route_ip_v6.as_ref()),
             ("bgp_route_asn", self.bgp_route_asn.as_ref()),
             ("bgp_summary", self.bgp_summary.as_ref()),
         ]
@@ -266,11 +274,17 @@ impl Catalogue {
                 Ok(render(template, &[("asn", asn.to_string())]))
             }
             QueryTarget::Ip(ip) => {
-                let template = pick(
-                    ip.is_ipv4(),
-                    commands.bgp_route_v4.as_ref(),
-                    commands.bgp_route_v6.as_ref(),
-                )
+                let template = if ip.is_ipv4() {
+                    commands
+                        .bgp_route_ip_v4
+                        .as_ref()
+                        .or(commands.bgp_route_v4.as_ref())
+                } else {
+                    commands
+                        .bgp_route_ip_v6
+                        .as_ref()
+                        .or(commands.bgp_route_v6.as_ref())
+                }
                 .ok_or_else(unsupported)?;
                 let netmask = if ip.is_ipv4() {
                     "255.255.255.255".to_string()
@@ -391,12 +405,19 @@ mod tests {
                 .unwrap(),
             "tracert ipv6 2001:db8::1"
         );
-        // VRP wants address and mask separately for IPv4.
+        // VRP wants address and mask separately for IPv4 when querying a prefix.
         assert_eq!(
             catalogue
                 .bgp_route("huawei_vrp", &parse_target("198.51.100.0/24").unwrap())
                 .unwrap(),
             "display bgp routing-table 198.51.100.0 255.255.255.0"
+        );
+        // But for a single host IP (Longest Prefix Match), VRP takes the IP directly without a netmask.
+        assert_eq!(
+            catalogue
+                .bgp_route("huawei_vrp", &parse_target("191.243.120.1").unwrap())
+                .unwrap(),
+            "display bgp routing-table 191.243.120.1"
         );
         // And separately for IPv6 too. Written with a slash, an NE40E answers
         // `Wrong parameter found at '^' position` and every IPv6 route query
@@ -407,6 +428,12 @@ mod tests {
                 .bgp_route("huawei_vrp", &parse_target("2001:db8::/32").unwrap())
                 .unwrap(),
             "display bgp ipv6 routing-table 2001:db8:: 32"
+        );
+        assert_eq!(
+            catalogue
+                .bgp_route("huawei_vrp", &parse_target("2001:db8::1").unwrap())
+                .unwrap(),
+            "display bgp ipv6 routing-table 2001:db8::1"
         );
         assert_eq!(
             catalogue
