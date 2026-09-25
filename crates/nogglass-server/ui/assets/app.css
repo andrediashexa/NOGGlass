@@ -43,11 +43,9 @@ body::before {
   background-size: 48px 48px, 48px 48px, cover;
   background-position: center, center, center;
   background-repeat: repeat, repeat, no-repeat;
-  filter: blur(40px);
   opacity: 0.35;
   pointer-events: none;
   z-index: -1;
-  transform: scale(1.08); /* prevents white blurred edges at viewport boundaries */
 }
 
 main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }
@@ -56,10 +54,10 @@ main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }
 .topbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
   justify-content: space-between;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 24px 10px;
   border-bottom: 1px solid var(--border-card);
   background: rgba(6, 9, 14, 0.9);
   backdrop-filter: blur(12px);
@@ -68,14 +66,15 @@ main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }
   z-index: 10;
 }
 
-.brand { display: flex; align-items: center; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 14px; }
 .brand-logo {
-  height: 28px;
+  height: 48px;
   width: auto;
+  max-width: 260px;
   display: block;
   object-fit: contain;
 }
-.brand-tagline, .meta { color: var(--text-muted); font-size: 13px; }
+.brand-tagline, .meta { color: var(--text-muted); font-size: 14px; }
 
 .locales { display: flex; gap: 4px; }
 .locales a {
