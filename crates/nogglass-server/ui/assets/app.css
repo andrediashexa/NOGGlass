@@ -23,13 +23,31 @@ body {
   margin: 0;
   padding: 0 0 env(safe-area-inset-bottom, 0px);
   background: var(--bg-base);
-  background-image:
-    linear-gradient(rgba(30, 58, 86, 0.25) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(30, 58, 86, 0.25) 1px, transparent 1px);
-  background-size: 48px 48px;
   color: var(--text-main);
   font: 15px/1.5 var(--font-sans);
   min-height: 100vh;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-image:
+    linear-gradient(rgba(30, 58, 86, 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 58, 86, 0.25) 1px, transparent 1px),
+    url("/assets/nogglass.png");
+  background-size: 48px 48px, 48px 48px, cover;
+  background-position: center, center, center;
+  background-repeat: repeat, repeat, no-repeat;
+  filter: blur(40px);
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: -1;
+  transform: scale(1.08); /* prevents white blurred edges at viewport boundaries */
 }
 
 main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }

@@ -17,6 +17,7 @@ use axum::Router as AxumRouter;
 const INDEX_HTML: &str = include_str!("../ui/index.html");
 const APP_CSS: &str = include_str!("../ui/assets/app.css");
 const APP_JS: &str = include_str!("../ui/assets/app.js");
+const NOGGLASS_PNG: &[u8] = include_bytes!("../ui/assets/nogglass.png");
 const MESSAGES_EN: &str = include_str!("../ui/messages/en.json");
 const MESSAGES_PT: &str = include_str!("../ui/messages/pt-BR.json");
 const MESSAGES_ES: &str = include_str!("../ui/messages/es.json");
@@ -31,6 +32,7 @@ pub fn routes() -> AxumRouter {
         .route("/{locale}", get(index))
         .route("/assets/app.css", get(stylesheet))
         .route("/assets/app.js", get(script))
+        .route("/assets/nogglass.png", get(logo_png))
         .route("/assets/messages/{file}", get(messages))
 }
 
@@ -104,6 +106,19 @@ async fn stylesheet() -> impl IntoResponse {
 
 async fn script() -> impl IntoResponse {
     asset("text/javascript; charset=utf-8", APP_JS)
+}
+
+async fn logo_png() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static("image/png")),
+            (
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=86400"),
+            ),
+        ],
+        NOGGLASS_PNG,
+    )
 }
 
 async fn messages(Path(file): Path<String>) -> Response {
