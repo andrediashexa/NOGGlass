@@ -447,18 +447,22 @@ function renderTable(paths) {
         cell.appendChild(badge);
       },
       (cell) => {
+        cell.className = "cell-communities";
         if (!path.communities.length) {
           cell.textContent = t("result.unknown");
-          cell.className = "unknown";
+          cell.classList.add("unknown");
           return;
         }
+        const wrap = document.createElement("div");
+        wrap.className = "communities-wrap";
         for (const community of path.communities) {
           const chip = document.createElement("span");
           chip.className = "community";
           chip.textContent = community.raw;
           if (community.name) chip.title = community.name;
-          cell.appendChild(chip);
+          wrap.appendChild(chip);
         }
+        cell.appendChild(wrap);
       },
     ];
 
