@@ -34,6 +34,44 @@ behaviour you want from something that reaches production routers.
    of production routers. Decide now whether it faces the Internet, and put a
    proxy and rate limiting in front if it does.
 
+## How to compile and install
+
+NOGGlass can be compiled natively from source or run via container.
+
+### System prerequisites
+
+- **AMD64 / ARM64 Linux**. Production memory footprint is typically under 35 MB RSS.
+- **For native compilation**: Rust 1.85+ (MSRV Rust 1.90), `pkg-config`, and OpenSSL development headers:
+  - Debian/Ubuntu: `sudo apt-get install -y build-essential pkg-config libssl-dev`
+  - RHEL/Rocky: `sudo dnf install -y gcc pkgconfig openssl-devel`
+  - Alpine: `apk add --no-cache musl-dev pkgconfig openssl-dev`
+- **For container deployment**: Docker Engine 20.10+ / Podman 4.0+.
+
+### Compile natively from source
+
+```bash
+git clone https://github.com/andrediashexa/looking-glass.git
+cd looking-glass
+
+# Run the test suite
+cargo test --workspace
+
+# Compile optimized release binary
+cargo build --release --workspace
+```
+
+The compiled standalone binary is placed at `./target/release/nogglass`.
+
+### Build the Alpine container image
+
+The repository includes a multi-stage `Dockerfile` based on `rust:1.90-alpine` with Zig cross-compilation and an `alpine:3.21` runtime layer:
+
+```bash
+docker build -t nogglass:latest .
+```
+
+---
+
 ## Install with Docker
 
 ```bash
@@ -58,16 +96,69 @@ compose up -d` never overwrites it. On a Linux host the file is at
 `/var/lib/docker/volumes/nogglass-config/_data/nogglass.toml`, which is where
 configuration management should write it.
 
-## Install the binary
+---
 
-```bash
-NOGGLASS_CONFIG=/etc/nogglass/nogglass.toml \
-NOGGLASS_HTTP_ADDR=0.0.0.0:8080 \
-  ./nogglass
-```
+## Install the binary with Systemd
 
-No runtime, no interpreter, no asset directory: the interface and the command
-catalogue are inside the binary.
+1. Copy the release binary to your system PATH:
+   ```bash
+   sudo cp target/release/nogglass /usr/local/bin/nogglass
+   sudo chmod +x /usr/local/bin/nogglass
+   ```
+
+2. Create a dedicated unprivileged user:
+   ```bash
+   sudo useradd -r -s /bin/false nogglass
+   sudo mkdir -p /etc/nogglass /var/log/nogglass
+   sudo chown -R nogglass:nogglass /etc/nogglass
+   ```
+
+3. Configure secrets in `/etc/nogglass/nogglass.env` (mode `0600`):
+   ```bash
+   sudo bash -c 'cat <<EOF > /etc/nogglass/nogglass.env
+   NOGGLASS_CONFIG=/etc/nogglass/nogglass.toml
+   NOGGLASS_HTTP_ADDR=0.0.0.0:8080
+   NOGGLASS_EDGE01_PASSWORD=""
+   EOF'
+   sudo chmod 600 /etc/nogglass/nogglass.env
+   sudo chown nogglass:nogglass /etc/nogglass/nogglass.env
+   ```
+
+4. Create the systemd service unit `/etc/systemd/system/nogglass.service`:
+   ```ini
+   [Unit]
+   Description=NOGGlass Multi-Vendor Looking Glass
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=nogglass
+   Group=nogglass
+   EnvironmentFile=/etc/nogglass/nogglass.env
+   ExecStart=/usr/local/bin/nogglass
+   Restart=always
+   RestartSec=5
+   LimitNOFILE=65535
+
+   # Hardening
+   ProtectSystem=strict
+   ProtectHome=true
+   NoNewPrivileges=true
+   PrivateTmp=true
+   ReadOnlyPaths=/usr/local/bin/nogglass
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+5. Enable and start:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now nogglass
+   sudo systemctl status nogglass
+   ```
+
+---
 
 ## Configuration
 
