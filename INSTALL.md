@@ -308,3 +308,29 @@ curl -i http://127.0.0.1:8080/api/version
 # List configured routers
 curl -i http://127.0.0.1:8080/api/routers
 ```
+
+---
+
+## 7. Upgrading NOGGlass
+
+When updates are released in the upstream repository, follow these steps to pull the latest changes and rebuild the Docker container:
+
+### Upgrading with Docker Compose
+
+1. Pull the latest source code from the repository:
+   ```bash
+   git pull origin main
+   ```
+
+2. Rebuild the container image and recreate the running service with zero manual container cleanup:
+   ```bash
+   docker compose build --no-cache
+   docker compose up -d --force-recreate
+   ```
+
+3. Confirm that the service restarted cleanly with the updated version:
+   ```bash
+   docker compose logs --tail=50 -f nogglass
+   curl -s http://127.0.0.1:8080/api/version
+   ```
+
