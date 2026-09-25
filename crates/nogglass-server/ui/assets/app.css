@@ -43,6 +43,8 @@ body::before {
   background-size: 48px 48px, 48px 48px, cover;
   background-position: center, center, center;
   background-repeat: repeat, repeat, no-repeat;
+  filter: blur(16px);
+  transform: scale(1.04);
   opacity: 0.35;
   pointer-events: none;
   z-index: -1;
@@ -159,12 +161,23 @@ th { color: var(--text-muted); font: 600 12px var(--font-sans); text-transform: 
 tr[data-best="true"] td { color: var(--accent-best); }
 td.unknown { color: var(--text-muted); font-style: italic; }
 
+td.cell-communities {
+  white-space: normal;
+  min-width: 220px;
+  max-width: 480px;
+}
+.communities-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; }
 .badge-valid { color: var(--accent-best); }
 .badge-invalid { color: var(--accent-invalid); }
 .badge-not_found, .badge-not_checked { color: var(--text-muted); }
 
-.community { display: inline-block; margin: 0 4px 4px 0; padding: 2px 8px; border-radius: 999px; background: rgba(192, 132, 252, 0.15); color: var(--accent-transit); font-size: 12px; }
+.community { display: inline-block; margin: 0; padding: 2px 8px; border-radius: 999px; background: rgba(192, 132, 252, 0.15); color: var(--accent-transit); font-size: 12px; }
 
 pre {
   margin: 0;
