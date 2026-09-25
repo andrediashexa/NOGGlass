@@ -91,9 +91,10 @@ nothing depends on it — but it costs 30 MB and answers most of the questions
 your visitors will otherwise send you. See
 [running the documentation site](documentation-site.md).
 
-The configuration lives in `/etc/nogglass/nogglass.toml` on the host and is
-mounted directly into the container as read-only (`:ro`). Changes made to the
-host file take effect upon restarting the container (`docker compose restart nogglass`).
+The configuration lives in a named volume (`nogglass-config`), so `docker compose pull && docker
+compose up -d` never overwrites it. On a Linux host the file is at
+`/var/lib/docker/volumes/nogglass-config/_data/nogglass.toml`, which is where
+configuration management can write it.
 
 ---
 
