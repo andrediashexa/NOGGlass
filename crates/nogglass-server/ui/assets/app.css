@@ -127,8 +127,25 @@ button {
   border-radius: 8px;
   padding: 10px 20px;
   cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
 }
 button[disabled] { opacity: 0.6; cursor: progress; }
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btn-clear {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  border: 1px solid var(--border-card);
+}
+.btn-clear:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.2);
+}
 
 /* --- notices --- */
 .notice {

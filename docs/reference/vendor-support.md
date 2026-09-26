@@ -85,6 +85,11 @@ Worth reading before assuming an unverified driver is fine.
   as two arguments and the catalogue sent them with a slash. The router answered
   `Wrong parameter found` and the interface showed "no route" for every IPv6
   prefix.
+- **Large and multiline BGP communities** in detail blocks caused the query to
+  degrade to `Completeness::Partial`: VRP wraps communities across multiple lines,
+  prints `Large-Community:` separately, and emits `Ext-Community:`. The parser
+  now consumes multiline entries and `Large-Community:` into the path model and
+  recognises `Ext-Community:` as known metadata, preventing unreadable line alerts.
 
 ### MikroTik RouterOS 7.16.2
 
