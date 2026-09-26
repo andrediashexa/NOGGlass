@@ -400,6 +400,9 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
         } else if let Some(rest) = line.strip_prefix("Community:") {
             in_community = true;
             append_communities(rest, path);
+        } else if let Some(rest) = line.strip_prefix("Large-Community:") {
+            in_community = false;
+            append_communities(rest, path);
         } else if in_community && (line.starts_with('<') || line.starts_with("...") || (line.contains(':') && !line.contains(' '))) {
             append_communities(line, path);
         } else if let Some(rest) = line.strip_prefix("AS-path") {
@@ -415,6 +418,7 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
             || line.starts_with("Aggregator")
             || line.starts_with("Not advertised")
             || line.starts_with("Advertised to")
+            || line.starts_with("Ext-Community:")
             || line.starts_with("BGP local router ID")
             || line.starts_with("Local AS number")
             || line.starts_with("Paths:")
