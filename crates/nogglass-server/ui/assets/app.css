@@ -43,8 +43,8 @@ body::before {
   background-size: 48px 48px, 48px 48px, cover;
   background-position: center, center, center;
   background-repeat: repeat, repeat, no-repeat;
-  filter: blur(16px);
-  transform: scale(1.04);
+  filter: blur(1px);
+  transform: scale(1.005);
   opacity: 0.35;
   pointer-events: none;
   z-index: -1;
@@ -163,8 +163,7 @@ td.unknown { color: var(--text-muted); font-style: italic; }
 
 td.cell-communities {
   white-space: normal;
-  min-width: 220px;
-  max-width: 480px;
+  min-width: 260px;
 }
 .communities-wrap {
   display: flex;

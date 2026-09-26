@@ -23,7 +23,7 @@ services:
     # Only the HTTP port is published. Put a reverse proxy in front for TLS
     # (ADR-0012); NOGGlass warns at startup when it is public without one.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "0.0.0.0:8080:8080"
     volumes:
       # Named volume for container-managed configuration that survives image upgrades
       - nogglass-config:/etc/nogglass
