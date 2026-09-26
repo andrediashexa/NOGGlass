@@ -145,6 +145,20 @@ impl CaptchaEngine {
         clean_user_code == real_code
     }
 
+    /// Extracts the plaintext code from a signed token (primarily for tests).
+    pub fn extract_code(captcha_id: &str) -> Option<String> {
+        let parts: Vec<&str> = captcha_id.split(':').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        let decoded = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            parts[0],
+        )
+        .ok()?;
+        String::from_utf8(decoded).ok()
+    }
+
     fn sign_payload(code: &str, timestamp: i64, secret_key: &str) -> String {
         let key = hmac::Key::new(hmac::HMAC_SHA256, secret_key.as_bytes());
         let msg = format!("{}:{}", code, timestamp);

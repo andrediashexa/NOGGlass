@@ -735,6 +735,7 @@ queries = ["bgp_route"]
 max_requests = 2
 window_secs = 60
 burst = 0
+require_captcha_within_secs = 0
 
 [[router]]
 id = "demo"
@@ -877,5 +878,62 @@ host = "192.0.2.200"
                 .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
         }
+    }
+
+    #[tokio::test]
+    async fn second_query_within_60s_requires_captcha_and_succeeds_when_solved() {
+        let app = app();
+
+        // 1. First query: runs freely without CAPTCHA
+        let response = app
+            .clone()
+            .oneshot(from_peer(
+                query_request("198.51.100.0/24"),
+                "203.0.113.88:4000",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // 2. Second query within 60s without CAPTCHA: refused with captcha_required (429)
+        let response = app
+            .clone()
+            .oneshot(from_peer(
+                query_request("198.51.100.0/24"),
+                "203.0.113.88:4000",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = body_json(response).await;
+        assert_eq!(body["code"], "captcha_required");
+
+        // 3. Fetch challenge from /api/captcha
+        let captcha_res = app
+            .clone()
+            .oneshot(Request::get("/api/captcha").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(captcha_res.status(), StatusCode::OK);
+        let captcha_body = body_json(captcha_res).await;
+        let captcha_id = captcha_body["captcha_id"].as_str().unwrap();
+
+        // Decode code from stateless token
+        let code = looking_glass_core::CaptchaEngine::extract_code(captcha_id).unwrap();
+
+        // 4. Retry with valid CAPTCHA: succeeds with 200 OK
+        let valid_req = Request::post("/api/query")
+            .header("content-type", "application/json")
+            .body(Body::from(format!(
+                r#"{{"router":"demo","type":"bgp_route","target":"198.51.100.0/24","captcha_id":"{}","captcha_code":"{}"}}"#,
+                captcha_id, code
+            )))
+            .unwrap();
+        let response = app
+            .clone()
+            .oneshot(from_peer(valid_req, "203.0.113.88:4000"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

@@ -309,7 +309,7 @@ fn default_burst() -> u32 {
     5
 }
 fn default_captcha_secs() -> u64 {
-    0
+    60
 }
 
 impl Default for RateLimitSettings {
