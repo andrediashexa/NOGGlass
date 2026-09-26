@@ -157,6 +157,10 @@ fn parse_as_path(text: &str) -> (Vec<u32>, Option<Origin>) {
     let mut as_path = Vec::new();
     let mut origin = None;
     for token in text.split_whitespace() {
+        let token = token.trim_matches('.');
+        if token.is_empty() {
+            continue;
+        }
         let last = token.chars().last();
         let marker = last.and_then(Origin::from_marker);
         let digits = match marker {

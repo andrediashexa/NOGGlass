@@ -286,7 +286,7 @@ async function onCaptchaSubmit(event) {
     }
 
     document.getElementById("captcha-modal").close();
-    render(body);
+    render(body, payload.target);
   } catch (error) {
     document.getElementById("captcha-modal").close();
     showError("unreachable", String(error));
@@ -294,7 +294,6 @@ async function onCaptchaSubmit(event) {
     submitBtn.disabled = false;
   }
 }
-
 async function onSubmit(event) {
   event?.preventDefault();
   hidePanels();
@@ -341,16 +340,16 @@ async function onSubmit(event) {
   // router could not be reached — while its answer sat on the screen
   // underneath, looking stale and not being.
   if (answer) {
-    render(answer);
+    render(answer, payload.target);
   }
 }
 
-function render(response) {
+function render(response, target) {
   const meta = document.getElementById("result-meta");
   meta.textContent = `${t("result.command")}: ${response.command} · ${t("result.duration")} ${response.duration_ms} ms`;
 
   if (response.kind === "bgp_route") {
-    renderBgp(response.result);
+    renderBgp(response.result, target);
     renderGlobalView(response.agreement, response.global);
   } else if (response.kind === "raw") {
     renderRaw(response.result?.raw_output ?? response.output, response.truncated);
@@ -375,7 +374,7 @@ function renderRaw(output, truncated) {
   panel.hidden = false;
 }
 
-function renderBgp(result) {
+function renderBgp(result, queryTarget) {
   renderRaw(result.raw_output, result.truncated);
 
   if (result.completeness?.state === "partial") {
@@ -392,10 +391,20 @@ function renderBgp(result) {
   }
 
   renderTable(result.paths);
-  try {
-    renderGraph(result.paths);
-  } catch (err) {
-    console.error("Failed to render AS path graph:", err);
+  // Não convém gerar gráfico quando for consulta por ASN ou quando houver
+  // dezenas/centenas de rotas, pois o diagrama SVG fica ilegível e sobrecarregado.
+  const isAsnQuery = /^as\d+/i.test(queryTarget?.trim() ?? "");
+  const tooManyPaths = result.paths.length > 10;
+
+  if (isAsnQuery || tooManyPaths) {
+    document.getElementById("graph-panel").hidden = true;
+    document.getElementById("graph").replaceChildren();
+  } else {
+    try {
+      renderGraph(result.paths);
+    } catch (err) {
+      console.error("Failed to render AS path graph:", err);
+    }
   }
 }
 
