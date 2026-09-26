@@ -370,11 +370,13 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
     let mut unreadable = 0usize;
     let mut current: Option<BgpPath> = None;
     let mut partial_path = false;
+    let mut in_community = false;
 
     for line in raw.lines() {
         let line = line.trim();
 
         if let Some(rest) = line.strip_prefix("BGP routing table entry information of") {
+            in_community = false;
             if let Some(path) = current.take() {
                 paths.push(path);
             }
@@ -396,13 +398,12 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
         } else if let Some(rest) = line.strip_prefix("Original nexthop:") {
             path.next_hop = rest.split_whitespace().next().and_then(parse_hop);
         } else if let Some(rest) = line.strip_prefix("Community:") {
-            path.communities.extend(
-                rest.split(',')
-                    .map(|c| c.trim().trim_matches(|c| c == '<' || c == '>').trim())
-                    .filter(|c| !c.is_empty() && *c != "...")
-                    .map(Community::parse),
-            );
+            in_community = true;
+            append_communities(rest, path);
+        } else if in_community && (line.starts_with('<') || line.starts_with("...") || (line.contains(':') && !line.contains(' '))) {
+            append_communities(line, path);
         } else if let Some(rest) = line.strip_prefix("AS-path") {
+            in_community = false;
             match read_attributes(rest, path) {
                 Ok(()) => {}
                 Err(()) => partial_path = true,
@@ -419,8 +420,10 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
             || line.starts_with("Paths:")
             || line.is_empty()
         {
+            in_community = false;
             // Known and carrying nothing the model holds.
         } else {
+            in_community = false;
             unreadable += 1;
         }
     }
@@ -439,6 +442,15 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
         result
     };
     result.partial(unreadable)
+}
+
+fn append_communities(text: &str, path: &mut BgpPath) {
+    path.communities.extend(
+        text.split(',')
+            .map(|c| c.trim().trim_matches(|c| c == '<' || c == '>').trim())
+            .filter(|c| !c.is_empty() && *c != "...")
+            .map(Community::parse),
+    );
 }
 
 /// Reads the attribute line that follows `AS-path`.
