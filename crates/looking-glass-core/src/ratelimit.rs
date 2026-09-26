@@ -28,17 +28,18 @@ pub struct RateLimit {
     pub window: Duration,
     /// Extra allowance for a short burst, on top of the steady rate.
     pub burst: u32,
+    /// If > 0, subsequent queries within this duration from the previous query
+    /// require a CAPTCHA.
+    pub require_captcha_within_secs: u64,
 }
 
 impl Default for RateLimit {
     fn default() -> Self {
-        // A person exploring a route takes a handful of queries a minute. This
-        // leaves room for that and for a page that fires several at once, and
-        // still bounds what a script can spend.
         Self {
             max_requests: 20,
             window: Duration::from_secs(60),
             burst: 5,
+            require_captcha_within_secs: 60,
         }
     }
 }
@@ -49,6 +50,8 @@ pub enum Decision {
     Allow {
         remaining: u32,
     },
+    /// Refused unless verified with a valid CAPTCHA.
+    RequireCaptcha,
     /// Refused, with how long to wait. The visitor gets this as `Retry-After`.
     Deny {
         retry_after: Duration,
@@ -58,6 +61,10 @@ pub enum Decision {
 impl Decision {
     pub fn is_allowed(&self) -> bool {
         matches!(self, Self::Allow { .. })
+    }
+
+    pub fn is_captcha_required(&self) -> bool {
+        matches!(self, Self::RequireCaptcha)
     }
 }
 
@@ -94,6 +101,8 @@ impl ClientKey {
 struct Bucket {
     tokens: f64,
     last_seen: Instant,
+    /// When the last query actually executed successfully.
+    last_query_at: Option<Instant>,
 }
 
 /// Counts queries per client.
@@ -131,17 +140,14 @@ impl RateLimiter {
         f64::from(self.limit.max_requests + self.limit.burst)
     }
 
-    /// Asks whether one query may run, and counts it when it may.
-    pub fn check(&self, key: ClientKey) -> Decision {
-        self.check_at(key, Instant::now())
+    /// Asks whether one query may run, considering burst/token limits and CAPTCHA intervals.
+    pub fn check(&self, key: ClientKey, captcha_verified: bool) -> Decision {
+        self.check_at(key, Instant::now(), captcha_verified)
     }
 
     /// The same, at a caller-supplied instant, so tests do not sleep.
-    pub fn check_at(&self, key: ClientKey, now: Instant) -> Decision {
+    pub fn check_at(&self, key: ClientKey, now: Instant, captcha_verified: bool) -> Decision {
         let Ok(mut buckets) = self.buckets.lock() else {
-            // A poisoned lock means another thread panicked while holding it.
-            // Failing open here would remove the limiter exactly when something
-            // is already wrong, so the query is refused instead.
             return Decision::Deny {
                 retry_after: self.limit.window,
             };
@@ -157,14 +163,28 @@ impl RateLimiter {
         let bucket = buckets.entry(key).or_insert(Bucket {
             tokens: capacity,
             last_seen: now,
+            last_query_at: None,
         });
 
         let elapsed = now.duration_since(bucket.last_seen).as_secs_f64();
         bucket.tokens = (bucket.tokens + elapsed * refill).min(capacity);
         bucket.last_seen = now;
 
+        // Check CAPTCHA requirement:
+        // If require_captcha_within_secs > 0, and the visitor queried less than that duration ago,
+        // require CAPTCHA unless already successfully verified in this request.
+        if self.limit.require_captcha_within_secs > 0 {
+            if let Some(last_query) = bucket.last_query_at {
+                let interval = Duration::from_secs(self.limit.require_captcha_within_secs);
+                if now.duration_since(last_query) < interval && !captcha_verified {
+                    return Decision::RequireCaptcha;
+                }
+            }
+        }
+
         if bucket.tokens >= 1.0 {
             bucket.tokens -= 1.0;
+            bucket.last_query_at = Some(now);
             Decision::Allow {
                 remaining: bucket.tokens as u32,
             }
@@ -265,20 +285,21 @@ mod tests {
             max_requests: 3,
             window: Duration::from_secs(60),
             burst: 0,
+            require_captcha_within_secs: 0,
         });
         let key = ClientKey::from_ip(ip("198.51.100.10"));
         let now = Instant::now();
 
         for attempt in 1..=3 {
             assert!(
-                limiter.check_at(key, now).is_allowed(),
+                limiter.check_at(key, now, false).is_allowed(),
                 "attempt {attempt} should be allowed"
             );
         }
 
-        match limiter.check_at(key, now) {
+        match limiter.check_at(key, now, false) {
             Decision::Deny { retry_after } => assert!(retry_after >= Duration::from_secs(1)),
-            Decision::Allow { .. } => panic!("the fourth query should be refused"),
+            _ => panic!("the fourth query should be refused"),
         }
     }
 
@@ -288,18 +309,45 @@ mod tests {
             max_requests: 60,
             window: Duration::from_secs(60),
             burst: 0,
+            require_captcha_within_secs: 0,
         });
         let key = ClientKey::from_ip(ip("198.51.100.10"));
         let start = Instant::now();
 
         for _ in 0..60 {
-            assert!(limiter.check_at(key, start).is_allowed());
+            assert!(limiter.check_at(key, start, false).is_allowed());
         }
-        assert!(!limiter.check_at(key, start).is_allowed());
+        assert!(!limiter.check_at(key, start, false).is_allowed());
 
         // One token per second at this rate.
         let later = start + Duration::from_secs(2);
-        assert!(limiter.check_at(key, later).is_allowed());
+        assert!(limiter.check_at(key, later, false).is_allowed());
+    }
+
+    #[test]
+    fn query_within_interval_requires_captcha_unless_verified() {
+        let limiter = RateLimiter::new(RateLimit {
+            max_requests: 10,
+            window: Duration::from_secs(60),
+            burst: 0,
+            require_captcha_within_secs: 60,
+        });
+        let key = ClientKey::from_ip(ip("198.51.100.10"));
+        let now = Instant::now();
+
+        // First query allowed
+        assert!(limiter.check_at(key, now, false).is_allowed());
+
+        // Second query 10s later without captcha is challenged
+        let ten_secs_later = now + Duration::from_secs(10);
+        assert!(limiter.check_at(key, ten_secs_later, false).is_captcha_required());
+
+        // Second query with captcha is allowed
+        assert!(limiter.check_at(key, ten_secs_later, true).is_allowed());
+
+        // Query after 60s without captcha is allowed again
+        let seventy_secs_later = ten_secs_later + Duration::from_secs(65);
+        assert!(limiter.check_at(key, seventy_secs_later, false).is_allowed());
     }
 
     /// A residential IPv6 connection holds a whole /64. Counting per address
@@ -310,25 +358,26 @@ mod tests {
             max_requests: 2,
             window: Duration::from_secs(60),
             burst: 0,
+            require_captcha_within_secs: 0,
         });
         let now = Instant::now();
 
         assert!(limiter
-            .check_at(ClientKey::from_ip(ip("2001:db8:1:2::1")), now)
+            .check_at(ClientKey::from_ip(ip("2001:db8:1:2::1")), now, false)
             .is_allowed());
         assert!(limiter
-            .check_at(ClientKey::from_ip(ip("2001:db8:1:2::2")), now)
+            .check_at(ClientKey::from_ip(ip("2001:db8:1:2::2")), now, false)
             .is_allowed());
         assert!(
             !limiter
-                .check_at(ClientKey::from_ip(ip("2001:db8:1:2::dead:beef")), now)
+                .check_at(ClientKey::from_ip(ip("2001:db8:1:2::dead:beef")), now, false)
                 .is_allowed(),
             "a different address in the same /64 shares the allowance"
         );
 
         // A different /64 is a different visitor.
         assert!(limiter
-            .check_at(ClientKey::from_ip(ip("2001:db8:1:3::1")), now)
+            .check_at(ClientKey::from_ip(ip("2001:db8:1:3::1")), now, false)
             .is_allowed());
     }
 
@@ -338,14 +387,15 @@ mod tests {
             max_requests: 1,
             window: Duration::from_secs(60),
             burst: 0,
+            require_captcha_within_secs: 0,
         });
         let now = Instant::now();
 
         assert!(limiter
-            .check_at(ClientKey::from_ip(ip("198.51.100.10")), now)
+            .check_at(ClientKey::from_ip(ip("198.51.100.10")), now, false)
             .is_allowed());
         assert!(limiter
-            .check_at(ClientKey::from_ip(ip("198.51.100.11")), now)
+            .check_at(ClientKey::from_ip(ip("198.51.100.11")), now, false)
             .is_allowed());
     }
 
@@ -355,8 +405,9 @@ mod tests {
             max_requests: 5,
             window: Duration::from_millis(10),
             burst: 0,
+            require_captcha_within_secs: 0,
         });
-        limiter.check(ClientKey::from_ip(ip("198.51.100.10")));
+        limiter.check(ClientKey::from_ip(ip("198.51.100.10")), false);
         assert_eq!(limiter.tracked_clients(), 1);
 
         std::thread::sleep(Duration::from_millis(60));

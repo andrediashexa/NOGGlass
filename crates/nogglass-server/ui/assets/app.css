@@ -246,3 +246,99 @@ footer a { color: var(--text-muted); }
 
 /* A session that is not established is the reason someone opened the page. */
 tr[data-established="false"] td { color: var(--accent-invalid); }
+
+/* --- captcha modal --- */
+.captcha-modal {
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  background: rgba(13, 20, 31, 0.95);
+  backdrop-filter: blur(16px);
+  color: var(--text-main);
+  padding: 0;
+  max-width: 360px;
+  width: 90vw;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 255, 0.2);
+}
+.captcha-modal::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+.captcha-box {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.captcha-box h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.captcha-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.captcha-visual {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #06090e;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-card);
+  justify-content: center;
+}
+.captcha-svg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.captcha-svg svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.btn-refresh {
+  background: transparent;
+  border: 1px solid var(--border-card);
+  color: var(--text-muted);
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+.btn-refresh:hover {
+  color: var(--accent-backup);
+  border-color: var(--accent-backup);
+  background: rgba(0, 229, 255, 0.1);
+}
+.captcha-input-row {
+  display: flex;
+  gap: 8px;
+}
+#captcha-input {
+  flex: 1;
+  text-align: center;
+  letter-spacing: 4px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  text-transform: uppercase;
+}
+.btn-submit {
+  padding: 8px 16px;
+}
+.captcha-error-text {
+  color: var(--accent-invalid);
+  font-size: 12px;
+  margin: 0;
+}

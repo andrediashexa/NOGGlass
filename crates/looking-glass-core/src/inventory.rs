@@ -285,6 +285,10 @@ pub struct RateLimitSettings {
     pub window_secs: u64,
     #[serde(default = "default_burst")]
     pub burst: u32,
+    /// When set (defaults to 60 seconds), queries from the same client within this interval
+    /// require a CAPTCHA challenge before being executed.
+    #[serde(default = "default_captcha_secs")]
+    pub require_captcha_within_secs: u64,
     /// Addresses of proxies whose `X-Forwarded-For` may be believed. Empty
     /// means the peer address is always used, which is correct when nothing
     /// sits in front.
@@ -304,6 +308,9 @@ fn default_window_secs() -> u64 {
 fn default_burst() -> u32 {
     5
 }
+fn default_captcha_secs() -> u64 {
+    0
+}
 
 impl Default for RateLimitSettings {
     fn default() -> Self {
@@ -312,6 +319,7 @@ impl Default for RateLimitSettings {
             max_requests: default_max_requests(),
             window_secs: default_window_secs(),
             burst: default_burst(),
+            require_captcha_within_secs: default_captcha_secs(),
             trusted_proxies: Vec::new(),
         }
     }
@@ -323,6 +331,7 @@ impl RateLimitSettings {
             max_requests: self.max_requests,
             window: std::time::Duration::from_secs(self.window_secs.max(1)),
             burst: self.burst,
+            require_captcha_within_secs: self.require_captcha_within_secs,
         }
     }
 

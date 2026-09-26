@@ -49,6 +49,35 @@
         </div>
       </form>
 
+      <dialog id="captcha-modal" class="captcha-modal">
+        <form method="dialog" id="captcha-form" class="captcha-box">
+          <h3 data-i18n="captcha.title"></h3>
+          <p class="captcha-desc" data-i18n="captcha.desc"></p>
+          <div class="captcha-visual">
+            <div id="captcha-svg-container" class="captcha-svg"></div>
+            <button type="button" id="captcha-refresh" class="btn-refresh" title="Refresh">↻</button>
+          </div>
+          <input type="hidden" id="captcha-id" name="captcha-id" />
+          <div class="captcha-input-row">
+            <input
+              type="text"
+              id="captcha-input"
+              name="captcha-input"
+              maxlength="5"
+              autocomplete="off"
+              spellcheck="false"
+              autocorrect="off"
+              autocapitalize="characters"
+              required
+            />
+            <button type="submit" id="captcha-submit" class="btn-submit">
+              <span data-i18n="captcha.submit"></span>
+            </button>
+          </div>
+          <p id="captcha-error" class="captcha-error-text" hidden></p>
+        </form>
+      </dialog>
+
       <p id="mock-warning" class="notice notice-mock" hidden data-i18n="mock.warning"></p>
       <p id="error" class="notice notice-error" hidden role="alert"></p>
 

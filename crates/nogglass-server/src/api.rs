@@ -37,19 +37,30 @@ pub struct AppState {
     pub global_view: Arc<GlobalViewLookup>,
     /// Decides which address a request is counted against.
     pub client_address: Arc<ClientAddress>,
+    /// Secret key used to sign stateless HMAC-SHA256 CAPTCHAs.
+    pub captcha_secret: String,
 }
 
 impl AppState {
     /// Counts one query against the visitor, if limiting is on.
     ///
-    /// Only query endpoints are limited: the router list, the version and the
-    /// health check are cheap, cached by the browser, and blocking them would
-    /// break the page without protecting a router.
-    fn check_rate_limit(&self, peer: SocketAddr, forwarded_for: Option<&str>) -> Option<ApiError> {
+    /// If the visitor queried less than 60s ago and didn't provide a valid CAPTCHA,
+    /// returns `captcha_required`.
+    fn check_rate_limit(
+        &self,
+        peer: SocketAddr,
+        forwarded_for: Option<&str>,
+        captcha_verified: bool,
+    ) -> Option<ApiError> {
         let limiter = self.limiter.as_ref()?;
         let client = self.client_address.resolve(peer.ip(), forwarded_for);
-        match limiter.check(ClientKey::from_ip(client)) {
+        match limiter.check(ClientKey::from_ip(client), captcha_verified) {
             Decision::Allow { .. } => None,
+            Decision::RequireCaptcha => Some(ApiError {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                code: "captcha_required",
+                message: "Queries within 60 seconds require CAPTCHA verification.".to_string(),
+            }),
             Decision::Deny { retry_after } => Some(ApiError {
                 status: StatusCode::TOO_MANY_REQUESTS,
                 code: "rate_limited",
@@ -91,11 +102,17 @@ pub fn routes(state: AppState) -> AxumRouter {
     AxumRouter::new()
         .route("/api/health", get(health))
         .route("/api/version", get(version))
+        .route("/api/captcha", get(generate_captcha))
         .route("/api/routers", get(routers))
         .route("/api/query", post(run_query))
         .route("/api/query/stream", get(stream_query))
         .route("/api/catalogue/{vendor}", get(vendor_commands))
         .with_state(state)
+}
+
+async fn generate_captcha(State(state): State<AppState>) -> impl IntoResponse {
+    let challenge = looking_glass_core::CaptchaEngine::generate(&state.captcha_secret);
+    Json(challenge)
 }
 
 async fn health() -> impl IntoResponse {
@@ -172,6 +189,10 @@ pub struct QueryRequest {
     pub query_type: QueryType,
     /// Raw text from the visitor. It is parsed here and nowhere else.
     pub target: String,
+    /// ID returned by GET /api/captcha
+    pub captcha_id: Option<String>,
+    /// User entered CAPTCHA response
+    pub captcha_code: Option<String>,
 }
 
 /// The answer.
@@ -272,6 +293,32 @@ async fn add_global_view(state: &AppState, target: &QueryTarget, response: &mut 
     *global = view;
 }
 
+fn verify_request_captcha(
+    state: &AppState,
+    captcha_id: Option<&str>,
+    captcha_code: Option<&str>,
+) -> Result<bool, ApiError> {
+    match (captcha_id, captcha_code) {
+        (Some(id), Some(code)) if !id.trim().is_empty() && !code.trim().is_empty() => {
+            if looking_glass_core::captcha::CaptchaEngine::verify(
+                id,
+                code,
+                &state.captcha_secret,
+                300,
+            ) {
+                Ok(true)
+            } else {
+                Err(ApiError {
+                    status: StatusCode::BAD_REQUEST,
+                    code: "captcha_invalid",
+                    message: "Invalid or expired CAPTCHA code.".to_string(),
+                })
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
 async fn run_query(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -281,7 +328,14 @@ async fn run_query(
     let forwarded = headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok());
-    if let Some(refusal) = state.check_rate_limit(peer, forwarded) {
+
+    let captcha_verified = verify_request_captcha(
+        &state,
+        request.captcha_id.as_deref(),
+        request.captcha_code.as_deref(),
+    )?;
+
+    if let Some(refusal) = state.check_rate_limit(peer, forwarded, captcha_verified) {
         return Err(refusal);
     }
 
@@ -315,7 +369,28 @@ async fn stream_query(
         .map(str::to_string);
 
     tokio::spawn(async move {
-        if let Some(refusal) = state.check_rate_limit(peer, forwarded.as_deref()) {
+        let captcha_verified = match verify_request_captcha(
+            &state,
+            request.captcha_id.as_deref(),
+            request.captcha_code.as_deref(),
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = sender
+                    .send(
+                        Event::default()
+                            .event("error")
+                            .json_data(e.body())
+                            .unwrap_or_else(|_| {
+                                Event::default().event("error").data("captcha_invalid")
+                            }),
+                    )
+                    .await;
+                return;
+            }
+        };
+
+        if let Some(refusal) = state.check_rate_limit(peer, forwarded.as_deref(), captcha_verified) {
             let _ = sender
                 .send(
                     Event::default()
@@ -511,6 +586,7 @@ queries = ["bgp_route"]
             limiter,
             client_address: Arc::new(client_address),
             global_view,
+            captcha_secret: "test_secret".to_string(),
         })
     }
 
@@ -686,6 +762,7 @@ host = "192.0.2.200"
             // Disabled, so the test makes no network call: what is asserted is
             // that the prefix is resolved, not what RIPEstat would say.
             global_view: Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1))),
+            captcha_secret: "test_secret".to_string(),
         };
 
         let target = parse_target("203.0.113.0/24").unwrap();

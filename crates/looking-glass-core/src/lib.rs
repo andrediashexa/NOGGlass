@@ -1,4 +1,5 @@
 pub mod bgp_table;
+pub mod captcha;
 pub mod catalogue;
 pub mod driver;
 pub mod executor;
@@ -12,6 +13,7 @@ pub mod target;
 pub mod traceroute;
 pub mod vendors;
 
+pub use captcha::{CaptchaEngine, CaptchaResponse};
 pub use catalogue::{Catalogue, CatalogueError, BUILTIN};
 pub use driver::{
     BgpPath, BgpPeerSummary, BgpRouteResult, BgpSummaryResult, Community, CommunityKind,
