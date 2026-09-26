@@ -178,7 +178,6 @@ function onClear(event) {
   url.searchParams.delete("type");
   window.history.replaceState(null, "", url);
 }
-
 /**
  * Reflects the query in the address bar, so copying the URL shares what is on
  * screen. `replaceState` rather than `pushState`: a visitor trying three
