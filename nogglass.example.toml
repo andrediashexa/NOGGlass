@@ -106,6 +106,8 @@ enabled = true
 max_requests = 20
 window_secs = 60
 burst = 5
+# Interval in seconds within which subsequent queries require CAPTCHA challenge (default 60)
+require_captcha_within_secs = 60
 trusted_proxies = []
 # trusted_proxies = ["192.0.2.1", "2001:db8::1"]
 
