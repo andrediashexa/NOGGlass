@@ -262,9 +262,19 @@ impl Transport for SshTransport {
             },
             ..Default::default()
         });
-        let handler = ClientHandler {
-            policy: self.host_keys.clone(),
+        let policy = match &router.host_key {
+            Some(key) => HostKeyPolicy::Pinned(Arc::new(vec![key.clone()])),
+            None => {
+                if matches!(self.host_keys, HostKeyPolicy::AcceptAny) {
+                    tracing::warn!(
+                        router = %router.id,
+                        "connecting to router via SSH without host key verification (AcceptAny)"
+                    );
+                }
+                self.host_keys.clone()
+            }
         };
+        let handler = ClientHandler { policy };
 
         let mut session = tokio::time::timeout(
             self.connect_timeout,

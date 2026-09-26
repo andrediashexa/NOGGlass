@@ -135,6 +135,10 @@ pub struct Router {
     /// Per-router overrides of the global limits.
     #[serde(default)]
     pub max_concurrent: Option<usize>,
+    /// Expected OpenSSH host public key (e.g. "ssh-ed25519 AAAA...").
+    /// Pinned to prevent Man-in-the-Middle attacks on the management network.
+    #[serde(default)]
+    pub host_key: Option<String>,
 }
 
 fn default_port() -> u16 {

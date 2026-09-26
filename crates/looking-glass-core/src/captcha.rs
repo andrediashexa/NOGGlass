@@ -24,6 +24,9 @@ pub struct CaptchaEngine;
 impl CaptchaEngine {
     /// Generates a visual SVG CAPTCHA challenge with optical noise lines,
     /// character rotations, and an HMAC-SHA256 signed stateless token.
+    ///
+    /// The `captcha_id` format is `{salt}:{timestamp}:{signature}`, carrying NO
+    /// plaintext or reversible encoding of the solution.
     pub fn generate(secret_key: &str) -> CaptchaResponse {
         let mut rng = rand::thread_rng();
 
@@ -41,14 +44,13 @@ impl CaptchaEngine {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let signature = Self::sign_payload(&code.to_uppercase(), timestamp_utc, secret_key);
+        let mut salt_bytes = [0u8; 8];
+        rng.fill(&mut salt_bytes);
+        let salt = hex::encode(salt_bytes);
 
-        let encoded_code = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            code.to_uppercase(),
-        );
+        let signature = Self::sign_payload(&code.to_uppercase(), &salt, timestamp_utc, secret_key);
 
-        let captcha_id = format!("{}:{}:{}", encoded_code, timestamp_utc, signature);
+        let captcha_id = format!("{}:{}:{}", salt, timestamp_utc, signature);
 
         let colors = ["#00F0FF", "#C471ED", "#F43F5E", "#38BDF8", "#10B981"];
         let mut letters_svg = String::new();
@@ -103,9 +105,13 @@ impl CaptchaEngine {
             return false;
         }
 
-        let encoded_code = parts[0];
+        let salt = parts[0];
         let timestamp_str = parts[1];
         let provided_sig = parts[2];
+
+        if salt.is_empty() || salt.len() > 64 {
+            return false;
+        }
 
         let timestamp: i64 = match timestamp_str.parse() {
             Ok(t) => t,
@@ -121,47 +127,44 @@ impl CaptchaEngine {
             return false; // Expired or future timestamp
         }
 
-        let decoded_bytes = match base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            encoded_code,
-        ) {
+        let clean_user_code = user_input_code.trim().to_uppercase();
+        if clean_user_code.is_empty() {
+            return false;
+        }
+
+        let expected_sig = Self::sign_payload(&clean_user_code, salt, timestamp, secret_key);
+
+        let expected_bytes = match hex::decode(&expected_sig) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let provided_bytes = match hex::decode(provided_sig) {
             Ok(b) => b,
             Err(_) => return false,
         };
 
-        let real_code = match String::from_utf8(decoded_bytes) {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-
-        // Validate cryptographic signature
-        let expected_sig = Self::sign_payload(&real_code, timestamp, secret_key);
-        if expected_sig != provided_sig {
-            return false; // Tampered token
-        }
-
-        // Case-insensitive, whitespace-trimmed comparison
-        let clean_user_code = user_input_code.trim().to_uppercase();
-        clean_user_code == real_code
+        ring::constant_time::verify_slices_are_equal(&expected_bytes, &provided_bytes).is_ok()
     }
 
-    /// Extracts the plaintext code from a signed token (primarily for tests).
-    pub fn extract_code(captcha_id: &str) -> Option<String> {
-        let parts: Vec<&str> = captcha_id.split(':').collect();
-        if parts.len() != 3 {
-            return None;
+    /// Extracts the plaintext code from the generated SVG (for automated tests).
+    pub fn extract_code_from_svg(svg: &str) -> Option<String> {
+        let re = regex::Regex::new(r#"<text[^>]*>([^<]+)</text>"#).ok()?;
+        let mut code = String::new();
+        for cap in re.captures_iter(svg) {
+            if let Some(m) = cap.get(1) {
+                code.push_str(m.as_str());
+            }
         }
-        let decoded = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            parts[0],
-        )
-        .ok()?;
-        String::from_utf8(decoded).ok()
+        if code.is_empty() {
+            None
+        } else {
+            Some(code)
+        }
     }
 
-    fn sign_payload(code: &str, timestamp: i64, secret_key: &str) -> String {
+    pub fn sign_payload(code: &str, salt: &str, timestamp: i64, secret_key: &str) -> String {
         let key = hmac::Key::new(hmac::HMAC_SHA256, secret_key.as_bytes());
-        let msg = format!("{}:{}", code, timestamp);
+        let msg = format!("{}:{}:{}", code.trim().to_uppercase(), salt, timestamp);
         let tag = hmac::sign(&key, msg.as_bytes());
         hex::encode(tag.as_ref())
     }
@@ -179,13 +182,20 @@ mod tests {
         assert!(res.captcha_svg.contains("<svg"));
         assert!(res.captcha_svg.contains("</svg>"));
 
-        // Extract real code from captcha_id
-        let parts: Vec<&str> = res.captcha_id.split(':').collect();
-        let code_bytes = base64::Engine::decode(
+        // Extract real code from SVG text elements
+        let code = CaptchaEngine::extract_code_from_svg(&res.captcha_svg).unwrap();
+        assert_eq!(code.len(), 5);
+
+        // Verify that captcha_id does NOT contain the code or base64 of the code
+        let encoded_code = base64::Engine::encode(
             &base64::engine::general_purpose::STANDARD,
-            parts[0],
-        ).unwrap();
-        let code = String::from_utf8(code_bytes).unwrap();
+            &code,
+        );
+        assert!(!res.captcha_id.contains(&code));
+        assert!(!res.captcha_id.contains(&encoded_code));
+
+        let parts: Vec<&str> = res.captcha_id.split(':').collect();
+        assert_eq!(parts.len(), 3);
 
         // Valid code
         assert!(CaptchaEngine::verify(&res.captcha_id, &code, secret, 300));
@@ -203,7 +213,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0) - 301;
-        let past_sig = CaptchaEngine::sign_payload(&code, past_timestamp, secret);
+        let past_sig = CaptchaEngine::sign_payload(&code, parts[0], past_timestamp, secret);
         let expired_id = format!("{}:{}:{}", parts[0], past_timestamp, past_sig);
         assert!(!CaptchaEngine::verify(&expired_id, &code, secret, 300));
     }

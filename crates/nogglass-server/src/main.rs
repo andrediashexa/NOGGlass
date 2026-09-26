@@ -10,12 +10,14 @@ mod ui;
 
 use api::{AppState, VersionInfo};
 use looking_glass_core::catalogue::BUILTIN;
-use looking_glass_core::executor::ssh::SshTransport;
+use looking_glass_core::executor::ssh::{HostKeyPolicy, SshTransport};
 use looking_glass_core::executor::{Executor, Transport};
 use looking_glass_core::inventory::Inventory;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tracing::{error, info, warn};
 
 /// Where the inventory lives unless the operator says otherwise.
@@ -91,7 +93,27 @@ async fn run() -> Result<(), String> {
     }
 
     let inventory = Arc::new(inventory);
-    let transport: Arc<dyn Transport> = Arc::new(SshTransport::default());
+    let any_pinned = inventory.routers.iter().any(|r| r.host_key.is_some());
+    let host_keys = inventory
+        .routers
+        .iter()
+        .filter_map(|r| r.host_key.clone())
+        .collect::<Vec<_>>();
+    let host_key_policy = if any_pinned {
+        info!("SSH transport configured with pinned host keys for inventory routers");
+        HostKeyPolicy::Pinned(Arc::new(host_keys))
+    } else {
+        warn!(
+            "running with SSH HostKeyPolicy::AcceptAny — no router host keys configured in nogglass.toml. \
+             In production, set 'host_key' for routers to prevent Man-in-the-Middle attacks."
+        );
+        HostKeyPolicy::AcceptAny
+    };
+    let transport: Arc<dyn Transport> = Arc::new(SshTransport::new(
+        Duration::from_secs(10),
+        Duration::from_secs(20),
+        host_key_policy,
+    ));
     let mut executor = Executor::new(inventory.clone(), Arc::new(BUILTIN.clone()), transport);
 
     let rpki = inventory.rpki.to_config();
@@ -153,7 +175,7 @@ async fn run() -> Result<(), String> {
     if inventory.global_view.enabled {
         warn!(
             "the global-view comparison is enabled: queried prefixes are sent to \
-             RIPEstat. Say so in your privacy notice."
+              RIPEstat. Say so in your privacy notice."
         );
     }
     let global_view = Arc::new(looking_glass_core::global_view::GlobalViewLookup::new(
@@ -161,12 +183,20 @@ async fn run() -> Result<(), String> {
         std::time::Duration::from_millis(inventory.global_view.timeout_ms),
     ));
 
-    let captcha_secret = std::env::var("NOGGLASS_CAPTCHA_SECRET").unwrap_or_else(|_| {
-        let mut bytes = [0u8; 32];
-        let mut rng = rand::thread_rng();
-        rand::RngCore::fill_bytes(&mut rng, &mut bytes);
-        hex::encode(bytes)
-    });
+    let captcha_secret = match std::env::var("NOGGLASS_CAPTCHA_SECRET") {
+        Ok(s) => s,
+        Err(_) => {
+            warn!(
+                "NOGGLASS_CAPTCHA_SECRET not set; generated ephemeral in-memory secret. \
+                 CAPTCHA tokens will not persist across restarts or multiple replicas. \
+                 Set NOGGLASS_CAPTCHA_SECRET in the environment for production deployments."
+            );
+            let mut bytes = [0u8; 32];
+            let mut rng = rand::thread_rng();
+            rand::RngCore::fill_bytes(&mut rng, &mut bytes);
+            hex::encode(bytes)
+        }
+    };
 
     let app = api::routes(AppState {
         executor,
@@ -176,8 +206,10 @@ async fn run() -> Result<(), String> {
         client_address: Arc::new(client_address),
         global_view,
         captcha_secret,
+        used_captchas: Arc::new(Mutex::new(HashSet::new())),
     })
     .merge(ui::routes())
+    .layer(axum::middleware::from_fn(security_headers_middleware))
     .layer(tower_http::trace::TraceLayer::new_for_http())
     .layer(tower_http::compression::CompressionLayer::new());
 
@@ -202,3 +234,32 @@ async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
     info!("shutting down");
 }
+
+/// Injects standard HTTP security headers across all responses.
+async fn security_headers_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::header::X_FRAME_OPTIONS,
+        axum::http::HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        axum::http::header::REFERRER_POLICY,
+        axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_SECURITY_POLICY,
+        axum::http::HeaderValue::from_static(
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none';",
+        ),
+    );
+    response
+}
+

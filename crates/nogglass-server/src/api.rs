@@ -19,9 +19,10 @@ use looking_glass_core::inventory::{Inventory, PublicRouter};
 use looking_glass_core::ratelimit::{ClientAddress, ClientKey, Decision, RateLimiter};
 use looking_glass_core::target::{parse_target, TargetError};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
@@ -39,6 +40,8 @@ pub struct AppState {
     pub client_address: Arc<ClientAddress>,
     /// Secret key used to sign stateless HMAC-SHA256 CAPTCHAs.
     pub captcha_secret: String,
+    /// Replay protection tracking recently verified CAPTCHA tokens.
+    pub used_captchas: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AppState {
@@ -105,7 +108,7 @@ pub fn routes(state: AppState) -> AxumRouter {
         .route("/api/captcha", get(generate_captcha))
         .route("/api/routers", get(routers))
         .route("/api/query", post(run_query))
-        .route("/api/query/stream", get(stream_query))
+        .route("/api/query/stream", get(stream_query).post(stream_query_post))
         .route("/api/catalogue/{vendor}", get(vendor_commands))
         .with_state(state)
 }
@@ -300,12 +303,38 @@ fn verify_request_captcha(
 ) -> Result<bool, ApiError> {
     match (captcha_id, captcha_code) {
         (Some(id), Some(code)) if !id.trim().is_empty() && !code.trim().is_empty() => {
+            // Prevent replay attacks: check if this token was already used
+            let mut used = state.used_captchas.lock().unwrap();
+            if used.contains(id) {
+                return Err(ApiError {
+                    status: StatusCode::BAD_REQUEST,
+                    code: "captcha_already_used",
+                    message: "CAPTCHA challenge has already been used.".to_string(),
+                });
+            }
+
             if looking_glass_core::captcha::CaptchaEngine::verify(
                 id,
                 code,
                 &state.captcha_secret,
                 300,
             ) {
+                // Prune expired entries if the cache grows large
+                if used.len() >= 10_000 {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    used.retain(|token| {
+                        token
+                            .split(':')
+                            .nth(1)
+                            .and_then(|t| t.parse::<i64>().ok())
+                            .map(|ts| now - ts < 300)
+                            .unwrap_or(false)
+                    });
+                }
+                used.insert(id.to_string());
                 Ok(true)
             } else {
                 Err(ApiError {
@@ -350,17 +379,31 @@ async fn run_query(
     Ok(Json(response))
 }
 
-/// The same query, as a stream of events.
-///
-/// The browser gets `accepted` immediately, `running` when a slot is free, and
-/// `result` or `error` at the end. Partial router output is not streamed yet:
-/// the transport hands back the whole answer, and inventing progress would be
-/// a lie about what is happening.
+/// The same query, as a stream of events via GET query string.
 async fn stream_query(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: axum::http::HeaderMap,
     Query(request): Query<QueryRequest>,
+) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
+    handle_stream_query(state, peer, headers, request).await
+}
+
+/// The same query, as a stream of events via POST body (protecting parameters and tokens from GET logs).
+async fn stream_query_post(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<QueryRequest>,
+) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
+    handle_stream_query(state, peer, headers, request).await
+}
+
+async fn handle_stream_query(
+    state: AppState,
+    peer: SocketAddr,
+    headers: axum::http::HeaderMap,
+    request: QueryRequest,
 ) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
     let (sender, receiver) = tokio::sync::mpsc::channel::<Event>(8);
     let forwarded = headers
@@ -587,6 +630,7 @@ queries = ["bgp_route"]
             client_address: Arc::new(client_address),
             global_view,
             captcha_secret: "test_secret".to_string(),
+            used_captchas: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -764,6 +808,7 @@ host = "192.0.2.200"
             // that the prefix is resolved, not what RIPEstat would say.
             global_view: Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1))),
             captcha_secret: "test_secret".to_string(),
+            used_captchas: Arc::new(Mutex::new(HashSet::new())),
         };
 
         let target = parse_target("203.0.113.0/24").unwrap();
@@ -917,9 +962,10 @@ host = "192.0.2.200"
         assert_eq!(captcha_res.status(), StatusCode::OK);
         let captcha_body = body_json(captcha_res).await;
         let captcha_id = captcha_body["captcha_id"].as_str().unwrap();
+        let captcha_svg = captcha_body["captcha_svg"].as_str().unwrap();
 
-        // Decode code from stateless token
-        let code = looking_glass_core::CaptchaEngine::extract_code(captcha_id).unwrap();
+        // Decode code from SVG challenge
+        let code = looking_glass_core::CaptchaEngine::extract_code_from_svg(captcha_svg).unwrap();
 
         // 4. Retry with valid CAPTCHA: succeeds with 200 OK
         let valid_req = Request::post("/api/query")
@@ -935,5 +981,44 @@ host = "192.0.2.200"
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+
+        // 5. Replay attack: submitting the same captcha_id again must be rejected (400 BAD REQUEST)
+        let replay_req = Request::post("/api/query")
+            .header("content-type", "application/json")
+            .body(Body::from(format!(
+                r#"{{"router":"demo","type":"bgp_route","target":"198.51.100.0/24","captcha_id":"{}","captcha_code":"{}"}}"#,
+                captcha_id, code
+            )))
+            .unwrap();
+        let replay_res = app
+            .clone()
+            .oneshot(from_peer(replay_req, "203.0.113.88:4000"))
+            .await
+            .unwrap();
+        assert_eq!(replay_res.status(), StatusCode::BAD_REQUEST);
+        let replay_body = body_json(replay_res).await;
+        assert_eq!(replay_body["code"], "captcha_already_used");
+    }
+
+    #[tokio::test]
+    async fn post_query_stream_accepts_json_body() {
+        let app = app();
+        let req = Request::post("/api/query/stream")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"router":"demo","type":"bgp_route","target":"198.51.100.0/24"}"#,
+            ))
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.89:4000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok()),
+            Some("text/event-stream")
+        );
     }
 }

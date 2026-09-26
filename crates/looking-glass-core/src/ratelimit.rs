@@ -111,13 +111,15 @@ struct Bucket {
 /// spend their whole allowance in the last second of one window and again in
 /// the first second of the next, which is twice the intended rate at the worst
 /// possible moment.
+const NUM_SHARDS: usize = 16;
+
 pub struct RateLimiter {
     limit: RateLimit,
-    buckets: Mutex<HashMap<ClientKey, Bucket>>,
+    shards: [Mutex<HashMap<ClientKey, Bucket>>; NUM_SHARDS],
     /// Buckets idle for longer than this are dropped, so a scan of the address
     /// space cannot grow the map without bound.
     idle_eviction: Duration,
-    max_entries: usize,
+    max_entries_per_shard: usize,
 }
 
 impl RateLimiter {
@@ -125,9 +127,16 @@ impl RateLimiter {
         Self {
             idle_eviction: limit.window * 4,
             limit,
-            buckets: Mutex::new(HashMap::new()),
-            max_entries: 100_000,
+            shards: std::array::from_fn(|_| Mutex::new(HashMap::new())),
+            max_entries_per_shard: 100_000 / NUM_SHARDS,
         }
+    }
+
+    fn shard_idx(&self, key: &ClientKey) -> usize {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut hasher);
+        (hasher.finish() as usize) % NUM_SHARDS
     }
 
     /// Tokens added per second by the steady rate.
@@ -147,13 +156,14 @@ impl RateLimiter {
 
     /// The same, at a caller-supplied instant, so tests do not sleep.
     pub fn check_at(&self, key: ClientKey, now: Instant, captcha_verified: bool) -> Decision {
-        let Ok(mut buckets) = self.buckets.lock() else {
+        let idx = self.shard_idx(&key);
+        let Ok(mut buckets) = self.shards[idx].lock() else {
             return Decision::Deny {
                 retry_after: self.limit.window,
             };
         };
 
-        if buckets.len() >= self.max_entries {
+        if buckets.len() >= self.max_entries_per_shard {
             buckets.retain(|_, bucket| now.duration_since(bucket.last_seen) < self.idle_eviction);
         }
 
@@ -196,17 +206,21 @@ impl RateLimiter {
         }
     }
 
-    /// Drops idle buckets. Called periodically by the server.
+    /// Drops idle buckets across shards without blocking concurrent requests.
     pub fn evict_idle(&self) {
-        let Ok(mut buckets) = self.buckets.lock() else {
-            return;
-        };
         let now = Instant::now();
-        buckets.retain(|_, bucket| now.duration_since(bucket.last_seen) < self.idle_eviction);
+        for shard in &self.shards {
+            if let Ok(mut buckets) = shard.try_lock() {
+                buckets.retain(|_, bucket| now.duration_since(bucket.last_seen) < self.idle_eviction);
+            }
+        }
     }
 
     pub fn tracked_clients(&self) -> usize {
-        self.buckets.lock().map(|b| b.len()).unwrap_or(0)
+        self.shards
+            .iter()
+            .map(|s| s.lock().map(|b| b.len()).unwrap_or(0))
+            .sum()
     }
 }
 
