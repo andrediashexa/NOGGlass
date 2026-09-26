@@ -88,22 +88,33 @@ flowchart TD
 2. **Tier 2 (IANA-Federated RDAP Authoritative Fallback):** If PeeringDB data is absent, incomplete, or unconfirmed, the engine consults the local cache of the IANA RDAP bootstrap allocations (RFC 9224). The engine queries the authoritative Regional Internet Registry (RIR) directly (e.g. `rdap.registro.br`, `rdap.arin.net`, `rdap.db.ripe.net`, `rdap.apnic.net`, `rdap.afrinic.net`). The applicant's email domain MUST match an authorized contact entity (`administrative`, `technical`, `noc`, or `abuse`).
 3. **Cryptographic Email Activation Challenge:** Upon successful authority validation, the engine generates a 256-bit cryptographically secure pseudorandom token (`rand::rngs::OsRng`). The token's SHA-256 hash is recorded in MariaDB with a strict 2-hour expiration and single-use invalidation. The unhashed token is dispatched via email. The account remains disabled until the dynamic URL is visited.
 
-### 3. Zero-Knowledge Credential Vaulting (At-Rest Encryption)
+### 3. Post-Quantum Resistant Vaulting and Adaptive SSH Transport
 
-Router management credentials (passwords, private SSH keys, and internal management IP addresses) MUST NOT be stored in plaintext.
+Router management credentials (passwords, private SSH keys, and internal management IP addresses) MUST NOT be stored in plaintext and MUST resist both classical and post-quantum cryptanalysis (Grover's algorithm).
 
 ```mermaid
-flowchart LR
-    input[Operator enters SSH Credentials in UI] --> https[TLS 1.3 Transport]
-    https --> server[Looking Glass Backend Engine]
-    env[Master Key<br/>LOOKING_GLASS_MASTER_KEY] --> kdf[HKDF-SHA256 Derivation]
-    kdf --> cipher[ChaCha20-Poly1305 AEAD]
-    server --> cipher
-    cipher -->|Encrypted Ciphertext + Nonce| mariadb[(Isolated Alpine MariaDB<br/>Zero External Ports)]
-    mariadb -.->|Decrypted only in memory| session[Ephemeral SSH Session to Edge Router]
+flowchart TD
+    subgraph web[Web & Management Interface]
+        client[Operator Browser] -->|TLS 1.3 Hybrid PQC<br/>X25519 + ML-KEM-768 FIPS 203| api[Looking Glass Engine]
+    end
+    subgraph vault[Zero-Knowledge PQC Vault]
+        api -->|Encrypts at rest| cipher[ChaCha20-Poly1305 256-bit<br/>KDF: HKDF-SHA512]
+        cipher --> mdb[(MariaDB Alpine<br/>Unix Socket)]
+    end
+    subgraph ssh[Adaptive SSH Transport russh]
+        api --> negotiates{SSH Key Exchange<br/>Negotiation}
+        negotiates -->|PQC Preferred<br/>Modern Firmwares| kex_pqc[sntrup761x25519 / mlkem768x25519]
+        negotiates -->|Fallback Compliant<br/>Legacy Edge Routers| kex_leg[curve25519 / ecdh-sha2-nistp / diffie-hellman]
+        kex_pqc --> edge[Production Edge Router]
+        kex_leg --> edge
+    end
 ```
 
-- **Encryption Algorithm:** Symmetric authenticated encryption using ChaCha20-Poly1305 (RFC 8439) with a unique 96-bit random nonce per record.
+- **Post-Quantum Resistant At-Rest Vault:** Symmetric authenticated encryption using ChaCha20-Poly1305 (RFC 8439) with a 256-bit key provides 128 bits of effective quantum security against Grover's algorithm, rendering stored credentials immune to future quantum decryption attacks ("Store Now, Decrypt Later"). Key derivation SHALL utilize HKDF-SHA512.
+- **Activation Challenge Tokens:** Dynamic email verification tokens SHALL use a 256-bit cryptographically secure pseudorandom number generator (CSPRNG via `rand::rngs::OsRng`), and token hashes stored in MariaDB MUST be computed with SHA3-512 or BLAKE3.
+- **Adaptive SSH Transport Negotiation:** Because many operational border routers run legacy operating systems or older microcode that lack Post-Quantum Cryptography implementations, the SSH transport (`russh`) MUST negotiate key exchange adaptively:
+  1. **Primary Priority (PQC Hybrid):** Attempt post-quantum hybrid key exchange (`sntrup761x25519-sha512@openssh.com` and `mlkem768x25519-sha512`) when supported by recent router operating systems.
+  2. **Backward-Compatible Fallback (RFC Classical):** Gracefully negotiate standard classical algorithms (`curve25519-sha256`, `ecdh-sha2-nistp256`, `diffie-hellman-group14-sha256`) to ensure uncompromised interoperability with legacy Huawei VRP, MikroTik RouterOS v6/v7, Cisco IOS-XE, Datacom, and Nokia hardware.
 - **Key Management:** The 256-bit master secret (`LOOKING_GLASS_MASTER_KEY`) MUST be injected exclusively via runtime environment variables and MUST NOT exist in database dumps, configuration files, or version control.
 - **Memory Lifetime:** Decrypted credentials SHALL exist only ephemerally in RAM during the lifecycle of the SSH session and MUST be scrubbed from memory immediately upon connection completion.
 - **Frontend Masking:** Administrative endpoints listing registered routers SHALL NEVER transmit decrypted passwords or private keys back to the client; fields MUST be masked with redacted placeholders.
@@ -130,7 +141,7 @@ flowchart TD
 
 - **Anonymized Organization Presentation:** The selector displays the organization's business name and physical router location (city, state/province, datacenter). The ASN number is deliberately omitted from the primary selection list to mitigate scraping and targeting.
 - **Opaque UUID Addressing:** The frontend references routers solely by immutable UUIDs (e.g. `router_id: "550e8400-e29b-41d4-a716-446655440000"`). Internal management IPs, ports, and usernames are completely concealed from the browser.
-- **Reciprocity Policy:** Verified tenants who contribute at least one operational router to the platform obtain unrestricted query access to all community vantage points. Tenants who deactivate all routers are downgraded to private-only diagnostic mode.
+- **Inclusive Collaborative Access:** Any operator who successfully completes account registration and email verification for their ASN SHALL have immediate, unrestricted access to execute operational queries (`ping`, `traceroute`, `bgp_route`, `bgp_summary`) against all active community routers. Enrolling edge routers is an OPTIONAL contribution and MUST NOT be a mandatory prerequisite for querying the platform.
 
 ### 5. Infrastructure Isolation: Alpine MariaDB via Unix Domain Socket
 
