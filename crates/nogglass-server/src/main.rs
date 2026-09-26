@@ -161,6 +161,13 @@ async fn run() -> Result<(), String> {
         std::time::Duration::from_millis(inventory.global_view.timeout_ms),
     ));
 
+    let captcha_secret = std::env::var("NOGGLASS_CAPTCHA_SECRET").unwrap_or_else(|_| {
+        let mut bytes = [0u8; 32];
+        let mut rng = rand::thread_rng();
+        rand::RngCore::fill_bytes(&mut rng, &mut bytes);
+        hex::encode(bytes)
+    });
+
     let app = api::routes(AppState {
         executor,
         inventory,
@@ -168,6 +175,7 @@ async fn run() -> Result<(), String> {
         limiter,
         client_address: Arc::new(client_address),
         global_view,
+        captcha_secret,
     })
     .merge(ui::routes())
     .layer(tower_http::trace::TraceLayer::new_for_http())

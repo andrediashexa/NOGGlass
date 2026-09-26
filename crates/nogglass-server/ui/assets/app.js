@@ -148,11 +148,29 @@ function hidePanels() {
   }
 }
 
-function onClear() {
+function onClear(event) {
+  event?.preventDefault();
   const targetInput = document.getElementById("target");
   if (targetInput) {
     targetInput.value = "";
     targetInput.focus();
+  }
+  const errorBox = document.getElementById("error");
+  if (errorBox) {
+    errorBox.textContent = "";
+    errorBox.hidden = true;
+  }
+  const rawPre = document.getElementById("raw");
+  if (rawPre) {
+    rawPre.textContent = "";
+  }
+  const graph = document.getElementById("graph");
+  if (graph) {
+    graph.replaceChildren();
+  }
+  for (const tableId of ["paths-table", "hops-table", "sessions-table"]) {
+    const tbody = document.querySelector(`#${tableId} tbody`);
+    if (tbody) tbody.replaceChildren();
   }
   hidePanels();
   const url = new URL(window.location.href);
@@ -160,7 +178,6 @@ function onClear() {
   url.searchParams.delete("type");
   window.history.replaceState(null, "", url);
 }
-
 /**
  * Reflects the query in the address bar, so copying the URL shares what is on
  * screen. `replaceState` rather than `pushState`: a visitor trying three
@@ -204,6 +221,80 @@ function applyQueryFromUrl() {
   return true;
 }
 
+let pendingPayload = null;
+
+async function fetchCaptcha() {
+  try {
+    const res = await fetch("/api/captcha");
+    if (!res.ok) throw new Error("failed to fetch captcha");
+    const data = await res.json();
+    document.getElementById("captcha-id").value = data.captcha_id;
+    document.getElementById("captcha-svg-container").innerHTML = data.captcha_svg;
+    const input = document.getElementById("captcha-input");
+    input.value = "";
+    input.focus();
+    document.getElementById("captcha-error").hidden = true;
+  } catch (err) {
+    document.getElementById("captcha-error").textContent = t("error.unreachable");
+    document.getElementById("captcha-error").hidden = false;
+  }
+}
+
+function showCaptchaModal(payload) {
+  pendingPayload = payload;
+  fetchCaptcha();
+  const modal = document.getElementById("captcha-modal");
+  if (modal && !modal.open) {
+    modal.showModal();
+  }
+}
+
+async function onCaptchaSubmit(event) {
+  event?.preventDefault();
+  const captchaId = document.getElementById("captcha-id").value;
+  const captchaCode = document.getElementById("captcha-input").value.trim().toUpperCase();
+
+  if (!captchaCode) return;
+
+  const payload = {
+    ...pendingPayload,
+    captcha_id: captchaId,
+    captcha_code: captchaCode,
+  };
+
+  const submitBtn = document.getElementById("captcha-submit");
+  submitBtn.disabled = true;
+
+  try {
+    const response = await fetch("/api/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      if (body.code === "captcha_invalid" || body.code === "captcha_required") {
+        document.getElementById("captcha-error").textContent =
+          state.messages[`error.${body.code}`] ?? body.message;
+        document.getElementById("captcha-error").hidden = false;
+        fetchCaptcha();
+        return;
+      }
+      document.getElementById("captcha-modal").close();
+      showError(body.code, body.message);
+      return;
+    }
+
+    document.getElementById("captcha-modal").close();
+    render(body);
+  } catch (error) {
+    document.getElementById("captcha-modal").close();
+    showError("unreachable", String(error));
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
 async function onSubmit(event) {
   event?.preventDefault();
   hidePanels();
@@ -230,6 +321,10 @@ async function onSubmit(event) {
     });
     const body = await response.json();
     if (!response.ok) {
+      if (body.code === "captcha_required") {
+        showCaptchaModal(payload);
+        return;
+      }
       showError(body.code, body.message);
       return;
     }
@@ -297,7 +392,11 @@ function renderBgp(result) {
   }
 
   renderTable(result.paths);
-  renderGraph(result.paths);
+  try {
+    renderGraph(result.paths);
+  } catch (err) {
+    console.error("Failed to render AS path graph:", err);
+  }
 }
 
 /**
@@ -663,6 +762,8 @@ async function start() {
 
   document.getElementById("query-form").addEventListener("submit", onSubmit);
   document.getElementById("clear-btn")?.addEventListener("click", onClear);
+  document.getElementById("captcha-form")?.addEventListener("submit", onCaptchaSubmit);
+  document.getElementById("captcha-refresh")?.addEventListener("click", fetchCaptcha);
 
   // A link that carries a query runs it, so a result can be shared.
   if (applyQueryFromUrl()) {

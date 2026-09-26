@@ -166,7 +166,7 @@ fn parse_as_path(text: &str) -> (Vec<u32>, Option<Origin>) {
         if let Some(m) = marker {
             origin = Some(m);
         }
-        if let Ok(asn) = digits.parse::<u32>() {
+        if let Some(asn) = parse_asn(digits) {
             as_path.push(asn);
         }
     }
@@ -338,6 +338,12 @@ impl VendorDriver for HuaweiVrpDriver {
                 || header.starts_with("Route Flag")
                 || header.starts_with("Paths:")
                 || header.starts_with("VPN-Instance")
+                || header.starts_with("Info:")
+                || header.starts_with("Info :")
+                || header.starts_with("Warning:")
+                || header.starts_with("Warning :")
+                || header.starts_with("display ")
+                || header.starts_with('<')
             {
                 continue;
             }

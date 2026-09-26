@@ -20,6 +20,10 @@ thiserror = "1.0"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "signal"] }
 toml = "0.8"
 tracing = "0.1"
+base64 = "0.22"
+hex = "0.4"
+rand = "0.8"
+ring = "0.17"
 
 [profile.release]
 # Strip at link time rather than with a separate `strip` call: the builder runs
