@@ -148,6 +148,19 @@ function hidePanels() {
   }
 }
 
+function onClear() {
+  const targetInput = document.getElementById("target");
+  if (targetInput) {
+    targetInput.value = "";
+    targetInput.focus();
+  }
+  hidePanels();
+  const url = new URL(window.location.href);
+  url.searchParams.delete("target");
+  url.searchParams.delete("type");
+  window.history.replaceState(null, "", url);
+}
+
 /**
  * Reflects the query in the address bar, so copying the URL shares what is on
  * screen. `replaceState` rather than `pushState`: a visitor trying three
@@ -649,6 +662,7 @@ async function start() {
   loadVersion();
 
   document.getElementById("query-form").addEventListener("submit", onSubmit);
+  document.getElementById("clear-btn")?.addEventListener("click", onClear);
 
   // A link that carries a query runs it, so a result can be shared.
   if (applyQueryFromUrl()) {

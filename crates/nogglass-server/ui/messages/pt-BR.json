@@ -22,6 +22,7 @@
   "error.unsupported": "Essa consulta não é suportada aqui.",
   "footer.source": "Código-fonte",
   "footer.version": "Versão",
+  "form.clear": "Limpar",
   "form.query": "Consulta",
   "form.router": "Roteador",
   "form.running": "Consultando…",

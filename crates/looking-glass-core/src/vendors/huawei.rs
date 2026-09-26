@@ -1,6 +1,6 @@
 use crate::driver::{
     parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
-    Origin, PingResult, TracerouteResult, VendorDriver,
+    Origin, PingResult, RpkiStatus, RpkiValidation, TracerouteResult, VendorDriver,
 };
 use ipnet::IpNet;
 
@@ -8,6 +8,7 @@ use ipnet::IpNet;
 #[derive(Debug, Default)]
 struct RouteFields {
     flags: String,
+    rpki: Option<RpkiStatus>,
     network: String,
     next_hop: String,
     med: Option<u32>,
@@ -53,6 +54,20 @@ impl RouteFields {
         if let Some(((_, first), tail)) = rest.split_first() {
             if !first.is_empty() && first.chars().all(|c| "*>dhsi".contains(c)) {
                 fields.flags = (*first).to_string();
+                rest = tail;
+            }
+        }
+
+        // RPKI validation status code, when VRP prints the RPKI column (V - valid, I - invalid, N - not-found).
+        if let Some(((_, first), tail)) = rest.split_first() {
+            let status = match *first {
+                "V" => Some(RpkiStatus::Valid),
+                "I" => Some(RpkiStatus::Invalid),
+                "N" => Some(RpkiStatus::NotFound),
+                _ => None,
+            };
+            if let Some(s) = status {
+                fields.rpki = Some(s);
                 rest = tail;
             }
         }
@@ -318,6 +333,8 @@ impl VendorDriver for HuaweiVrpDriver {
                 || header.starts_with("Total")
                 || header.starts_with("BGP")
                 || header.starts_with("Status")
+                || header.starts_with("Origin")
+                || header.starts_with("RPKI")
                 || header.starts_with("Route Flag")
                 || header.starts_with("Paths:")
                 || header.starts_with("VPN-Instance")
@@ -351,6 +368,10 @@ impl VendorDriver for HuaweiVrpDriver {
                 local_pref: fields.local_pref,
                 weight: fields.pref_val,
                 origin,
+                rpki: fields
+                    .rpki
+                    .map(RpkiValidation::from_router)
+                    .unwrap_or_default(),
                 ..BgpPath::default()
             });
         }
@@ -619,6 +640,32 @@ mod tests {
             "IPv6 next hop"
         );
         assert_eq!(path.origin, Some(Origin::Egp));
+    }
+
+    #[test]
+    fn parses_tabular_with_rpki_column() {
+        let raw = "\
+ BGP Local router ID is 192.0.2.1
+ Status codes: * - valid, > - best, d - damped, x - best external, a - add path,
+               Origin : i - IGP, e - EGP, ? - incomplete
+ RPKI validation codes: V - valid, I - invalid, N - not-found
+
+ Total Number of Routes: 4
+    Network            NextHop         MED   LocPrf   PrefVal Path/Ogn
+*>  V 198.51.100.0/24   192.0.2.10             100        0    64512 64513i
+*   N 198.51.101.0/24   192.0.2.11             100        0    64512 64514i
+*>  I 198.51.102.0/24   192.0.2.12             100        0    64512 64515?
+*   N                   192.0.2.13             100        0    64512 64516i
+";
+        let result = HuaweiVrpDriver.parse_bgp_route(raw).unwrap();
+        assert_eq!(result.completeness, Completeness::Complete);
+        assert_eq!(result.paths.len(), 4);
+        assert_eq!(result.paths[0].rpki.status, RpkiStatus::Valid);
+        assert_eq!(result.paths[0].rpki.source, crate::driver::RpkiSource::Router);
+        assert_eq!(result.paths[1].rpki.status, RpkiStatus::NotFound);
+        assert_eq!(result.paths[2].rpki.status, RpkiStatus::Invalid);
+        assert_eq!(result.paths[3].rpki.status, RpkiStatus::NotFound);
+        assert_eq!(result.paths[3].prefix.unwrap().to_string(), "198.51.102.0/24");
     }
 
     /// Output captured without its header still parses, and anything the

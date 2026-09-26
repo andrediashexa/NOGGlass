@@ -22,6 +22,7 @@
   "error.unsupported": "That query is not supported here.",
   "footer.source": "Source code",
   "footer.version": "Version",
+  "form.clear": "Clear",
   "form.query": "Query",
   "form.router": "Router",
   "form.running": "Running…",
