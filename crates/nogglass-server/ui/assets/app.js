@@ -294,7 +294,6 @@ async function onCaptchaSubmit(event) {
     submitBtn.disabled = false;
   }
 }
-
 async function onSubmit(event) {
   event?.preventDefault();
   hidePanels();
@@ -392,7 +391,6 @@ function renderBgp(result, queryTarget) {
   }
 
   renderTable(result.paths);
-
   // Não convém gerar gráfico quando for consulta por ASN ou quando houver
   // dezenas/centenas de rotas, pois o diagrama SVG fica ilegível e sobrecarregado.
   const isAsnQuery = /^as\d+/i.test(queryTarget?.trim() ?? "");
