@@ -27,8 +27,69 @@ const DEFAULT_CONFIG: &str = "/etc/nogglass/nogglass.toml";
 /// a proxy, and the deployment guide covers both.
 const DEFAULT_LISTEN: &str = "0.0.0.0:8080";
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// Loads key-value pairs from an environment file if present.
+///
+/// Priority:
+/// 1. Path in `NOGGLASS_ENV_FILE` if set.
+/// 2. `/etc/nogglass/nogglass.env` as the standard default.
+///
+/// Variables already present in the process environment are never overwritten.
+fn load_env_file() {
+    let env_path = std::env::var("NOGGLASS_ENV_FILE")
+        .unwrap_or_else(|_| "/etc/nogglass/nogglass.env".to_string());
+
+    let content = match std::fs::read_to_string(&env_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some((raw_key, raw_val)) = trimmed.split_once('=') {
+            let key = raw_key.trim();
+            if key.is_empty() {
+                continue;
+            }
+
+            let mut val = raw_val.trim();
+            if (val.starts_with('"') && val.ends_with('"') && val.len() >= 2)
+                || (val.starts_with('\'') && val.ends_with('\'') && val.len() >= 2)
+            {
+                val = &val[1..val.len() - 1];
+            }
+
+            if std::env::var(key).is_err() {
+                // SAFETY: Executed in main() prior to spawning async runtime or worker threads.
+                unsafe {
+                    std::env::set_var(key, val);
+                }
+            }
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    load_env_file();
+
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("failed to initialize async runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    rt.block_on(async_main())
+}
+
+async fn async_main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_env("NOGGLASS_LOG")
@@ -266,5 +327,37 @@ async fn security_headers_middleware(
         ),
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_env_file_reads_key_value_pairs_and_strips_quotes() {
+        let env_file_path = std::env::temp_dir().join(format!("nogglass_test_{}.env", rand::random::<u64>()));
+        std::fs::write(
+            &env_file_path,
+            "# Comment line\n\
+             TEST_NOGGLASS_KEY_ONE=val1\n\
+             TEST_NOGGLASS_KEY_TWO=\"quoted_val\"\n\
+             TEST_NOGGLASS_KEY_THREE='single_quoted'\n\
+             TEST_NOGGLASS_KEY_FOUR = spaced_val \n",
+        )
+        .unwrap();
+
+        unsafe {
+            std::env::set_var("NOGGLASS_ENV_FILE", env_file_path.to_str().unwrap());
+        }
+
+        load_env_file();
+
+        assert_eq!(std::env::var("TEST_NOGGLASS_KEY_ONE").unwrap(), "val1");
+        assert_eq!(std::env::var("TEST_NOGGLASS_KEY_TWO").unwrap(), "quoted_val");
+        assert_eq!(std::env::var("TEST_NOGGLASS_KEY_THREE").unwrap(), "single_quoted");
+        assert_eq!(std::env::var("TEST_NOGGLASS_KEY_FOUR").unwrap(), "spaced_val");
+
+        let _ = std::fs::remove_file(&env_file_path);
+    }
 }
 

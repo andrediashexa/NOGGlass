@@ -27,10 +27,14 @@ services:
     volumes:
       # Named volume for container-managed configuration that survives image upgrades
       - nogglass-config:/etc/nogglass
+    # Router secrets and variables are read from /etc/nogglass/nogglass.env
+    # (matching the Systemd deployment), from the /etc/nogglass volume, or .env.
+    env_file:
+      - path: /etc/nogglass/nogglass.env
+        required: false
+      - path: .env
+        required: false
     environment:
-      # Router passwords are named in the configuration file and read from here,
-      # so the file itself stays free of secrets.
-      # NOGGLASS_EDGE01_PASSWORD: "${NOGGLASS_EDGE01_PASSWORD}"
       NOGGLASS_LOG: "${NOGGLASS_LOG:-info}"
       NOGGLASS_DEFAULT_LOCALE: "${NOGGLASS_DEFAULT_LOCALE:-en}"
       # Set when a proxy terminates TLS, so the startup warning stays quiet and
