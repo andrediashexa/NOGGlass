@@ -130,14 +130,15 @@ sudo chmod 640 /etc/nogglass/nogglass.toml /etc/nogglass/logo_nogglass.png /etc/
 ```
 
 #### Setup for Container Installation (Docker / Method 2)
-When running via Docker Compose, no system user on the host is needed. Configuration and visual assets are stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and container rebuilds:
+When running via Docker Compose, no system user on the host is needed. Configuration (`nogglass.toml`), credentials (`nogglass.env`), and visual assets are stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and container rebuilds:
 
 ```bash
 # 1. Start the container to initialize the named volume
 docker compose up -d nogglass
 
-# 2. Copy configuration template and existing visual assets into the volume
+# 2. Copy configuration template, environment file, and visual assets into the volume
 docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
+docker cp deploy/systemd/nogglass.env.example nogglass:/etc/nogglass/nogglass.env
 docker cp crates/nogglass-server/ui/assets/logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
 docker cp crates/nogglass-server/ui/assets/nogglass.png nogglass:/etc/nogglass/nogglass.png
 
@@ -249,6 +250,7 @@ background_opacity_percent = 35
    ```bash
    sudo bash -c 'cat <<EOF > /etc/nogglass/nogglass.env
    NOGGLASS_CONFIG=/etc/nogglass/nogglass.toml
+   # Use 0.0.0.0:8080 for public access or 127.0.0.1:8080 when behind a local reverse proxy
    NOGGLASS_HTTP_ADDR=0.0.0.0:8080
    NOGGLASS_EDGE01_PASSWORD="REPLACE_WITH_ROUTER_PASSWORD"
    NOGGLASS_BORDER02_PASSPHRASE=""
@@ -293,18 +295,18 @@ background_opacity_percent = 35
 
 ### Method 2: Running with Docker Compose
 
-Running with Docker Compose stores your configuration in a Docker named volume (`nogglass-config`). No system user creation on the host is needed. Secrets are isolated in `/etc/nogglass/nogglass.env` (permissions `0600`) and loaded via `env_file`.
+Running with Docker Compose stores all configuration, credentials, and visual assets inside a Docker named volume (`nogglass-config`), mounted at `/etc/nogglass` in the container. No system user creation on the host and no root `/etc` filesystem modifications are needed.
 
-1. Create the environment file `/etc/nogglass/nogglass.env` on the host:
+1. Prepare your local environment file (`nogglass.env`):
    ```bash
-   sudo mkdir -p /etc/nogglass
-   sudo bash -c 'cat <<EOF > /etc/nogglass/nogglass.env
-   NOGGLASS_CONFIG=/etc/nogglass/nogglass.toml
-   NOGGLASS_HTTP_ADDR=0.0.0.0:8080
-   NOGGLASS_EDGE01_PASSWORD="REPLACE_WITH_ROUTER_PASSWORD"
-   NOGGLASS_BORDER02_PASSPHRASE=""
-   EOF'
-   sudo chmod 600 /etc/nogglass/nogglass.env
+   # Copy the example environment template and restrict permissions
+   cp deploy/systemd/nogglass.env.example nogglass.env
+   chmod 600 nogglass.env
+
+   # Edit nogglass.env to define your router passwords and settings.
+   # Note: Inside the container, keep NOGGLASS_HTTP_ADDR=0.0.0.0:8080 so it
+   # accepts traffic from the Docker bridge. Loopback isolation is handled
+   # on the host via ports: ["127.0.0.1:8080:8080"] in docker-compose.yml.
    ```
 
 2. Prepare your `docker-compose.yml`:
@@ -315,35 +317,35 @@ Running with Docker Compose stores your configuration in a Docker named volume (
        container_name: nogglass
        restart: unless-stopped
        env_file:
-         - /etc/nogglass/nogglass.env
+         - nogglass.env
        volumes:
          - nogglass-config:/etc/nogglass
        ports:
-         - "8080:8080"
+         - "127.0.0.1:8080:8080" # Binds to localhost on the host for reverse proxy security
 
    volumes:
      nogglass-config:
        name: nogglass-config
    ```
 
-3. Bootstrap configuration and visual assets into the Docker volume:
+3. Bootstrap configuration and visual assets directly into the Docker volume:
    ```bash
-   # Bring up the container (initializes the volume)
+   # 1. Bring up the container (initializes the named volume)
    docker compose up -d nogglass
 
-   # Copy configuration template, environment file, and visual assets into the volume
+   # 2. Populate the named volume (/etc/nogglass) inside the container
    docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
-   docker cp /etc/nogglass/nogglass.env nogglass:/etc/nogglass/nogglass.env
+   docker cp nogglass.env nogglass:/etc/nogglass/nogglass.env
    docker cp crates/nogglass-server/ui/assets/logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
    docker cp crates/nogglass-server/ui/assets/nogglass.png nogglass:/etc/nogglass/nogglass.png
 
-   # Recreate to load configuration and credentials
+   # 3. Recreate the container to reload configuration and credentials
    docker compose up -d --force-recreate nogglass
    docker compose logs -f nogglass
    ```
 
    > [!TIP]
-   > On Linux hosts, configuration management tools (Ansible/Puppet) can also write directly to the volume path on the host at `/var/lib/docker/volumes/nogglass-config/_data/nogglass.toml` and `nogglass.env`.
+   > Because `/etc/nogglass` is a Docker named volume, you can edit `nogglass.toml` or `nogglass.env` locally and push updates with `docker cp`, or edit them directly on the Linux host filesystem at `/var/lib/docker/volumes/nogglass-config/_data/`.
 
 
 ---
@@ -394,7 +396,8 @@ server {
 Once started, verify that NOGGlass is operational:
 
 ```bash
-# Check service health endpoint
+# Check service health endpoint (both /api/health and /healthz are supported)
+curl -i http://127.0.0.1:8080/api/health
 curl -i http://127.0.0.1:8080/healthz
 
 # Check version metadata

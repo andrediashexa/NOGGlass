@@ -107,6 +107,7 @@ impl VersionInfo {
 pub fn routes(state: AppState) -> AxumRouter {
     AxumRouter::new()
         .route("/api/health", get(health))
+        .route("/healthz", get(health))
         .route("/api/version", get(version))
         .route("/api/captcha", get(generate_captcha))
         .route("/api/routers", get(routers))

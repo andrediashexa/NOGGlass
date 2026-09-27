@@ -27,12 +27,14 @@ services:
     volumes:
       # Named volume for container-managed configuration that survives image upgrades
       - nogglass-config:/etc/nogglass
-    # Router secrets and variables are read from /etc/nogglass/nogglass.env
-    # (matching the Systemd deployment), from the /etc/nogglass volume, or .env.
+    # Router secrets and variables are read from a local nogglass.env,
+    # from .env, or directly from the /etc/nogglass named volume.
     env_file:
-      - path: /etc/nogglass/nogglass.env
+      - path: nogglass.env
         required: false
       - path: .env
+        required: false
+      - path: /etc/nogglass/nogglass.env
         required: false
     environment:
       NOGGLASS_LOG: "${NOGGLASS_LOG:-info}"
