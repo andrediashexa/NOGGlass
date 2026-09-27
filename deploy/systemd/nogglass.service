@@ -1,0 +1,25 @@
+[Unit]
+Description=NOGGlass Multi-Vendor Looking Glass
+Documentation=https://github.com/andrediashexa/looking-glass
+After=network.target
+
+[Service]
+Type=simple
+User=nogglass
+Group=nogglass
+EnvironmentFile=-/etc/nogglass/nogglass.env
+ExecStart=/usr/local/bin/nogglass
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+# Systemd Sandboxing & Hardening
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ReadOnlyPaths=/usr/local/bin/nogglass
+ReadWritePaths=/var/log/nogglass
+
+[Install]
+WantedBy=multi-user.target

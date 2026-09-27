@@ -1,0 +1,63 @@
+name: build-binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp in the binary (e.g. 1.0.0)"
+        required: false
+        default: "1.0.0"
+        type: string
+
+jobs:
+  linux-amd64:
+    name: Build static Linux amd64 binary (host / bare-metal)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static binary with Zig & Musl
+        env:
+          VERSION: ${{ github.event.inputs.version || '1.0.0' }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          ver="${VERSION#v}"
+          echo "Building static Linux amd64 binary for version $ver"
+
+          docker build --target builder \
+            --build-arg TARGETARCH=amd64 \
+            --build-arg NOGGLASS_VERSION="$ver" \
+            --build-arg NOGGLASS_COMMIT="$COMMIT" \
+            --build-arg NOGGLASS_BUILT_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            -t nogglass-builder:amd64 .
+
+          mkdir -p dist
+          cid=$(docker create nogglass-builder:amd64)
+          docker cp "$cid:/nogglass" dist/nogglass
+          docker rm "$cid"
+          chmod +x dist/nogglass
+
+          # Verify binary architecture and static linkage
+          file dist/nogglass
+          dist/nogglass --help || true
+
+          # Create distribution package
+          pkg="nogglass-v${ver}-linux-amd64"
+          mkdir -p "dist/$pkg"
+          cp dist/nogglass "dist/$pkg/"
+          cp nogglass.example.toml "dist/$pkg/"
+          cp deploy/systemd/nogglass.service "dist/$pkg/"
+          cp deploy/systemd/nogglass.env.example "dist/$pkg/"
+          cp INSTALL.md "dist/$pkg/"
+          cp README.md "dist/$pkg/"
+          cp LICENSE "dist/$pkg/"
+
+          tar -czvf "dist/${pkg}.tar.gz" -C dist "$pkg"
+          (cd dist && sha256sum "${pkg}.tar.gz" > "${pkg}.tar.gz.sha256")
+          cat "dist/${pkg}.tar.gz.sha256"
+
+      - name: Upload native Linux amd64 build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nogglass-v${{ github.event.inputs.version || '1.0.0' }}-linux-amd64
+          path: dist/*.tar.gz*

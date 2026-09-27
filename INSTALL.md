@@ -47,9 +47,30 @@ flowchart TD
 
 ---
 
-## 2. Compilation and Build Options
+## 2. Installation and Build Options
 
-### Option A: Native Compilation via Cargo (Recommended for Bare-Metal / Systemd)
+### Option A: Pre-compiled Static Binary (Fastest for Bare-Metal / Systemd)
+
+Download the official statically linked `x86_64-unknown-linux-musl` release archive directly from GitHub Releases. It has zero external shared library dependencies (no glibc required) and runs directly on any 64-bit Linux distribution (Debian, Ubuntu, RHEL, Rocky, Alma, Alpine, Slackware):
+
+```bash
+# 1. Download the release archive and checksum (replace with desired version)
+VERSION="1.0.0"
+curl -fsSLO "https://github.com/andrediashexa/looking-glass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz"
+curl -fsSLO "https://github.com/andrediashexa/looking-glass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz.sha256"
+
+# 2. Verify integrity
+sha256sum -c "nogglass-v${VERSION}-linux-amd64.tar.gz.sha256"
+
+# 3. Extract distribution package
+tar -xzf "nogglass-v${VERSION}-linux-amd64.tar.gz"
+cd "nogglass-v${VERSION}-linux-amd64"
+
+# 4. Install the binary to system path
+sudo install -m 755 nogglass /usr/local/bin/nogglass
+```
+
+### Option B: Native Compilation via Cargo (from Source)
 
 Clone the repository and build the workspace with release optimizations:
 
@@ -69,7 +90,7 @@ The resulting binary will be located at:
 ./target/release/nogglass
 ```
 
-### Option B: Container Image Build (Multi-stage Alpine)
+### Option C: Container Image Build (Multi-stage Alpine)
 
 The repository provides a multi-stage `Dockerfile` based on `rust:1.90-alpine` (with `zig` cross-compilation) and `alpine:3.21` runtime:
 

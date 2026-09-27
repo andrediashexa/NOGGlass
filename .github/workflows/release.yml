@@ -212,3 +212,78 @@ jobs:
           docker logs smoke || true
           docker rm -f smoke >/dev/null || true
           exit 1
+
+  binary-linux-amd64:
+    name: Build and publish native Linux amd64 binary (host / bare-metal)
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # We compile a 100% statically linked MUSL binary using the Dockerfile builder stage.
+      # This produces a portable, standalone binary that runs on ANY Linux x86_64 distribution
+      # without glibc dependencies or external runtime libraries.
+      - name: Build static binary with Zig & Musl
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          MANUAL_TAG: ${{ github.event.inputs.tag }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          ver="${VERSION:-${MANUAL_TAG#v}}"
+          ver="${ver:-1.0.0}"
+          echo "Building static Linux amd64 binary for version $ver"
+
+          docker build --target builder \
+            --build-arg TARGETARCH=amd64 \
+            --build-arg NOGGLASS_VERSION="$ver" \
+            --build-arg NOGGLASS_COMMIT="$COMMIT" \
+            --build-arg NOGGLASS_BUILT_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            -t nogglass-builder:amd64 .
+
+          mkdir -p dist
+          cid=$(docker create nogglass-builder:amd64)
+          docker cp "$cid:/nogglass" dist/nogglass
+          docker rm "$cid"
+          chmod +x dist/nogglass
+
+          # Verify binary architecture and static linkage
+          file dist/nogglass
+          dist/nogglass --help || true
+
+          # Create distribution package
+          pkg="nogglass-v${ver}-linux-amd64"
+          mkdir -p "dist/$pkg"
+          cp dist/nogglass "dist/$pkg/"
+          cp nogglass.example.toml "dist/$pkg/"
+          cp deploy/systemd/nogglass.service "dist/$pkg/"
+          cp deploy/systemd/nogglass.env.example "dist/$pkg/"
+          cp INSTALL.md "dist/$pkg/"
+          cp README.md "dist/$pkg/"
+          cp LICENSE "dist/$pkg/"
+
+          tar -czvf "dist/${pkg}.tar.gz" -C dist "$pkg"
+          (cd dist && sha256sum "${pkg}.tar.gz" > "${pkg}.tar.gz.sha256")
+          cat "dist/${pkg}.tar.gz.sha256"
+
+      - name: Attach binary tarball to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag || github.event.inputs.tag }}
+        run: |
+          if [ -n "$TAG" ]; then
+            echo "Uploading native binary assets to release $TAG"
+            gh release upload "$TAG" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber
+          else
+            echo "No tag found for GitHub release upload; skipping."
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nogglass-linux-amd64
+          path: dist/*.tar.gz*
