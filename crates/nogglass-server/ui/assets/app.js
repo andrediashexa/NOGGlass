@@ -530,20 +530,16 @@ function renderBgp(result, queryTarget) {
     document.getElementById("paths-panel").hidden = true;
   }
 
-  // Não convém gerar gráfico quando for consulta por ASN ou quando houver
-  // dezenas/centenas de rotas, pois o diagrama SVG fica ilegível e sobrecarregado.
-  const isAsnQuery = /^as\d+/i.test(queryTarget?.trim() ?? "");
-  const tooManyPaths = result.paths.length > 10;
-
-  if (isAsnQuery || tooManyPaths || !uiConfig.showBestPath) {
-    document.getElementById("graph-panel").hidden = true;
-    document.getElementById("graph").replaceChildren();
-  } else {
+  // Respeita a configuracao show_best_path do nogglass.toml para todos os drivers
+  if (uiConfig.showBestPath && result.paths && result.paths.length > 0) {
     try {
       renderGraph(result.paths);
     } catch (err) {
       console.error("Failed to render AS path graph:", err);
     }
+  } else {
+    document.getElementById("graph-panel").hidden = true;
+    document.getElementById("graph").replaceChildren();
   }
 }
 
@@ -756,7 +752,7 @@ function renderGraph(paths) {
   }
 
   // 1. Sanitize paths: collapse consecutive AS-prepends for clean topological node representation
-  const cleanPaths = paths.map((p) => {
+  const cleanPathsRaw = paths.map((p) => {
     const rawAsPath = Array.isArray(p.as_path) ? p.as_path : [];
     const deduped = rawAsPath.filter(
       (asn, idx, arr) => idx === 0 || String(asn) !== String(arr[idx - 1]),
@@ -766,6 +762,25 @@ function renderGraph(paths) {
       hops: ["local", ...deduped.map(String)],
     };
   });
+
+  // Deduplicate identical topological AS-paths.
+  // Multiple BGP routes often share the exact same AS-path (e.g. multipath / multi-peer).
+  // If any route with this AS-path is marked as best, preserve `is_best: true` on the topological path.
+  const uniquePathsMap = new Map();
+  for (const p of cleanPathsRaw) {
+    const key = p.hops.join(" ");
+    if (!uniquePathsMap.has(key)) {
+      uniquePathsMap.set(key, { ...p });
+    } else if (p.is_best) {
+      uniquePathsMap.get(key).is_best = true;
+    }
+  }
+
+  // Prioritize the best path first, followed by unique backup AS-paths, capping at 12
+  // distinct topological paths to maintain a clean and responsive SVG layout.
+  const cleanPaths = Array.from(uniquePathsMap.values())
+    .sort((a, b) => (b.is_best ? 1 : 0) - (a.is_best ? 1 : 0))
+    .slice(0, 12);
 
   // 2. Topological rank assignment (longest-path DAG relaxation from the local router)
   const ranks = new Map();
@@ -976,9 +991,9 @@ function renderGraph(paths) {
   // 7. RPKI state of the best path, next to its origin
   const best = paths.find((p) => p.is_best) ?? paths[0];
   const cleanBest = cleanPaths.find((p) => p.is_best) ?? cleanPaths[0];
-  const originAsn = cleanBest.hops[cleanBest.hops.length - 1];
-  const originNode = nodes.get(originAsn);
-  if (originNode && best.rpki?.status) {
+  const originAsn = cleanBest?.hops?.length ? cleanBest.hops[cleanBest.hops.length - 1] : null;
+  const originNode = originAsn ? nodes.get(originAsn) : null;
+  if (originNode && best?.rpki?.status) {
     const badge = draw("text", {
       x: originNode.x,
       y: originNode.y + radius + 20,
@@ -998,9 +1013,10 @@ function renderGraph(paths) {
 
   const container = document.getElementById("graph");
   container.replaceChildren(svg);
+  const bestAsPath = Array.isArray(best?.as_path) ? best.as_path.join(" → ") : "";
   container.setAttribute(
     "aria-label",
-    `${t("result.best_path")}: ${best.as_path.join(" → ")}`,
+    `${t("result.best_path")}: ${bestAsPath}`,
   );
   document.getElementById("graph-panel").hidden = false;
 }

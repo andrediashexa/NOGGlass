@@ -419,5 +419,20 @@ mod tests {
         assert_eq!(p1.as_path, vec![7018, 13335]);
         assert_eq!(p1.origin, Some(Origin::Egp));
     }
+
+    #[test]
+    fn test_junos_text_deserialization_edge_cases() {
+        let t1: JunosText = serde_json::from_str("{}").expect("empty object");
+        assert_eq!(t1.data, None);
+
+        let t2: JunosText = serde_json::from_str(r#"{"other": "value"}"#).expect("missing data field");
+        assert_eq!(t2.data, None);
+
+        let t3: JunosText = serde_json::from_str(r#"{"data": null}"#).expect("null data");
+        assert_eq!(t3.data, None);
+
+        let t4: JunosText = serde_json::from_str(r#"{"data": 12345}"#).expect("number data");
+        assert_eq!(t4.data, Some("12345".to_string()));
+    }
 }
 
