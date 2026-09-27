@@ -500,6 +500,11 @@ impl Transport for SshTransport {
 /// a banner, this read returns immediately as soon as its prompt arrives.
 const GREETING_TIMEOUT: Duration = Duration::from_secs(8);
 
+/// Maximum raw bytes we will buffer from an interactive SSH channel before
+/// stopping to protect against unbounded memory growth (e.g. when an operator
+/// queries an upstream transit ASN that outputs hundreds of thousands of routes).
+const MAX_RAW_BUFFER_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+
 /// Reads an exec channel until the router closes it.
 ///
 /// There is no prompt to wait for here: the command was the request, and the
@@ -521,6 +526,13 @@ async fn read_until_close(
         match message {
             ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
                 output.push_str(&String::from_utf8_lossy(&data));
+                if output.len() >= MAX_RAW_BUFFER_BYTES {
+                    tracing::warn!(
+                        "router output exceeded safety buffer limit ({} bytes); stopping read",
+                        MAX_RAW_BUFFER_BYTES
+                    );
+                    break;
+                }
             }
             ChannelMsg::Eof | ChannelMsg::Close => break,
             _ => {}
@@ -558,6 +570,13 @@ async fn read_until_prompt(
         match message {
             ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
                 output.push_str(&String::from_utf8_lossy(&data));
+                if output.len() >= MAX_RAW_BUFFER_BYTES {
+                    tracing::warn!(
+                        "router output exceeded safety buffer limit ({} bytes); stopping read",
+                        MAX_RAW_BUFFER_BYTES
+                    );
+                    break;
+                }
                 // The prompt only counts at the end of what we have read; a
                 // prompt-shaped string inside the output is not the end.
                 if let Some(last) = output.lines().last() {
