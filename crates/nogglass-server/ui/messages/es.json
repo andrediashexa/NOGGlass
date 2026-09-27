@@ -54,7 +54,7 @@
   "result.best_path": "Mejor camino",
   "result.command": "Comando enviado",
   "result.duration": "Tardó",
-  "result.no_route": "Este router no tiene ruta para ese prefijo.",
+  "result.no_route": "Este router no tiene ruta para esa consulta.",
   "result.partial": "Parte de la salida no pudo leerse. La salida del router está abajo.",
   "result.paths": "Caminos",
   "result.raw": "Salida del router",

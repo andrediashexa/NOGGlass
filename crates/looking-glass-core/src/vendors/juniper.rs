@@ -158,14 +158,27 @@ impl VendorDriver for JuniperDriver {
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
         let trimmed = raw.trim();
         if trimmed.is_empty()
-            || !trimmed.starts_with('{')
+            || !trimmed.contains('{')
             || trimmed.contains("Pattern not found")
         {
             return Ok(BgpRouteResult::new(Vec::new(), raw));
         }
 
-        let parsed: JunosRouteInformation = serde_json::from_str(trimmed)
-            .map_err(|e| DriverError::ParseError(format!("invalid Junos JSON: {e}")))?;
+        let json_str = match (trimmed.find('{'), trimmed.rfind('}')) {
+            (Some(start), Some(end)) if start <= end => &trimmed[start..=end],
+            _ => return Ok(BgpRouteResult::new(Vec::new(), raw)),
+        };
+
+        let parsed: JunosRouteInformation = match serde_json::from_str(json_str) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "could not parse Junos JSON; returning empty routes with raw output preserved"
+                );
+                return Ok(BgpRouteResult::new(Vec::new(), raw));
+            }
+        };
 
         let mut paths = Vec::new();
 

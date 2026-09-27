@@ -54,7 +54,7 @@
   "result.best_path": "Melhor caminho",
   "result.command": "Comando enviado",
   "result.duration": "Levou",
-  "result.no_route": "Este roteador não tem rota para esse prefixo.",
+  "result.no_route": "Este roteador não tem rota para essa consulta.",
   "result.partial": "Parte da saída não pôde ser lida. A saída do roteador está abaixo.",
   "result.paths": "Caminhos",
   "result.raw": "Saída do roteador",

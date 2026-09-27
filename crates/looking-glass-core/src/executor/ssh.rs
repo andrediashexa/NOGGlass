@@ -593,8 +593,14 @@ fn strip_echo(output: &str, command: &str) -> String {
     while lines.last().is_some_and(|line| line.trim().is_empty()) {
         lines.pop();
     }
-    // The last line is the prompt that ended the read.
-    lines.pop();
+    // The last line is the prompt that ended the read. Do not strip if the line
+    // is part of structured output ending with a closing brace/bracket.
+    if lines.last().is_some_and(|line| {
+        let t = line.trim();
+        !t.ends_with('}') && !t.ends_with(']')
+    }) {
+        lines.pop();
+    }
 
     lines.join("\n")
 }

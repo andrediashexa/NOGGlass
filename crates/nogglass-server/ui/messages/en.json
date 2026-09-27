@@ -54,7 +54,7 @@
   "result.best_path": "Best path",
   "result.command": "Command sent",
   "result.duration": "Took",
-  "result.no_route": "This router has no route for that prefix.",
+  "result.no_route": "This router has no route for that query.",
   "result.partial": "Part of the output could not be read. The router output is shown below.",
   "result.paths": "Paths",
   "result.raw": "Router output",
