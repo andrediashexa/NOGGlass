@@ -446,6 +446,15 @@ pub struct UiSettings {
     /// Background opacity percentage (0 to 100).
     #[serde(default = "default_background_opacity_percent")]
     pub background_opacity_percent: u32,
+    /// Whether to display the "MELHOR CAMINHO" AS-path graph panel (default: true).
+    #[serde(default = "default_true", alias = "show_graph")]
+    pub show_best_path: bool,
+    /// Whether to display the "CAMINHOS" tabular routes panel (default: true).
+    #[serde(default = "default_true", alias = "show_routes")]
+    pub show_paths: bool,
+    /// Whether to display the "SAÍDA DO ROTEADOR" raw CLI output panel (default: true).
+    #[serde(default = "default_true", alias = "show_raw", alias = "show_router_output")]
+    pub show_raw_output: bool,
 }
 
 fn default_logo_path() -> Option<String> {
@@ -477,6 +486,9 @@ impl Default for UiSettings {
             background_path: default_background_path(),
             background_blur_px: default_background_blur_px(),
             background_opacity_percent: default_background_opacity_percent(),
+            show_best_path: default_true(),
+            show_paths: default_true(),
+            show_raw_output: default_true(),
         }
     }
 }
@@ -862,6 +874,9 @@ host = "192.0.2.1"
             inventory.ui.background_path.as_deref(),
             Some("/etc/nogglass/nogglass.png")
         );
+        assert!(inventory.ui.show_best_path);
+        assert!(inventory.ui.show_paths);
+        assert!(inventory.ui.show_raw_output);
     }
 
     #[test]
@@ -882,6 +897,26 @@ host = "192.0.2.1"
             inventory.ui.background_path.as_deref(),
             Some("/etc/nogglass/bg.png")
         );
+    }
+
+    #[test]
+    fn loads_ui_visibility_settings_and_aliases() {
+        let toml = format!(
+            "{SAMPLE}\n[ui]\nshow_best_path = false\nshow_paths = false\nshow_raw_output = false\n"
+        );
+        let inventory = Inventory::from_toml(&toml).unwrap();
+        assert!(!inventory.ui.show_best_path);
+        assert!(!inventory.ui.show_paths);
+        assert!(!inventory.ui.show_raw_output);
+
+        // Test with aliases
+        let toml_aliases = format!(
+            "{SAMPLE}\n[ui]\nshow_graph = false\nshow_routes = false\nshow_raw = false\n"
+        );
+        let inventory_aliases = Inventory::from_toml(&toml_aliases).unwrap();
+        assert!(!inventory_aliases.ui.show_best_path);
+        assert!(!inventory_aliases.ui.show_paths);
+        assert!(!inventory_aliases.ui.show_raw_output);
     }
 
     #[test]

@@ -17,6 +17,18 @@ const state = {
   routers: [],
 };
 
+const uiConfig = {
+  get showBestPath() {
+    return document.body?.dataset?.showBestPath !== "false";
+  },
+  get showPaths() {
+    return document.body?.dataset?.showPaths !== "false";
+  },
+  get showRaw() {
+    return document.body?.dataset?.showRaw !== "false";
+  },
+};
+
 /** Translates a key, falling back to English rather than showing a raw key. */
 function t(key) {
   return state.messages[key] ?? state.fallback[key] ?? key;
@@ -474,6 +486,10 @@ function highlightBgpRaw(raw, truncated) {
 
 function renderRaw(output, truncated, isBgp = false) {
   const panel = document.getElementById("raw-panel");
+  if (!uiConfig.showRaw) {
+    panel.hidden = true;
+    return;
+  }
   const pre = document.getElementById("raw");
   if (!output) {
     pre.textContent = "";
@@ -508,13 +524,18 @@ function renderBgp(result, queryTarget) {
     return;
   }
 
-  renderTable(result.paths);
+  if (uiConfig.showPaths) {
+    renderTable(result.paths);
+  } else {
+    document.getElementById("paths-panel").hidden = true;
+  }
+
   // Não convém gerar gráfico quando for consulta por ASN ou quando houver
   // dezenas/centenas de rotas, pois o diagrama SVG fica ilegível e sobrecarregado.
   const isAsnQuery = /^as\d+/i.test(queryTarget?.trim() ?? "");
   const tooManyPaths = result.paths.length > 10;
 
-  if (isAsnQuery || tooManyPaths) {
+  if (isAsnQuery || tooManyPaths || !uiConfig.showBestPath) {
     document.getElementById("graph-panel").hidden = true;
     document.getElementById("graph").replaceChildren();
   } else {
@@ -661,6 +682,10 @@ function renderHops(hops) {
 }
 
 function renderTable(paths) {
+  if (!uiConfig.showPaths) {
+    document.getElementById("paths-panel").hidden = true;
+    return;
+  }
   const body = document.querySelector("#paths-table tbody");
   body.replaceChildren();
 
@@ -725,7 +750,10 @@ function renderTable(paths) {
  * titles for assistive technology.
  */
 function renderGraph(paths) {
-  if (!paths || !paths.length) return;
+  if (!uiConfig.showBestPath || !paths || !paths.length) {
+    document.getElementById("graph-panel").hidden = true;
+    return;
+  }
 
   // 1. Sanitize paths: collapse consecutive AS-prepends for clean topological node representation
   const cleanPaths = paths.map((p) => {

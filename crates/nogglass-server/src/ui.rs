@@ -35,6 +35,9 @@ pub struct UiState {
     pub logo_height_px: u32,
     pub background_blur_px: u32,
     pub background_opacity_percent: u32,
+    pub show_best_path: bool,
+    pub show_paths: bool,
+    pub show_raw_output: bool,
     pub logo_bytes: Arc<Vec<u8>>,
     pub logo_content_type: HeaderValue,
     pub bg_bytes: Arc<Vec<u8>>,
@@ -110,6 +113,9 @@ impl UiState {
             logo_height_px: settings.logo_height_px,
             background_blur_px: settings.background_blur_px,
             background_opacity_percent: settings.background_opacity_percent,
+            show_best_path: settings.show_best_path,
+            show_paths: settings.show_paths,
+            show_raw_output: settings.show_raw_output,
             logo_bytes,
             logo_content_type,
             bg_bytes,
@@ -222,10 +228,13 @@ async fn index(State(ui): State<Arc<UiState>>, Path(locale): Path<String>) -> Re
     };
 
     let custom_style = format!(
-        "<style id=\"nogglass-custom-vars\">:root {{ --logo-height: {}px !important; --bg-blur: {}px !important; --bg-opacity: {:.2} !important; }}</style>",
+        "<style id=\"nogglass-custom-vars\">:root {{ --logo-height: {}px !important; --bg-blur: {}px !important; --bg-opacity: {:.2} !important; }}{}{}{}</style>",
         ui.logo_height_px,
         ui.background_blur_px,
-        (ui.background_opacity_percent as f32) / 100.0
+        (ui.background_opacity_percent as f32) / 100.0,
+        if !ui.show_best_path { " #graph-panel { display: none !important; }" } else { "" },
+        if !ui.show_paths { " #paths-panel { display: none !important; }" } else { "" },
+        if !ui.show_raw_output { " #raw-panel { display: none !important; }" } else { "" },
     );
 
     // The locale and theme are stamped into the document so the page renders in the right
@@ -235,6 +244,13 @@ async fn index(State(ui): State<Arc<UiState>>, Path(locale): Path<String>) -> Re
         .replace(
             "<html lang=\"en\"",
             &format!("<html lang=\"{locale}\" data-theme=\"{theme_str}\""),
+        )
+        .replace(
+            "<body>",
+            &format!(
+                "<body data-show-best-path=\"{}\" data-show-paths=\"{}\" data-show-raw=\"{}\">",
+                ui.show_best_path, ui.show_paths, ui.show_raw_output
+            ),
         )
         .replace("<!-- NOGGLASS_CUSTOM_VARS -->", &custom_style);
 
@@ -451,5 +467,28 @@ mod tests {
         assert!(body_str.contains("--logo-height: 100px !important"));
         assert!(body_str.contains("--bg-blur: 4px !important"));
         assert!(body_str.contains("--bg-opacity: 0.60 !important"));
+    }
+
+    #[tokio::test]
+    async fn index_renders_custom_visibility_flags() {
+        let settings = UiSettings {
+            show_best_path: false,
+            show_paths: false,
+            show_raw_output: false,
+            ..Default::default()
+        };
+        let state = Arc::new(UiState::from_settings(&settings).unwrap());
+        let response = index(State(state), Path("pt".to_string())).await;
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let body_str = String::from_utf8_lossy(&body);
+
+        assert!(body_str.contains("data-show-best-path=\"false\""));
+        assert!(body_str.contains("data-show-paths=\"false\""));
+        assert!(body_str.contains("data-show-raw=\"false\""));
+        assert!(body_str.contains("#graph-panel { display: none !important; }"));
+        assert!(body_str.contains("#paths-panel { display: none !important; }"));
+        assert!(body_str.contains("#raw-panel { display: none !important; }"));
     }
 }
