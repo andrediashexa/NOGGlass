@@ -147,14 +147,13 @@ impl SshTransport {
 /// milliseconds after being asked. OpenSSH negotiates nistp256 with the same
 /// router without comment, which is why nothing looked wrong from a terminal.
 ///
-/// The NIST curves go after the modern algorithms: a router that offers
-/// something better still gets it, and one that does not is reachable.
+/// The NIST curves go after the modern algorithms, and legacy SHA-1 algorithms
+/// (`diffie-hellman-group14-sha1`, `diffie-hellman-group-exchange-sha1`,
+/// `diffie-hellman-group1-sha1`) are placed strictly at the end as fallback options
+/// for older network appliances.
 ///
-/// `diffie-hellman-group14-sha1` is deliberately absent. It is SHA-1 key
-/// exchange, and plenty of equipment still offers it — but everything seen so
-/// far offers a NIST curve as well, and a looking glass is read-only access to
-/// someone else's router. When a real device turns up with nothing else, that
-/// is the evidence to revisit this with.
+/// A router that offers modern cryptography negotiates it first, but legacy
+/// equipment with older firmware remains reachable.
 pub fn kex_preference() -> Vec<kex::Name> {
     vec![
         kex::CURVE25519,
@@ -168,6 +167,12 @@ pub fn kex_preference() -> Vec<kex::Name> {
         kex::ECDH_SHA2_NISTP256,
         kex::ECDH_SHA2_NISTP384,
         kex::ECDH_SHA2_NISTP521,
+        // Legacy fallback key exchange algorithms for older equipment.
+        // Placed strictly at the end of the client's preference list so
+        // modern, secure algorithms are always negotiated first if offered.
+        kex::DH_G14_SHA1,
+        kex::DH_GEX_SHA1,
+        kex::DH_G1_SHA1,
         // Advertised so a server that supports extensions says so; not a key
         // exchange in itself.
         kex::EXTENSION_SUPPORT_AS_CLIENT,
@@ -589,16 +594,25 @@ mod host_key_tests {
         assert!(modern < nist);
     }
 
-    /// SHA-1 key exchange stays out until a real device is found that offers
-    /// nothing else. Everything seen so far offers a NIST curve as well.
+    /// SHA-1 key exchange algorithms are offered strictly as fallbacks after all
+    /// modern algorithms and NIST curves, guaranteeing modern cryptography is
+    /// preferred whenever the router supports it.
     #[test]
-    fn sha1_key_exchange_is_not_offered() {
+    fn sha1_key_exchange_is_fallback_only() {
         let preference = kex_preference();
+        let nist = preference
+            .iter()
+            .position(|name| *name == kex::ECDH_SHA2_NISTP521)
+            .expect("nistp521 is offered");
 
-        for weak in [kex::DH_G14_SHA1, kex::DH_G1_SHA1, kex::DH_GEX_SHA1] {
+        for weak in [kex::DH_G14_SHA1, kex::DH_GEX_SHA1, kex::DH_G1_SHA1] {
+            let pos = preference
+                .iter()
+                .position(|name| *name == weak)
+                .expect("legacy kex is offered as fallback");
             assert!(
-                !preference.contains(&weak),
-                "{weak:?} must not be added without evidence that a device needs it"
+                pos > nist,
+                "{weak:?} must be positioned after modern algorithms as fallback only"
             );
         }
     }
