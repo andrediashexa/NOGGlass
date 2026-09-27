@@ -434,3 +434,149 @@ When updates are released in the upstream repository, follow these steps to pull
    curl -s http://127.0.0.1:8080/api/version
    ```
 
+---
+
+## 8. Provisioning Read-Only Router Accounts
+
+Security is a foundational tenet of NOGGlass. By design, NOGGlass requires **only read-only / unprivileged operational permissions**. It executes solely non-intrusive commands (`show`, `ping`, `traceroute`). The management accounts provisioned on routers SHOULD follow the principle of least privilege, restricting access to operational diagnostics and preventing configuration changes.
+
+Below are the recommended provisioning commands for each supported network vendor:
+
+### 8.1. Huawei VRP (NE40E, NE8000, S-Series)
+
+Configure a dedicated local user with privilege level 1 (monitoring/read-only) and SSH service:
+
+```text
+system-view
+aaa
+ local-user nogglass password irreversible-cipher <PASSWORD>
+ local-user nogglass service-type ssh
+ local-user nogglass privilege level 1
+quit
+ssh user nogglass authentication-type password
+ssh user nogglass service-type stelnet
+commit
+save
+```
+
+### 8.2. Cisco IOS-XE / Classic IOS
+
+Configure an unprivileged user (privilege 1) restricted to execution of basic operational commands:
+
+```text
+configure terminal
+username nogglass privilege 1 secret <PASSWORD>
+line vty 0 4
+ transport input ssh
+ login local
+exit
+write memory
+```
+
+### 8.3. Cisco IOS-XR
+
+Define a custom task group restricted to read operations on BGP, ping, and traceroute:
+
+```text
+configure
+group looking-glass-grp
+ task read bgp, ping, traceroute
+!
+username nogglass
+ group looking-glass-grp
+ secret <PASSWORD>
+!
+commit
+```
+
+### 8.4. Juniper JunOS
+
+Define a login class limited to network inspection permissions:
+
+```text
+configure
+set system login class LOOKING-GLASS permissions [ view network ]
+set system login user nogglass class LOOKING-GLASS authentication plain-text-password
+# Enter password when prompted
+commit and-quit
+```
+
+### 8.5. Arista EOS
+
+Create an execution role permitting only diagnostic commands and terminal pagination control:
+
+```text
+configure
+role LOOKING-GLASS
+  10 permit mode exec command ping.*
+  20 permit mode exec command traceroute.*
+  30 permit mode exec command show ip bgp.*
+  40 permit mode exec command show ipv6 bgp.*
+  50 permit mode exec command terminal length.*
+exit
+username nogglass privilege 1 role LOOKING-GLASS secret <PASSWORD>
+write memory
+```
+
+### 8.6. FRRouting (FRR / Linux Host)
+
+Create a dedicated system user whose default login shell is `vtysh`, belonging to the `frrvty` group:
+
+```bash
+# On the Linux host running FRR:
+sudo useradd -m -s /usr/bin/vtysh -G frrvty nogglass
+sudo passwd nogglass
+```
+
+### 8.7. MikroTik RouterOS (v6 & v7)
+
+Create a restricted user group with only `read` and `test` policies, explicitly disallowing modification, sensitive exports, and management reboot capabilities:
+
+```routeros
+/user group add name=looking-glass policy=read,test,!local,!telnet,!ssh,!ftp,!reboot,!write,!policy,!compat,!password,!sniff,!sensitive,!romon
+/user add name=nogglass group=looking-glass password="<PASSWORD>"
+```
+
+### 8.8. Datacom DmOS
+
+Create a user with the `operator` role (monitoring only):
+
+```text
+configure
+aaa
+  user nogglass
+    password plain <PASSWORD>
+    role operator
+    exit
+  exit
+exit
+write
+```
+
+### 8.9. Nokia SR OS (Classic & MD-CLI)
+
+In MD-CLI:
+```text
+/configure system security user-params local-user user "nogglass" password <PASSWORD>
+/configure system security user-params local-user user "nogglass" access console true
+/configure system security user-params local-user user "nogglass" console member "read-only"
+```
+
+In Classic CLI:
+```text
+/configure system security user "nogglass" password <PASSWORD>
+/configure system security user "nogglass" access console
+/configure system security profile "read-only"
+```
+
+### 8.10. BIRD 2 (Linux Host)
+
+Create a system user with access to execute the `birdc` client:
+
+```bash
+sudo useradd -m -s /bin/bash nogglass
+sudo passwd nogglass
+# Ensure the user has read/exec access to the birdc socket (typically bird group)
+sudo usermod -aG bird nogglass
+```
+
