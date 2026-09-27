@@ -257,7 +257,11 @@ impl From<Execution> for QueryResponse {
         };
         Self {
             router: execution.router_id,
-            command: execution.command,
+            command: execution
+                .command
+                .strip_suffix(" | display json")
+                .unwrap_or(&execution.command)
+                .to_string(),
             duration_ms: execution.duration.as_millis(),
             outcome,
         }

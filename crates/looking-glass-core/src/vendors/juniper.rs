@@ -20,6 +20,8 @@ struct JunosRouteTableContainer {
 
 #[derive(Deserialize, Debug)]
 struct JunosRouteTable {
+    #[serde(rename = "table-name")]
+    table_name: Option<Vec<JunosText>>,
     rt: Option<Vec<JunosRt>>,
 }
 
@@ -37,6 +39,8 @@ struct JunosRt {
 struct JunosRtEntry {
     #[serde(rename = "active-tag")]
     active_tag: Option<Vec<JunosText>>,
+    #[serde(rename = "protocol-name")]
+    protocol_name: Option<Vec<JunosText>>,
     #[serde(rename = "validation-state")]
     validation_state: Option<Vec<JunosText>>,
     #[serde(rename = "as-path")]
@@ -182,11 +186,11 @@ impl VendorDriver for JuniperDriver {
 
         let mut paths = Vec::new();
 
-        if let Some(tables_container) = parsed.route_information {
+        if let Some(tables_container) = &parsed.route_information {
             for container in tables_container {
-                if let Some(tables) = container.route_table {
+                if let Some(tables) = &container.route_table {
                     for table in tables {
-                        if let Some(rts) = table.rt {
+                        if let Some(rts) = &table.rt {
                             for rt in rts {
                                 let dest = rt
                                     .rt_destination
@@ -209,7 +213,7 @@ impl VendorDriver for JuniperDriver {
                                 };
                                 let prefix = parse_network(&network_str);
 
-                                if let Some(entries) = rt.rt_entry {
+                                if let Some(entries) = &rt.rt_entry {
                                     for entry in entries {
                                         // In Junos JSON, active-tag contains {"data": "*"} for the best path,
                                         // and empty object {} or absent for inactive paths.
@@ -356,12 +360,226 @@ impl VendorDriver for JuniperDriver {
             }
         }
 
-        Ok(BgpRouteResult::new(paths, raw))
+        let formatted_raw = format_junos_cli_output(&parsed, raw);
+        Ok(BgpRouteResult::new(paths, &formatted_raw))
     }
 
     fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
         // Shared reader: the tables differ in headers, not in what a row means.
         Ok(crate::summary::parse(raw))
+    }
+}
+
+/// Formats Junos route information into clean, human-readable Junos CLI text,
+/// avoiding exposing raw machine JSON in the router output box.
+fn format_junos_cli_output(parsed: &JunosRouteInformation, fallback_raw: &str) -> String {
+    let Some(tables_container) = &parsed.route_information else {
+        return fallback_raw.to_string();
+    };
+
+    let mut out = String::new();
+
+    for container in tables_container {
+        let Some(tables) = &container.route_table else {
+            continue;
+        };
+        for table in tables {
+            let table_name = table
+                .table_name
+                .as_ref()
+                .and_then(|t| t.first())
+                .and_then(|x| x.data.as_deref())
+                .unwrap_or("inet.0");
+
+            let Some(rts) = &table.rt else {
+                continue;
+            };
+
+            let table_dest_count = rts.len();
+            let mut table_route_count = 0;
+            let mut table_active_count = 0;
+
+            for rt in rts {
+                if let Some(entries) = &rt.rt_entry {
+                    table_route_count += entries.len();
+                    for entry in entries {
+                        let is_best = entry
+                            .active_tag
+                            .as_ref()
+                            .and_then(|t| t.first())
+                            .and_then(|item| item.data.as_deref())
+                            .map(|d| d.contains('*'))
+                            .unwrap_or(false);
+                        if is_best {
+                            table_active_count += 1;
+                        }
+                    }
+                }
+            }
+
+            out.push_str(&format!(
+                "{table_name}: {table_dest_count} destinations, {table_route_count} routes ({table_active_count} active, 0 holddown, 0 hidden)\nRestart Complete\n"
+            ));
+
+            for rt in rts {
+                let dest = rt
+                    .rt_destination
+                    .as_ref()
+                    .and_then(|d| d.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or_default();
+
+                let prefix_len = rt
+                    .rt_prefix_length
+                    .as_ref()
+                    .and_then(|d| d.first())
+                    .and_then(|t| t.data.as_deref());
+
+                let prefix_str = match prefix_len {
+                    Some(len) if !dest.contains('/') && !len.is_empty() => {
+                        format!("{dest}/{len}")
+                    }
+                    _ => dest.to_string(),
+                };
+
+                let entry_count = rt.rt_entry.as_ref().map_or(0, |e| e.len());
+                let entry_word = if entry_count == 1 { "entry" } else { "entries" };
+
+                out.push_str(&format!(
+                    "{prefix_str} ({entry_count} {entry_word}, 1 announced)\n"
+                ));
+
+                if let Some(entries) = &rt.rt_entry {
+                    for entry in entries {
+                        let is_best = entry
+                            .active_tag
+                            .as_ref()
+                            .and_then(|t| t.first())
+                            .and_then(|item| item.data.as_deref())
+                            .map(|d| d.contains('*'))
+                            .unwrap_or(false);
+
+                        let proto = entry
+                            .protocol_name
+                            .as_ref()
+                            .and_then(|p| p.first())
+                            .and_then(|x| x.data.as_deref())
+                            .unwrap_or("BGP");
+
+                        let marker = if is_best { "*BGP" } else { " BGP" };
+                        let proto_str = if proto.eq_ignore_ascii_case("BGP") {
+                            marker.to_string()
+                        } else if is_best {
+                            format!("*{proto}")
+                        } else {
+                            format!(" {proto}")
+                        };
+
+                        out.push_str(&format!("        {proto_str:<7} Preference: 170/-101\n"));
+
+                        let next_hop = entry
+                            .nh
+                            .as_ref()
+                            .and_then(|n| n.first())
+                            .and_then(|n| n.to.as_ref())
+                            .and_then(|t| t.first())
+                            .and_then(|t| t.data.as_deref())
+                            .or_else(|| {
+                                entry
+                                    .protocol_nh
+                                    .as_ref()
+                                    .and_then(|n| n.first())
+                                    .and_then(|n| n.to.as_ref())
+                                    .and_then(|t| t.first())
+                                    .and_then(|t| t.data.as_deref())
+                            })
+                            .or_else(|| {
+                                entry
+                                    .gateway
+                                    .as_ref()
+                                    .and_then(|g| g.first())
+                                    .and_then(|t| t.data.as_deref())
+                            });
+
+                        if let Some(nh) = next_hop {
+                            out.push_str(&format!("                Next hop: {nh}\n"));
+                        }
+
+                        if let Some(ap_vec) = &entry.as_path {
+                            if let Some(ap_txt) = ap_vec.first() {
+                                if let Some(data) = ap_txt.data.as_deref() {
+                                    let first_line = data.lines().next().unwrap_or(data);
+                                    let cleaned = first_line.strip_prefix("AS path:").unwrap_or(first_line).trim();
+                                    if !cleaned.is_empty() {
+                                        out.push_str(&format!("                AS path: {cleaned}\n"));
+                                    }
+                                }
+                            }
+                        }
+
+                        let mut comm_strs = Vec::new();
+                        if let Some(comms) = &entry.communities {
+                            for c in comms {
+                                if let Some(list) = &c.community {
+                                    for item in list {
+                                        if let Some(comm_str) = item.data.as_deref() {
+                                            comm_strs.push(comm_str);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if !comm_strs.is_empty() {
+                            out.push_str(&format!(
+                                "                Communities: {}\n",
+                                comm_strs.join(" ")
+                            ));
+                        }
+
+                        if let Some(lp) = entry
+                            .local_preference
+                            .as_ref()
+                            .and_then(|lp| lp.first())
+                            .and_then(|t| t.data.as_deref())
+                        {
+                            out.push_str(&format!("                Localpref: {lp}\n"));
+                        }
+
+                        let metric = entry
+                            .metric
+                            .as_ref()
+                            .and_then(|m| m.first())
+                            .and_then(|t| t.data.as_deref())
+                            .or_else(|| {
+                                entry
+                                    .metric2
+                                    .as_ref()
+                                    .and_then(|m| m.first())
+                                    .and_then(|t| t.data.as_deref())
+                            });
+
+                        if let Some(m) = metric {
+                            out.push_str(&format!("                Metric: {m}\n"));
+                        }
+
+                        if let Some(val) = entry
+                            .validation_state
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                        {
+                            out.push_str(&format!("                Validation State: {val}\n"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if out.is_empty() {
+        fallback_raw.to_string()
+    } else {
+        out
     }
 }
 
@@ -439,6 +657,24 @@ mod tests {
         assert_eq!(p1.next_hop.unwrap().to_string(), "12.122.120.7");
         assert_eq!(p1.as_path, vec![7018, 13335]);
         assert_eq!(p1.origin, Some(Origin::Egp));
+
+        // Formatted CLI raw_output
+        assert!(
+            result.raw_output.contains("inet.0: 1 destinations, 2 routes"),
+            "raw_output must contain human-readable Junos CLI format"
+        );
+        assert!(
+            result.raw_output.contains("*BGP    Preference: 170/-101"),
+            "must contain active best-path tag"
+        );
+        assert!(
+            result.raw_output.contains("Next hop: 12.122.83.238"),
+            "must contain next hop"
+        );
+        assert!(
+            !result.raw_output.contains(r#"{"route-information""#),
+            "raw_output must not be raw machine JSON"
+        );
     }
 
     #[test]

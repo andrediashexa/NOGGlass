@@ -487,10 +487,11 @@ function highlightBgpRaw(raw, truncated) {
 
     for (const line of lines) {
       const isCiscoBest = /^\s*\*>\S*/.test(line);
+      const isJunosBest = /^\s*\*BGP\b/i.test(line);
       const isMikrotikBest = /^\s*\d+\s+DA[bv]/.test(line) || /^\s*DA[bv]/.test(line);
       const isBirdBest = /\[\*BGP/i.test(line) || /\*\s+\(\d+\)/.test(line);
 
-      if (isCiscoBest || isMikrotikBest || isBirdBest) {
+      if (isCiscoBest || isJunosBest || isMikrotikBest || isBirdBest) {
         resultLines.push(`<span class="raw-best-route">${escapeHtml(line)}</span>`);
       } else {
         resultLines.push(escapeHtml(line));
