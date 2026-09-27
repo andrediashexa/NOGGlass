@@ -185,6 +185,7 @@ async fn vendor_commands(
         "traceroute": commands.traceroute_v4,
         "bgp_route": commands.bgp_route_v4,
         "bgp_aspath": commands.bgp_route_asn,
+        "bgp_aspath_v6": commands.bgp_route_asn_v6,
         "bgp_summary": commands.bgp_summary,
     })))
 }

@@ -286,6 +286,14 @@ impl Executor {
                     "bgp_aspath requires an AS number (e.g. AS65000 or 65000)".to_string(),
                 ));
             }
+            (QueryType::BgpAspathV6, QueryTarget::Asn(asn)) => {
+                self.catalogue.bgp_aspath_v6(&router.vendor, *asn)?
+            }
+            (QueryType::BgpAspathV6, _) => {
+                return Err(ExecutionError::Unsupported(
+                    "bgp_aspath_v6 requires an AS number (e.g. AS65000 or 65000)".to_string(),
+                ));
+            }
             (QueryType::BgpSummary, _) => self.catalogue.bgp_summary(&router.vendor)?,
         };
         Ok(command)
@@ -347,17 +355,19 @@ impl Executor {
                 },
                 Err(other) => return Err(other.into()),
             },
-            QueryType::BgpRoute | QueryType::BgpAspath => match driver.parse_bgp_route(&raw) {
-                Ok(mut result) => {
-                    result.truncated = truncated;
-                    QueryOutcome::BgpRoute(result)
+            QueryType::BgpRoute | QueryType::BgpAspath | QueryType::BgpAspathV6 => {
+                match driver.parse_bgp_route(&raw) {
+                    Ok(mut result) => {
+                        result.truncated = truncated;
+                        QueryOutcome::BgpRoute(result)
+                    }
+                    Err(DriverError::Unsupported { .. }) => QueryOutcome::Raw {
+                        output: raw,
+                        truncated,
+                    },
+                    Err(other) => return Err(other.into()),
                 }
-                Err(DriverError::Unsupported { .. }) => QueryOutcome::Raw {
-                    output: raw,
-                    truncated,
-                },
-                Err(other) => return Err(other.into()),
-            },
+            }
             QueryType::BgpSummary => match driver.parse_bgp_summary(&raw) {
                 Ok(result) => QueryOutcome::BgpSummary(result),
                 Err(DriverError::Unsupported { .. }) => QueryOutcome::Raw {
@@ -390,7 +400,10 @@ impl Executor {
                     "ping and traceroute need a single address".to_string(),
                 ))
             }
-            (QueryType::BgpRoute | QueryType::BgpAspath, _) => {
+            (
+                QueryType::BgpRoute | QueryType::BgpAspath | QueryType::BgpAspathV6,
+                _,
+            ) => {
                 QueryOutcome::BgpRoute(mock.bgp_route(target))
             }
             (QueryType::BgpSummary, _) => QueryOutcome::BgpSummary(

@@ -37,10 +37,11 @@ max_concurrent_total = 16
 #               to pin the router identity and prevent Man-in-the-Middle attacks
 #   location    grouping in the selector, usually a POP or a city
 #   queries     which queries this router answers: "ping", "traceroute", "bgp_route",
-#               "bgp_aspath" (AS-Path regex matching neighbor peer ASN), "bgp_summary".
+#               "bgp_aspath" (IPv4 AS-Path regex matching neighbor peer ASN),
+#               "bgp_aspath_v6" (IPv6 AS-Path regex matching neighbor peer ASN), "bgp_summary".
 #               Omit to allow default safe queries (ping, traceroute, bgp_route, bgp_summary).
-#               NOTE: "bgp_aspath" is opt-in and omitted on large Tier 1 transit borders
-#               to protect control-plane CPU against regex full-table scans.
+#               NOTE: "bgp_aspath" and "bgp_aspath_v6" are opt-in and omitted on large Tier 1 transit
+#               borders to protect control-plane CPU against regex full-table scans.
 # ---------------------------------------------------------------------------
 
 [[router]]

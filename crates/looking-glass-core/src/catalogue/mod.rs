@@ -113,6 +113,7 @@ pub struct VendorCommands {
     /// When absent, falls back to `bgp_route_v6`.
     pub bgp_route_ip_v6: Option<String>,
     pub bgp_route_asn: Option<String>,
+    pub bgp_route_asn_v6: Option<String>,
     pub bgp_summary: Option<String>,
 }
 
@@ -128,6 +129,7 @@ impl VendorCommands {
             ("bgp_route_ip_v4", self.bgp_route_ip_v4.as_ref()),
             ("bgp_route_ip_v6", self.bgp_route_ip_v6.as_ref()),
             ("bgp_route_asn", self.bgp_route_asn.as_ref()),
+            ("bgp_route_asn_v6", self.bgp_route_asn_v6.as_ref()),
             ("bgp_summary", self.bgp_summary.as_ref()),
         ]
         .into_iter()
@@ -269,6 +271,19 @@ impl Catalogue {
             .ok_or_else(|| CatalogueError::Unsupported {
                 vendor: vendor.to_string(),
                 query: "bgp_aspath".to_string(),
+            })?;
+        Ok(render(template, &[("asn", asn.to_string())]))
+    }
+
+    /// Builds the BGP AS-Path regex lookup for IPv6 for one vendor.
+    pub fn bgp_aspath_v6(&self, vendor: &str, asn: u32) -> Result<String, CatalogueError> {
+        let commands = self.vendor(vendor)?;
+        let template = commands
+            .bgp_route_asn_v6
+            .as_ref()
+            .ok_or_else(|| CatalogueError::Unsupported {
+                vendor: vendor.to_string(),
+                query: "bgp_aspath_v6".to_string(),
             })?;
         Ok(render(template, &[("asn", asn.to_string())]))
     }
@@ -460,6 +475,10 @@ mod tests {
             catalogue.bgp_aspath("huawei_vrp", 65500).unwrap(),
             "display bgp routing-table regular-expression ^65500_"
         );
+        assert_eq!(
+            catalogue.bgp_aspath_v6("huawei_vrp", 65500).unwrap(),
+            "display bgp ipv6 routing-table regular-expression ^65500_"
+        );
     }
 
     #[test]
@@ -497,6 +516,18 @@ mod tests {
                         "{vendor} left a placeholder in {command:?}"
                     );
                 }
+            }
+            if let Ok(command) = catalogue.bgp_aspath(vendor, 65500) {
+                assert!(
+                    !command.contains('{'),
+                    "{vendor} left a placeholder in bgp_aspath: {command:?}"
+                );
+            }
+            if let Ok(command) = catalogue.bgp_aspath_v6(vendor, 65500) {
+                assert!(
+                    !command.contains('{'),
+                    "{vendor} left a placeholder in bgp_aspath_v6: {command:?}"
+                );
             }
         }
     }

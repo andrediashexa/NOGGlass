@@ -150,7 +150,7 @@ impl Router {
     pub fn allows(&self, query: QueryType) -> bool {
         if self.queries.is_empty() {
             // Default safe queries when unspecified: do NOT enable heavy aspath regex by default.
-            query != QueryType::BgpAspath
+            query != QueryType::BgpAspath && query != QueryType::BgpAspathV6
         } else {
             self.queries.contains(&query)
         }
@@ -568,6 +568,7 @@ impl Inventory {
                         commands.bgp_route_v4.is_some() || commands.bgp_route_v6.is_some()
                     }
                     QueryType::BgpAspath => commands.bgp_route_asn.is_some(),
+                    QueryType::BgpAspathV6 => commands.bgp_route_asn_v6.is_some(),
                     QueryType::BgpSummary => commands.bgp_summary.is_some(),
                 };
                 if !supported {

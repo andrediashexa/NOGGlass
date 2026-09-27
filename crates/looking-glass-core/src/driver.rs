@@ -39,6 +39,7 @@ pub enum QueryType {
     Traceroute,
     BgpRoute,
     BgpAspath,
+    BgpAspathV6,
     BgpSummary,
 }
 

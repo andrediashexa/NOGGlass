@@ -128,7 +128,7 @@ function updatePlaceholder() {
   const queryType = document.getElementById("query-type")?.value;
   const target = document.getElementById("target");
   if (!target) return;
-  if (queryType === "bgp_aspath") {
+  if (queryType === "bgp_aspath" || queryType === "bgp_aspath_v6") {
     target.placeholder = "AS65500 ou 65500";
   } else if (queryType === "bgp_route") {
     target.placeholder = "198.51.100.0/24 ou 2001:db8::1";
@@ -526,6 +526,16 @@ function renderRaw(output, truncated, isBgp = false) {
 
 function renderBgp(result, queryTarget) {
   renderRaw(result.raw_output, result.truncated, true);
+
+  if (result.truncated) {
+    document.getElementById("paths-panel").hidden = true;
+    document.getElementById("graph-panel").hidden = true;
+    document.getElementById("graph").replaceChildren();
+    const box = document.getElementById("error");
+    box.textContent = t("result.truncated_danger");
+    box.hidden = false;
+    return;
+  }
 
   if (result.completeness?.state === "partial") {
     const box = document.getElementById("error");
