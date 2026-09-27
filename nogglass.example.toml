@@ -158,9 +158,9 @@ background_opacity_percent = 35
 
 # Result panels visibility (default: true for all three).
 # When set to false, that specific output section is not displayed in the interface.
-# - show_best_path: "MELHOR CAMINHO" (AS-Path topology diagram / graph)
-# - show_paths: "CAMINHOS" (Tabular BGP paths list)
-# - show_raw_output: "SAÍDA DO ROTEADOR" (Raw CLI output from the router)
+# - show_best_path: "Best Path" (AS-Path topology diagram / graph)
+# - show_paths: "Paths" (Tabular BGP paths list)
+# - show_raw_output: "Router Output" (Raw CLI output from the router)
 show_best_path = true
 show_paths = true
 show_raw_output = true
