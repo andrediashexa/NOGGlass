@@ -370,7 +370,7 @@ pub struct RpkiSettings {
 }
 
 fn default_rpki_timeout_ms() -> u64 {
-    1000
+    3000
 }
 fn default_rpki_ttl() -> u64 {
     3600

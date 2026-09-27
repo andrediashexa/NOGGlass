@@ -58,7 +58,7 @@ impl Default for RpkiConfig {
     fn default() -> Self {
         Self {
             validator: Validator::default(),
-            timeout: Duration::from_millis(1000),
+            timeout: Duration::from_millis(3000),
             cache_ttl: Duration::from_secs(3600),
             cache_capacity: 50_000,
         }
@@ -232,14 +232,26 @@ impl Enricher {
         let validation = match self.client.get(&url).send().await {
             Ok(response) if response.status().is_success() => match response.text().await {
                 Ok(body) => parse_validity(&self.config.validator, &body),
-                Err(_) => RpkiValidation::default(),
+                Err(err) => {
+                    tracing::warn!(?err, %url, "failed to read RPKI validator response body");
+                    RpkiValidation::default()
+                }
             },
-            _ => RpkiValidation::default(),
+            Ok(response) => {
+                tracing::warn!(status = %response.status(), %url, "RPKI validator returned non-success HTTP status");
+                RpkiValidation::default()
+            }
+            Err(err) => {
+                tracing::warn!(?err, %url, "RPKI lookup HTTP request failed or timed out");
+                RpkiValidation::default()
+            }
         };
 
-        // Negative answers are cached too: a validator that is down should not
-        // be hammered once per visitor.
-        self.cache.insert(origin, validation);
+        // Only cache definitive answers (Valid, Invalid, NotFound).
+        // Transient network errors or timeouts (NotChecked) must NEVER poison the cache for 1 hour.
+        if validation.status != RpkiStatus::NotChecked {
+            self.cache.insert(origin, validation);
+        }
         validation
     }
 

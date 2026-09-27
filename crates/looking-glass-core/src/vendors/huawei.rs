@@ -454,6 +454,18 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
                 Ok(()) => {}
                 Err(()) => partial_path = true,
             }
+        } else if let Some(rest) = line.strip_prefix("RPKI validation state:")
+            .or_else(|| line.strip_prefix("RPKI state:"))
+            .or_else(|| line.strip_prefix("Validation:"))
+        {
+            in_community = false;
+            let val = rest.trim().to_ascii_lowercase();
+            path.rpki = match val.as_str() {
+                "valid" | "v" => RpkiValidation::from_router(RpkiStatus::Valid),
+                "invalid" | "i" => RpkiValidation::from_router(RpkiStatus::Invalid),
+                "not-found" | "notfound" | "n" => RpkiValidation::from_router(RpkiStatus::NotFound),
+                _ => RpkiValidation::default(),
+            };
         } else if line.starts_with("Qos information")
             || line.starts_with("Route Duration")
             || line.starts_with("Direct Out-interface")
@@ -538,6 +550,14 @@ fn read_attributes(rest: &str, path: &mut BgpPath) -> Result<(), ()> {
             (Some("pref-val"), Some(value)) => path.weight = value.parse().ok(),
             (Some("valid"), _) => path.is_valid = Some(true),
             (Some("best"), _) => path.is_best = true,
+            (Some("validation"), Some(val)) => {
+                path.rpki = match val.to_ascii_lowercase().as_str() {
+                    "valid" => RpkiValidation::from_router(RpkiStatus::Valid),
+                    "invalid" => RpkiValidation::from_router(RpkiStatus::Invalid),
+                    "not-found" | "notfound" => RpkiValidation::from_router(RpkiStatus::NotFound),
+                    _ => RpkiValidation::default(),
+                };
+            }
             _ => {}
         }
     }
@@ -883,6 +903,35 @@ mod real_ne40e_tests {
         assert_eq!(result.paths[5].rpki.status, RpkiStatus::Valid);
         assert!(result.paths[6].is_best);
         assert_eq!(result.paths[6].med, Some(10));
+    }
+
+    #[test]
+    fn test_huawei_detail_blocks_with_rpki() {
+        let raw = r#" BGP local router ID : 192.0.2.1
+ Local AS number : 64499
+ Paths:   2 available, 1 best, 1 select, 0 best-external, 0 add-path
+ BGP routing table entry information of 198.51.100.0/24:
+ From: 192.0.2.10 (192.0.2.10)  
+ Route Duration: 0d00h15m42s
+ Direct Out-interface: Ethernet1/0/2
+ Original nexthop: 192.0.2.10
+ Qos information : 0x0
+ AS-path 64498, origin igp, MED 0, pref-val 0, valid, external, best, select, validation valid, pre 255
+ Not advertised to any peer yet
+
+ BGP routing table entry information of 198.51.100.0/24:
+ From: 192.0.2.6 (192.0.2.6)  
+ Original nexthop: 192.0.2.6
+ RPKI validation state: valid
+ AS-path 64497 64498, origin igp, MED 100, pref-val 0, valid, external, pre 255, not preferred for AS-Path
+ Not advertised to any peer yet
+"#;
+        let result = HuaweiVrpDriver.parse_bgp_route(raw).expect("detail with rpki");
+        assert_eq!(result.paths.len(), 2);
+        assert_eq!(result.paths[0].rpki.status, RpkiStatus::Valid);
+        assert_eq!(result.paths[0].rpki.source, crate::driver::RpkiSource::Router);
+        assert_eq!(result.paths[1].rpki.status, RpkiStatus::Valid);
+        assert_eq!(result.paths[1].rpki.source, crate::driver::RpkiSource::Router);
     }
 
     /// Captured from the NE40E in `lab/`. The statistics arrive on three
