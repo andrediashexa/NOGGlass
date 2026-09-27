@@ -188,7 +188,7 @@ location = "Lab Demo"
 [rpki]
 enable_fallback = false
 # validator_url = "http://routinator.internal:8323"
-timeout_ms = 1000
+timeout_ms = 3000
 cache_ttl_secs = 3600
 cache_max_capacity = 50000
 

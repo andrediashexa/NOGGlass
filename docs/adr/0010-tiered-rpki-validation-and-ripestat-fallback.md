@@ -129,7 +129,7 @@ enable_fallback = true
 # validator_url = "http://routinator.internal.net:8323/api/v1/validity"
 
 # Hard timeout for external HTTP validation in milliseconds
-timeout_ms = 1000
+timeout_ms = 3000
 
 # In-memory cache TTL in seconds
 cache_ttl_secs = 3600
