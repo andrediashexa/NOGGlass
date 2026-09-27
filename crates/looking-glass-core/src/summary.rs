@@ -121,57 +121,87 @@ fn parse_peer_row(line: &str) -> Option<BgpPeerSummary> {
         })
         .unwrap_or(0);
 
-    // Where the state sits differs by vendor, and assuming it is the last
-    // field was wrong in the way that matters most. Cisco and FRR print one
-    // `State/PfxRcd` column, so the last field is either a word or a count.
-    // Huawei prints State **and** PrefRcv, so the last field of a session in
-    // Idle is its prefix count — the number 0 — which the old rule read as
-    // "a number means established". A down session was reported as up, on the
-    // one screen whose entire job is showing which sessions are down.
-    //
-    // So the state is found by looking for a state word, from the right, and
-    // the columns around it are read relative to where it was.
-    let state_index = fields.iter().rposition(|field| is_state_word(field));
+    // Where the state sits differs by vendor, but across all vendors (Cisco,
+    // Huawei, Arista, FRR, IOS-XR), the uptime column sits directly before
+    // the state and prefix columns.
+    let uptime_idx = fields[1..]
+        .iter()
+        .position(|token| looks_like_uptime(token))
+        .map(|idx| idx + 1);
 
-    let (state, prefixes_received) = match state_index {
-        Some(index) => {
-            let word = fields[index];
-            let state = if word.to_ascii_lowercase().contains("established") {
-                "Established".to_string()
+    let (uptime, state, prefixes_received, prefixes_accepted) = match uptime_idx {
+        Some(u_idx) => {
+            let uptime = fields[u_idx].to_string();
+            let after = &fields[u_idx + 1..];
+            if after.is_empty() {
+                (uptime, String::new(), 0, None)
             } else {
-                capitalise(word)
-            };
-            // Whatever follows the state is the prefix count, when there is
-            // one. A session that is not established has none.
-            let count = fields
-                .get(index + 1)
-                .and_then(|token| token.parse::<u32>().ok())
-                .unwrap_or(0);
-            (state, count)
-        }
-        None => {
-            // One combined column: a number means the session is established
-            // and this is how many prefixes it sent. Vendors do not write
-            // "Established" in that column.
-            let last = fields.last().copied().unwrap_or_default();
-            match last.parse::<u32>() {
-                Ok(count) => ("Established".to_string(), count),
-                // Something we do not recognise. Report it verbatim rather
-                // than guessing: an operator reading an unfamiliar word can
-                // look it up, and a wrong guess about a session state is worse
-                // than an honest one.
-                Err(_) => (last.to_string(), 0),
+                let first = after[0];
+                if is_state_word(first) {
+                    let state = if first.to_ascii_lowercase().starts_with("estab") {
+                        "Established".to_string()
+                    } else {
+                        capitalise(first)
+                    };
+                    let count = after
+                        .get(1)
+                        .and_then(|token| token.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    let accepted = if first.to_ascii_lowercase().starts_with("estab") {
+                        after
+                            .get(2)
+                            .and_then(|token| token.parse::<u32>().ok())
+                    } else {
+                        None
+                    };
+                    (uptime, state, count, accepted)
+                } else {
+                    // One combined column: a number means the session is established
+                    // and this is how many prefixes it sent (e.g. Cisco, FRR).
+                    let (state, count) = match first.parse::<u32>() {
+                        Ok(count) => ("Established".to_string(), count),
+                        Err(_) => (first.to_string(), 0),
+                    };
+                    (uptime, state, count, None)
+                }
             }
         }
+        None => {
+            let state_index = fields.iter().rposition(|field| is_state_word(field));
+            let (state, count) = match state_index {
+                Some(index) => {
+                    let word = fields[index];
+                    let state = if word.to_ascii_lowercase().starts_with("estab") {
+                        "Established".to_string()
+                    } else {
+                        capitalise(word)
+                    };
+                    let count = fields
+                        .get(index + 1)
+                        .and_then(|token| token.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    (state, count)
+                }
+                None => {
+                    let last = fields.last().copied().unwrap_or_default();
+                    match last.parse::<u32>() {
+                        Ok(count) => ("Established".to_string(), count),
+                        Err(_) => (last.to_string(), 0),
+                    }
+                }
+            };
+            let prefixes_accepted = state_index.and_then(|index| {
+                if fields[index].to_ascii_lowercase().starts_with("estab") {
+                    fields
+                        .get(index + 2)
+                        .and_then(|token| token.parse::<u32>().ok())
+                } else {
+                    None
+                }
+            });
+            (String::new(), state, count, prefixes_accepted)
+        }
     };
-
-    // Uptime is the field before the state, when it looks like a duration.
-    let state_position = state_index.unwrap_or(fields.len().saturating_sub(1));
-    let uptime = fields
-        .get(state_position.saturating_sub(1))
-        .filter(|token| looks_like_uptime(token))
-        .map(|token| (*token).to_string())
-        .unwrap_or_default();
 
     Some(BgpPeerSummary {
         peer_ip: peer_ip.to_string(),
@@ -179,17 +209,14 @@ fn parse_peer_row(line: &str) -> Option<BgpPeerSummary> {
         state,
         uptime,
         prefixes_received,
-        // Only a few platforms report accepted separately; left absent rather
-        // than copied from received, which would claim a filter passed
-        // everything.
-        prefixes_accepted: None,
+        prefixes_accepted,
     })
 }
 
 /// Whether a field names a session state rather than a number or a duration.
 fn is_state_word(field: &str) -> bool {
     let lower = field.to_ascii_lowercase();
-    lower.contains("established") || DOWN_STATES.iter().any(|down| lower.starts_with(down))
+    lower.starts_with("estab") || DOWN_STATES.iter().any(|down| lower.starts_with(down))
 }
 
 /// `01:23:45`, `2d04h`, `5w1d`, `never`.

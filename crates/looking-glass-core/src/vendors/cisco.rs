@@ -120,7 +120,7 @@ impl VendorDriver for CiscoDriver {
 /// is the line above it, the attributes are the lines below. Anchoring on
 /// `Refresh Epoch` instead would work on IOS-XE and not on platforms that do
 /// not print it.
-fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
+pub(crate) fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
     let mut paths: Vec<BgpPath> = Vec::new();
     let mut prefix = None;
     let mut pending_as_path: Option<(Vec<u32>, bool)> = None;

@@ -385,7 +385,9 @@ mod tests {
         let ids: Vec<&str> = catalogue.vendor_ids().collect();
         assert!(ids.contains(&"huawei_vrp"), "got {ids:?}");
         assert!(ids.contains(&"mikrotik_routeros"), "got {ids:?}");
-        assert_eq!(ids.len(), 9, "got {ids:?}");
+        assert!(ids.contains(&"arista_eos"), "got {ids:?}");
+        assert!(ids.contains(&"frr"), "got {ids:?}");
+        assert_eq!(ids.len(), 11, "got {ids:?}");
     }
 
     #[test]

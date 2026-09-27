@@ -20,8 +20,8 @@ use crate::driver::{
 use crate::inventory::{Inventory, Router};
 use crate::target::QueryLimits;
 use crate::vendors::{
-    BirdDriver, CiscoDriver, DatacomDriver, HuaweiVrpDriver, JuniperDriver, MikrotikDriver,
-    MockDriver, NokiaSrosDriver, MOCK_VENDOR,
+    AristaDriver, BirdDriver, CiscoDriver, DatacomDriver, FrrDriver, HuaweiVrpDriver,
+    JuniperDriver, MikrotikDriver, MockDriver, NokiaSrosDriver, MOCK_VENDOR,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -402,6 +402,8 @@ pub fn driver_for(vendor: &str) -> Option<Box<dyn VendorDriver>> {
         "mikrotik_routeros" => Box::new(MikrotikDriver),
         "datacom_dmos" => Box::new(DatacomDriver),
         "bird_routing_daemon" => Box::new(BirdDriver),
+        "arista_eos" => Box::new(AristaDriver),
+        "frr" => Box::new(FrrDriver),
         MOCK_VENDOR => Box::new(MockDriver),
         _ => return None,
     })

@@ -144,6 +144,32 @@ bgp_route_v4 = "birdc show route for {target} all"
 bgp_route_v6 = "birdc show route for {target} all"
 bgp_summary = "birdc show protocols all"
 
+[arista_eos]
+display_name = "Arista EOS"
+disable_paging = "terminal length 0"
+prompt = '[\w\.\-]+[>#]'
+ping_v4 = "ping {target} repeat {count}"
+ping_v6 = "ping ipv6 {target} repeat {count}"
+traceroute_v4 = "traceroute {target}"
+traceroute_v6 = "traceroute ipv6 {target}"
+bgp_route_v4 = "show ip bgp {target}"
+bgp_route_v6 = "show ipv6 bgp {target}"
+bgp_route_asn = "show ip bgp regexp _{asn}_"
+bgp_summary = "show ip bgp summary"
+
+[frr]
+display_name = "FRRouting (FRR)"
+disable_paging = "terminal length 0"
+prompt = '[\w\.\-]+[>#]'
+ping_v4 = "ping {target} count {count}"
+ping_v6 = "ping ipv6 {target} count {count}"
+traceroute_v4 = "traceroute {target}"
+traceroute_v6 = "traceroute ipv6 {target}"
+bgp_route_v4 = "show bgp ipv4 unicast {target}"
+bgp_route_v6 = "show bgp ipv6 unicast {target}"
+bgp_route_asn = "show bgp ipv4 unicast regexp _{asn}_"
+bgp_summary = "show bgp summary"
+
 # The mock router. Answers from fixtures, never opens a session, and is enabled
 # explicitly by the operator. Its "commands" exist only so the rest of the
 # system can treat it like any other vendor.

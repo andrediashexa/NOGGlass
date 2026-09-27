@@ -214,6 +214,8 @@ mod tests {
             Box::new(BirdDriver),
             Box::new(CiscoDriver::new(false)),
             Box::new(MikrotikDriver),
+            Box::new(AristaDriver),
+            Box::new(FrrDriver),
         ];
 
         for driver in drivers {
@@ -245,6 +247,8 @@ mod tests {
             Box::new(NokiaSrosDriver),
             Box::new(DatacomDriver),
             Box::new(BirdDriver),
+            Box::new(AristaDriver),
+            Box::new(FrrDriver),
         ];
 
         for driver in drivers {

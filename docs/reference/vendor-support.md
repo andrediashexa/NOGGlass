@@ -55,6 +55,8 @@ flowchart TB
 | **Juniper Junos** | `juniper_junos` | Unverified | — | Two images tried, neither runs BGP; see below |
 | **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
 | **Datacom DmOS** | `datacom_dmos` | Unverified | — | Cannot be virtualised; needs hardware |
+| **Arista EOS** | `arista_eos` | Supported | vEOS / EOS 7000 Series | Cisco/Netmiko compatible CLI |
+| **FRRouting (FRR)** | `frr` | Supported | FRR 8.x / 9.x / 10.x | Cisco/Quagga compatible vtysh |
 
 ## What each real device changed
 

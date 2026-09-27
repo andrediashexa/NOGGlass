@@ -16,8 +16,8 @@ use std::process::ExitCode;
 
 use looking_glass_core::driver::VendorDriver;
 use looking_glass_core::vendors::{
-    BirdDriver, CiscoDriver, DatacomDriver, HuaweiVrpDriver, JuniperDriver, MikrotikDriver,
-    NokiaSrosDriver,
+    AristaDriver, BirdDriver, CiscoDriver, DatacomDriver, FrrDriver, HuaweiVrpDriver,
+    JuniperDriver, MikrotikDriver, NokiaSrosDriver,
 };
 
 fn driver_for(vendor: &str) -> Option<Box<dyn VendorDriver>> {
@@ -32,6 +32,8 @@ fn driver_for(vendor: &str) -> Option<Box<dyn VendorDriver>> {
         "mikrotik_routeros" => Some(Box::new(MikrotikDriver)),
         "datacom_dmos" => Some(Box::new(DatacomDriver)),
         "bird_routing_daemon" => Some(Box::new(BirdDriver)),
+        "arista_eos" => Some(Box::new(AristaDriver)),
+        "frr" => Some(Box::new(FrrDriver)),
         _ => None,
     }
 }

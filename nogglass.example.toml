@@ -28,7 +28,7 @@ max_concurrent_total = 16
 #   name        what visitors see
 #   vendor      one of: huawei_vrp, cisco_iosxe, cisco_iosxr, juniper_junos,
 #               nokia_sros, mikrotik_routeros, datacom_dmos,
-#               bird_routing_daemon, mock
+#               bird_routing_daemon, arista_eos, frr, mock
 #   host        management address; never shown to visitors
 #   username    the read-only user you created for NOGGlass
 #   credentials password_env = "VAR", or key_file = { path = "...",

@@ -220,6 +220,8 @@ background_opacity_percent = 35
 | `datacom_dmos` | Datacom DM4000 / DM4200 Series |
 | `nokia_sros` | Nokia 7750 SR (TiMOS classic and MD-CLI) |
 | `bird_routing_daemon` | BIRD 2 Internet Routing Daemon |
+| `arista_eos` | Arista EOS 7000 / vEOS Series |
+| `frr` | FRRouting (FRR) Routing Daemon |
 | `mock` | Synthetic test driver (no SSH connection needed) |
 
 ---

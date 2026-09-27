@@ -85,6 +85,8 @@ flowchart TB
 | `datacom_dmos` | Datacom DM4000 and DM4200 series | Tabular CLI extraction, next-hop resolution |
 | `nokia_sros` | Nokia 7750 SR (TiMOS classic & MD-CLI)| Tabular parsing, multi-hop traceroute decoding |
 | `bird_routing_daemon`| BIRD 2 Internet Routing Daemon | CLI command parsing, table summaries |
+| `arista_eos` | Arista EOS 7000 / vEOS Series | Detail and tabular BGP parsing, Unix ping statistics, BGP summary |
+| `frr` | FRRouting (FRR) Routing Daemon | Cisco-compatible BGP detail/table parsing, vtysh integration |
 | `mock` | Synthetic Lab Driver | Deterministic fixtures for CI, testing, and public demonstrations |
 
 ---
