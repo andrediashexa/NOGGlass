@@ -156,7 +156,15 @@ impl VendorDriver for JuniperDriver {
     /// Reads the structured output Junos produces with `| display json`,
     /// including the RPKI validation state it reports natively.
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
-        let parsed: JunosRouteInformation = serde_json::from_str(raw)
+        let trimmed = raw.trim();
+        if trimmed.is_empty()
+            || !trimmed.starts_with('{')
+            || trimmed.contains("Pattern not found")
+        {
+            return Ok(BgpRouteResult::new(Vec::new(), raw));
+        }
+
+        let parsed: JunosRouteInformation = serde_json::from_str(trimmed)
             .map_err(|e| DriverError::ParseError(format!("invalid Junos JSON: {e}")))?;
 
         let mut paths = Vec::new();
@@ -433,6 +441,24 @@ mod tests {
 
         let t4: JunosText = serde_json::from_str(r#"{"data": 12345}"#).expect("number data");
         assert_eq!(t4.data, Some("12345".to_string()));
+    }
+
+    #[test]
+    fn parses_empty_and_pattern_not_found_cleanly() {
+        let empty_result = JuniperDriver
+            .parse_bgp_route("")
+            .expect("must handle empty response without error");
+        assert!(empty_result.paths.is_empty());
+
+        let whitespace_result = JuniperDriver
+            .parse_bgp_route("   \n\t  ")
+            .expect("must handle whitespace response without error");
+        assert!(whitespace_result.paths.is_empty());
+
+        let not_found_result = JuniperDriver
+            .parse_bgp_route("error: Pattern not found\n")
+            .expect("must handle pattern not found without error");
+        assert!(not_found_result.paths.is_empty());
     }
 }
 

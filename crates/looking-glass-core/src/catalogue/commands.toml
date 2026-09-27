@@ -81,7 +81,7 @@ traceroute_v6 = "traceroute inet6 {target} no-resolve"
 # Junos returns structured output, which is why it needs no text parser.
 bgp_route_v4 = "show route protocol bgp {target} detail | display json"
 bgp_route_v6 = "show route protocol bgp {target} detail | display json"
-bgp_route_asn = "show route aspath-regex \".* {asn} .*\" | display json"
+bgp_route_asn = "show route aspath-regex \".*(^| ){asn}( |$).*\" detail | display json"
 bgp_summary = "show bgp summary | display json"
 
 [nokia_sros]
