@@ -26,6 +26,7 @@
   "error.unreachable": "The router could not be reached.",
   "error.unreadable": "The router's answer could not be read.",
   "error.unsupported": "That query is not supported here.",
+  "footer.project": "NOGGlass Project",
   "footer.source": "Source code",
   "footer.version": "Version",
   "form.clear": "Clear",

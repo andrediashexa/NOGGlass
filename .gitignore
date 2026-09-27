@@ -44,3 +44,7 @@ lab/captured/
 # containerlab runtime state: generated on deploy, and it contains a CA key
 # and authorized_keys. Nothing here is source.
 lab/clab-*/
+
+# Design archives and binary assets
+nogglass-design.tar.gz
+*.tar.gz

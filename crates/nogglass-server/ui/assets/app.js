@@ -133,9 +133,9 @@ async function loadVersion() {
         buildMeta.hidden = true;
       }
     }
-    const link = document.getElementById("version-link");
+    const link = document.getElementById("project-link") || document.getElementById("version-link");
     if (link) {
-      link.href = `https://github.com/andrediashexa/looking-glass/releases/tag/v${ver}`;
+      link.href = "https://github.com/andrediashexa/looking-glass";
     }
   } catch {
     // The footer is not worth breaking the page over.

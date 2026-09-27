@@ -26,6 +26,7 @@
   "error.unreachable": "No se pudo alcanzar el router.",
   "error.unreadable": "No se pudo leer la respuesta del router.",
   "error.unsupported": "Esa consulta no está soportada aquí.",
+  "footer.project": "Proyecto NOGGlass",
   "footer.source": "Código fuente",
   "footer.version": "Versión",
   "form.clear": "Limpiar",

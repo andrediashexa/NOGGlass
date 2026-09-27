@@ -26,6 +26,7 @@
   "error.unreachable": "Não foi possível alcançar o roteador.",
   "error.unreadable": "Não foi possível ler a resposta do roteador.",
   "error.unsupported": "Essa consulta não é suportada aqui.",
+  "footer.project": "Projeto NOGGlass",
   "footer.source": "Código-fonte",
   "footer.version": "Versão",
   "form.clear": "Limpar",

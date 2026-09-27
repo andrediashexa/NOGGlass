@@ -9,7 +9,7 @@ version = "1.0.0"
 edition = "2021"
 # LazyLock (core) requires 1.80; CI pins the exact toolchain.
 rust-version = "1.80"
-license = "Apache-2.0"
+license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 looking-glass-core = { path = "crates/looking-glass-core" }

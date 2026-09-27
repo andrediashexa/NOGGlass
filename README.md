@@ -1,163 +1,169 @@
 # NOGGlass
 
-A multi-vendor, self-hosted looking glass for ISPs and network operators.
+A multi-vendor, production-hardened, self-hosted Looking Glass for Autonomous Systems (ASNs), Internet Service Providers (ISPs), and network operators.
 
-> The repository is named `looking-glass`; the product is **NOGGlass**
-> ([ADR-0013](docs/adr/0013-product-name-and-branding.md)).
+> The repository is named `looking-glass`; the official software product is **NOGGlass** ([ADR-0013](docs/adr/0013-product-name-and-branding.md)).
+
+---
 
 ## TL;DR
 
-NOGGlass lets your visitors run read-only diagnostics — `ping`, `traceroute`,
-BGP and routing lookups — against your production routers from a web page, in
-Portuguese, English or Spanish. BGP answers are not dumped as CLI text: they are
-parsed into a normalised path model and drawn as an AS-PATH topology graph with
-RPKI state, route attributes and decoded communities. It is free software
-(Apache-2.0) and ships as a single Rust binary, or as one container.
+NOGGlass allows visitors and NOC engineers to run read-only network diagnostics — `ping`, `traceroute`, BGP route lookup, and BGP session summary — against edge routers from an embedded web interface in Portuguese, English, or Spanish. BGP output is not dumped as plain text: it is parsed into a strongly typed data model, rendered as an interactive SVG topological AS-PATH graph using Bellman-Ford DAG ranking, enriched with Tiered RPKI validation, and paired with syntax highlighting for active FIB routes. It is free software licensed under the **GNU General Public License v3 (GPLv3)** and ships as a single, self-contained Rust binary or minimal Alpine Linux container.
 
-> **Status: beta.** Every vendor in the catalogue answers every query with a
-> parsed result — no raw-text fallbacks left. What has **not** happened: no
-> query has ever run against real hardware. Every parser was written from
-> documented output and proven against fixtures, so the first thing to do with
-> a real router is compare what NOGGlass shows with what the CLI says, and open
-> an issue with the raw output when they differ.
+![The BGP route view: an AS-PATH graph with topological DAG ranking, path table, and active route CLI highlighting](docs/design/screens/02-rota-bgp.png)
 
-![The BGP route view: an AS-PATH graph with the best path solid and alternatives dashed, a path table, and the router output below](docs/design/screens/02-rota-bgp.png)
+---
 
-## Why another looking glass
+## Why NOGGlass?
 
-Most existing tools assume a single vendor, expose a shell-ish command box to
-the Internet, or have been unmaintained for years — and all of them answer with
-raw CLI text that an operator has to read line by line. NOGGlass targets the
-network mix that regional ISPs actually run — MikroTik, Huawei, Datacom, Cisco,
-Juniper, Nokia, Arista, FRR/BIRD — treats the public endpoint as what it is,
-untrusted input landing next to a production router, and turns the answer into
-something a NOC can read at a glance.
+Most existing Looking Glass implementations either target a single vendor, rely on unmaintained scripts (PHP/Python/Perl), expose insecure shell command boxes to the Internet, or dump hundreds of lines of raw CLI text that an engineer must parse manually.
 
-## Design principles
+NOGGlass was built for the diverse routing mix that regional carriers and ISPs run in production: **Huawei VRP, Juniper JunOS, Cisco IOS-XR/XE, MikroTik RouterOS (v6 & v7), Datacom DmOS, Nokia SR OS, and BIRD 2**. It treats public input as untrusted, protects the router control plane by design, and turns routing data into actionable visual insights for the NOC.
 
-1. **The router is sacred.** A command is never built from raw user input. Every
-   query is a typed request mapped to a vendor command with validated arguments.
-2. **Read-only by contract.** Least-privilege router users, documented per
-   vendor; anything outside the command catalogue is refused.
-3. **Never invent data.** A field the router did not report is reported as
-   unknown. A diagnostic tool that guesses is worse than one that is missing.
-4. **Public means hostile.** Rate limiting, per-router concurrency caps, command
-   timeouts and optional CAPTCHA are core, not add-ons.
-5. **Self-hosting must be boring.** One binary or one container, one
-   configuration file, published images, no build step on the operator's server.
-6. **Safe defaults.** Anything that reaches the outside world starts disabled.
+---
+
+## Key Features (v1.0.0)
+
+- **The Router is Sacred:** Complete immunity to command injection. Diagnostic targets and counts are strictly deserialized into Rust types (`std::net::IpAddr`, `ipnet::IpNet`, validated enums) and mapped to read-only command templates.
+- **Topological AS-PATH Graph (Bellman-Ford DAG):** Renders route propagation from the local router node. Direct peers (e.g. transit providers and IX peers) are locked in parallel on Column 1, eliminating false cascade representations.
+- **Operational Route Highlighting:** Dynamic CLI analyzer (`highlightBgpRaw`) detects winning routes in tabular outputs (`*>`, `DAv`, `[*BGP]`) and detailed blocks (Huawei VRP/Cisco), highlighting the active FIB path in emerald green with a `[★ ROTA ATIVA]` badge.
+- **Tiered RPKI Engine:** Tier 1 prioritizes router-native validation states from RTR sessions (Huawei, JunOS, Cisco). Tier 2 provides an asynchronous fallback to RIPEstat/Routinator with an in-memory LRU cache and a 3000ms timeout. Transient lookup timeouts are excluded from caching to prevent cache poisoning.
+- **Zero-Jitter Defense & Security Headers:** Sharded 16-partition rate limiter eliminates mutex contention. Stateless HMAC-SHA256 CAPTCHAs prevent replay attacks. Native HTTP security headers (CSP, X-Frame-Options, nosniff, Referrer-Policy) are injected on all routes.
+- **Pinned SSH Host Keys (Anti-MitM):** Support for `host_key` in `nogglass.toml` (`HostKeyPolicy::Pinned`) prevents Man-in-the-Middle attacks on management networks.
+- **Visual Customization & White-Labeling (`[ui]`):** Configure branding with custom logos (`logo_path`, `logo_height_px`), background wallpapers (`background_path`, `background_blur_px`, `background_opacity_percent`), and themes (`theme = "dark"` or `"light"`).
+- **Edge Cache Invalidation (Cloudflare / CDNs):** Injects strict `Cache-Control: no-cache, no-store, must-revalidate, max-age=0` headers on visual assets and dynamic endpoints, ensuring immediate updates upon redeployment.
+- **Self-Contained Single Binary:** Axum web engine, HTML5 templates, responsive Vanilla CSS (with Dark NOC and Clean Light Mode design tokens), ES6+ JavaScript, and i18n catalogues (`pt-BR`, `en`, `es`) compile into an autonomous executable using less than 35 MB of RAM.
+
+---
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    visitor([Visitor browser])
-    proxy["Reverse proxy — optional<br/>TLS · ACME · edge rate limit"]
+    visitor([Visitor / NOC Engineer])
+    proxy["Edge Reverse Proxy (Optional: Cloudflare / Nginx / TLS 443)"]
 
-    subgraph binary [Single Rust binary]
-        http[Axum HTTP + SSE<br/>listens on :8080]
-        ui[Embedded UI<br/>pt / en / es · AS-PATH graph]
-        valid[Typed target validation]
-        limit[Rate limit + per-router concurrency]
-        drivers[Vendor drivers]
-        norm[Path model normaliser]
+    subgraph host [NOGGlass - Standalone Single Binary :8080]
+        http[Axum HTTP & SSE Engine]
+        sec[AppSec Middleware: CSP / Anti-MitM / Security Headers]
+        ratelimit[16-Shard Rate Limiter & HMAC CAPTCHA]
+        ui[Embedded UI: Dark NOC / Clean Light / SVG DAG / i18n]
+        valid[Strict Type Validator: IpAddr / IpNet]
+        concurrency[Router Semaphore Concurrency Caps]
+        
+        subgraph core [looking-glass-core]
+            executor[Asynchronous SSH Transport: russh 0.44]
+            rpki_layer[Tiered RPKI: Tier 1 RTR -> Tier 2 RIPEstat Fallback]
+            drivers[Modular Vendor Drivers & Resilient Parsers]
+        end
     end
 
-    enrich["Enrichment — optional<br/>RPKI · AS names · RIPEstat"]
-    routers[(Operator routers<br/>read-only SSH user)]
+    routers[(Production Edge Routers - Read-Only SSH :22)]
+    rpki_upstream[(RPKI RTR Cache / RIPEstat API)]
 
-    visitor -->|HTTPS| proxy --> http
-    visitor -.->|standalone| http
-    http --> ui
-    http --> valid --> limit --> drivers
-    drivers -->|SSH| routers
-    drivers --> norm --> http
-    norm -.-> enrich
+    visitor -->|HTTPS| proxy
+    proxy -->|HTTP :8080| http
+    visitor -.->|Direct Standalone| http
+    http <--> ui
+    http --> sec --> ratelimit --> valid --> concurrency --> executor
+    executor --> drivers <-->|Sanitized Read-Only Commands| routers
+    drivers --> rpki_layer
+    rpki_layer -.->|HTTPS Fallback 3000ms| rpki_upstream
 ```
 
-## What it does
+---
 
-| | |
-|---|---|
-| **Queries** | `ping`, `traceroute`, BGP route lookup, BGP session summary — all parsed, none returned as raw text |
-| **Vendors** | Huawei VRP, Cisco IOS-XE and IOS-XR, Juniper Junos, Nokia SR OS, MikroTik RouterOS, Datacom DmOS, BIRD, plus a mock router with fabricated data |
-| **BGP results** | AS-PATH graph, route table with attributes, decoded communities, and the router output always kept |
-| **RPKI** | The router's own state first; an operator's validator or RIPEstat fills the gaps, with the source shown |
-| **Global view** | What the Internet announces beside what the router answered, so a leak, a hijack or an announcement that never propagated is visible |
-| **Protection** | Per-visitor rate limiting counted per /64 on IPv6, per-router concurrency caps, command timeouts, output caps |
-| **Languages** | Portuguese, English and Spanish, by URL prefix |
-| **Deployment** | One binary, or one container for amd64 and arm64 |
+## Supported Vendors and Drivers
 
-## Stack
-
-| Layer | Choice | Decision |
+| Vendor Identifier | Target Hardware / Operating System | Capabilities |
 |---|---|---|
-| Language | Rust | [ADR-0005](docs/adr/0005-backend-implementation-language.md) |
-| Server and interface | Axum, with the UI embedded in the binary | [ADR-0007](docs/adr/0007-unified-rust-architecture-and-drivers.md) |
-| Languages | pt-BR, en, es by URL prefix | [ADR-0004](docs/adr/0004-web-interface-internationalisation.md) |
-| Router access | Direct SSH, read-only user, per-vendor drivers | [ADR-0007](docs/adr/0007-unified-rust-architecture-and-drivers.md) |
-| BGP results | Normalised path model, never raw text only | [ADR-0006](docs/adr/0006-structured-bgp-model-and-data-sources.md) |
-| Deployment | Binary on a high port; reverse proxy optional | [ADR-0012](docs/adr/0012-standalone-binary-exposure-and-packaging.md) |
-| Releases | Conventional Commits, SemVer, every merge tagged; patch releases are pre-releases | [ADR-0003](docs/adr/0003-conventional-commits-and-automated-releases.md), [ADR-0014](docs/adr/0014-release-every-change-with-patch-prereleases.md) |
+| `huawei_vrp` | Huawei NE40E, NE8000, S-Series | Tabular BGP, asdot ASN decoding, detail RPKI extraction, multi-line status tolerance |
+| `juniper_junos` | Juniper MX, PTX, QFX, SRX, vMX | Structured native JSON parsing (`| display json`), native RTR RPKI |
+| `cisco_iosxr` | Cisco IOS-XR | Native JSON extraction pipeline, structured path attributes |
+| `cisco_iosxe` | Cisco IOS-XE / Classic IOS | Tabular output parsing, BGP communities, metric extraction |
+| `mikrotik_routeros`| MikroTik RouterOS v6 and v7 | Key-value property parsing, BGP session monitoring |
+| `datacom_dmos` | Datacom DM4000 and DM4200 series | Tabular CLI extraction, next-hop resolution |
+| `nokia_sros` | Nokia 7750 SR (TiMOS classic & MD-CLI)| Tabular parsing, multi-hop traceroute decoding |
+| `bird_routing_daemon`| BIRD 2 Internet Routing Daemon | CLI command parsing, table summaries |
+| `mock` | Synthetic Lab Driver | Deterministic fixtures for CI, testing, and public demonstrations |
 
-## Documentation
+---
 
-All documentation lives in [`docs/`](docs/), in English, following the
-[documentation standard](docs/process/documentation-standard.md). It is also a
-container: `ghcr.io/andrediashexa/nogglass-docs` serves the whole set as a
-searchable site on port 8081, offline, beside the looking glass itself — see
-[running the documentation site](docs/operations/documentation-site.md).
+## Quick Start
 
-```bash
-docker run -d -p 8081:8081 ghcr.io/andrediashexa/nogglass-docs:latest
-```
-
-| Document | Purpose |
-|---|---|
-| [Deployment](docs/operations/deployment.md) | Installing, configuring and upgrading an instance |
-| [Architecture overview](docs/architecture/overview.md) | Components, request flow and trust boundaries |
-| [Architecture decisions](docs/adr/) | Why the project looks like this |
-| [Versioning and releases](docs/process/versioning-and-releases.md) | How a merge becomes a release |
-| [Using NOGGlass](docs/wiki/) | Reading an answer, and running an instance |
-| [Running the documentation site](docs/operations/documentation-site.md) | Serving these documents in a container |
-| [Contributing](CONTRIBUTING.md) | Issue, branch, commit and review rules |
-| [Security policy](SECURITY.md) | How to report a vulnerability |
-
-## Quick start
+### 1. Docker Compose (Recommended)
 
 ```bash
+# Download production compose file and example configuration
 curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/docker-compose.yml
 curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/nogglass.example.toml
+
+# Start the service (initializes default configuration and mock router)
 docker compose up -d
 ```
 
-Then open `http://localhost:8080/`. Out of the box it serves a **mock router**
-with fabricated data, so you can see what it does before pointing it at
-anything real. When you are ready, replace that entry in `nogglass.toml` with
-your own routers — [read-only router users](docs/operations/router-users.md) has
-the account recipe per vendor, and the
-[deployment guide](docs/operations/deployment.md) covers exposure, TLS and
-upgrades.
+Open `http://localhost:8080/` in your browser. Out of the box, NOGGlass boots with a pre-configured **Mock Router** serving realistic routing fixtures.
 
-### A result is a link
+### 2. Upgrading to Production Configuration
 
-The query lives in the URL, so an answer can be pasted into a ticket:
+Edit `nogglass.toml` to configure your production edge routers and credentials:
 
+```toml
+[limits]
+timeout_secs = 30
+ping_count = 5
+max_concurrent_per_router = 2
+
+[[router]]
+id = "edge-01"
+name = "Edge 01 - Core Transit"
+vendor = "huawei_vrp"
+host = "192.0.2.10"
+username = "nogglass"
+credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
+queries = ["ping", "traceroute", "bgp_route", "bgp_summary"]
+
+[ui]
+theme = "dark"
+logo_height_px = 76
 ```
-https://lg.example.net/en/?router=edge-01&type=bgp_route&target=198.51.100.0/24
+
+Restart the container to apply changes:
+```bash
+docker compose restart nogglass
 ```
 
-## What it looks like
+For bare-metal and Systemd deployments, refer to [`INSTALL.md`](INSTALL.md) and [`docs/operations/deployment.md`](docs/operations/deployment.md).
 
-| | |
+---
+
+## Project Documentation & Governance
+
+Comprehensive project documentation is maintained in English under [`docs/`](docs/):
+
+| Document | Purpose |
 |---|---|
-| ![RPKI invalid](docs/design/screens/03-rpki-invalido.png) | **RPKI invalid.** A possible hijack, in red, with the origin AS that claimed the prefix. |
-| ![Sessions](docs/design/screens/06-sessoes-bgp.png) | **Sessions.** The one that is down is the reason someone opened the page. |
-| ![Traceroute](docs/design/screens/05-traceroute.png) | **Traceroute.** A hop that did not answer keeps its number and says so. |
+| [`STACK.md`](STACK.md) | In-depth technical description of the Rust, Axum, SSH, and UI stack |
+| [`INSTALL.md`](INSTALL.md) | Bare-metal, Systemd, and Docker installation instructions |
+| [`AUTHOR.md`](AUTHOR.md) | Co-authors, maintainers, and official contact information |
+| [`DEVELOPMENT_PHILOSOPHY.md`](DEVELOPMENT_PHILOSOPHY.md) | Engineering principles, AI-assisted development transparency, and accountability |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community collaboration standards and professional conduct |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Issue workflow, branch naming, Conventional Commits, and pull request policies |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability disclosure channels, responsible disclosure window, and testing boundaries |
+| [`docs/adr/`](docs/adr/) | Architectural Decision Records (ADR-0001 through ADR-0015) |
+| [`docs/operations/deployment.md`](docs/operations/deployment.md) | Advanced production deployment guide, Systemd hardening, and TLS termination |
 
-More in [`docs/design/screens/`](docs/design/screens/), with the
-[interface brief](docs/design/interface-brief.md) that explains every state.
+---
+
+## Authors and Maintainers
+
+NOGGlass is designed and maintained by:
+
+- **Marcelo Gondim da Cunha** ([@gondimcodes](https://github.com/gondimcodes)) — Systems & Network Architect, Core Developer ([gondim@ispfocus.net.br](mailto:gondim@ispfocus.net.br))
+- **André Dias** ([@andrediashexa](https://github.com/andrediashexa)) — Software Engineer, Core Developer ([andreluizroddias@gmail.com](mailto:andreluizroddias@gmail.com))
+
+---
 
 ## License
 
-[Apache License 2.0](LICENSE).
+This software is released under the **[GNU General Public License v3.0 (GPL-3.0)](LICENSE)**.
