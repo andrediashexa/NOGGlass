@@ -65,8 +65,8 @@ html[data-theme="light"] {
   --graph-node-text: #0f172a;
   --graph-node-border: #cbd5e1;
   --graph-shadow: rgba(0, 0, 0, 0.08);
-  --notice-error-bg: #fef2f2;
-  --notice-error-border: #f87171;
+  --notice-error-bg: #fee2e2;
+  --notice-error-border: #ef4444;
   --notice-error-text: #991b1b;
   --notice-mock-bg: #fff7ed;
   --notice-mock-border: #fb923c;
@@ -216,12 +216,29 @@ button[disabled] { opacity: 0.6; cursor: progress; }
   background: var(--notice-mock-bg);
   border-color: var(--notice-mock-border);
   color: var(--notice-mock-text);
+  font-weight: 500;
 }
 .notice-error {
   background: var(--notice-error-bg);
   border-color: var(--notice-error-border);
   color: var(--notice-error-text);
-  font-weight: 500;
+  font-weight: 600;
+}
+
+html[data-theme="light"] .notice-error,
+html[data-theme="light"] #error {
+  background: #fee2e2 !important;
+  border-color: #ef4444 !important;
+  color: #991b1b !important;
+  font-weight: 600 !important;
+}
+
+html[data-theme="light"] .notice-mock,
+html[data-theme="light"] #mock-warning {
+  background: #fff7ed !important;
+  border-color: #fb923c !important;
+  color: #9a3412 !important;
+  font-weight: 600 !important;
 }
 
 /* --- panels --- */

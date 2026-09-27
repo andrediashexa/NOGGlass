@@ -227,14 +227,21 @@ async fn index(State(ui): State<Arc<UiState>>, Path(locale): Path<String>) -> Re
         Theme::Light => "light",
     };
 
+    let notice_override = if ui.theme == Theme::Light {
+        " html[data-theme=\"light\"] .notice-error, html[data-theme=\"light\"] #error { background: #fee2e2 !important; border-color: #ef4444 !important; color: #991b1b !important; font-weight: 600 !important; } html[data-theme=\"light\"] .notice-mock, html[data-theme=\"light\"] #mock-warning { background: #fff7ed !important; border-color: #fb923c !important; color: #9a3412 !important; font-weight: 600 !important; }"
+    } else {
+        ""
+    };
+
     let custom_style = format!(
-        "<style id=\"nogglass-custom-vars\">:root {{ --logo-height: {}px !important; --bg-blur: {}px !important; --bg-opacity: {:.2} !important; }}{}{}{}</style>",
+        "<style id=\"nogglass-custom-vars\">:root {{ --logo-height: {}px !important; --bg-blur: {}px !important; --bg-opacity: {:.2} !important; }}{}{}{}{}</style>",
         ui.logo_height_px,
         ui.background_blur_px,
         (ui.background_opacity_percent as f32) / 100.0,
         if !ui.show_best_path { " #graph-panel { display: none !important; }" } else { "" },
         if !ui.show_paths { " #paths-panel { display: none !important; }" } else { "" },
         if !ui.show_raw_output { " #raw-panel { display: none !important; }" } else { "" },
+        notice_override,
     );
 
     // The locale and theme are stamped into the document so the page renders in the right
