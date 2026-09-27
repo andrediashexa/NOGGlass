@@ -26,6 +26,10 @@
   --logo-height: 76px;
   --bg-blur: 1px;
   --bg-opacity: 0.35;
+  --graph-node-bg: rgba(13, 20, 31, 0.95);
+  --graph-node-text: var(--text-main);
+  --graph-node-border: var(--border-card);
+  --graph-shadow: rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
 
@@ -51,6 +55,10 @@ html[data-theme="light"] {
   --captcha-bg: #f8fafc;
   --captcha-modal-bg: rgba(255, 255, 255, 0.98);
   --captcha-modal-shadow: 0 12px 36px rgba(0, 0, 0, 0.12), 0 0 20px rgba(2, 132, 199, 0.12);
+  --graph-node-bg: #ffffff;
+  --graph-node-text: #0f172a;
+  --graph-node-border: #cbd5e1;
+  --graph-shadow: rgba(0, 0, 0, 0.08);
   color-scheme: light;
 }
 
@@ -241,6 +249,26 @@ pre {
   border-radius: 8px;
   font: 12.5px/1.5 var(--font-mono);
   color: var(--text-main);
+}
+
+.raw-best-route {
+  color: var(--accent-best);
+  font-weight: 500;
+}
+
+.raw-best-badge {
+  display: inline-block;
+  background: var(--accent-best);
+  color: var(--btn-submit-text);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 footer {

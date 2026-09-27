@@ -379,18 +379,121 @@ function render(response, target) {
   }
 }
 
-function renderRaw(output, truncated) {
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function highlightBgpRaw(raw, truncated) {
+  if (!raw) return "";
+
+  let html = "";
+  const bestBadgeText = t("badge.best") ?? "Rota Ativa";
+
+  // 1. Huawei detailed output (contains "BGP routing table entry information of")
+  if (/BGP routing table entry information of/i.test(raw)) {
+    const parts = raw.split(/(?=BGP routing table entry information of)/i);
+    for (const part of parts) {
+      const isBest =
+        /\b(?:best,\s*select|valid,\s*(?:external|internal),\s*best)\b/i.test(part) &&
+        !/not preferred/i.test(part);
+
+      let escaped = escapeHtml(part);
+      if (isBest) {
+        escaped = escaped.replace(
+          /(BGP routing table entry information of[^\n:]*:?)/i,
+          `$1 <span class="raw-best-badge">★ ${escapeHtml(bestBadgeText)}</span>`
+        );
+        html += `<span class="raw-best-route">${escaped}</span>`;
+      } else {
+        html += escaped;
+      }
+    }
+  }
+  // 2. Cisco / generic detailed output with "Paths: (" or "Routing entry for"
+  else if (/Routing entry for|Paths:\s*\(/i.test(raw) && /\b(?:best|best\s*#\d+)\b/i.test(raw)) {
+    const lines = raw.split("\n");
+    let inBestBlock = false;
+    let currentBlock = [];
+
+    for (const line of lines) {
+      if (/^\s*(?:Path\s+\d+|[0-9]+(?:\s+[0-9]+)*\s*$)/i.test(line)) {
+        if (currentBlock.length) {
+          const blockText = currentBlock.join("\n");
+          if (inBestBlock) {
+            html += `<span class="raw-best-route">${escapeHtml(blockText)}</span>\n`;
+          } else {
+            html += `${escapeHtml(blockText)}\n`;
+          }
+          currentBlock = [];
+          inBestBlock = false;
+        }
+      }
+      if (/\b(?:valid,\s*(?:external|internal),\s*best|\(best\))\b/i.test(line)) {
+        inBestBlock = true;
+      }
+      currentBlock.push(line);
+    }
+    if (currentBlock.length) {
+      const blockText = currentBlock.join("\n");
+      if (inBestBlock) {
+        html += `<span class="raw-best-route">${escapeHtml(blockText)}</span>`;
+      } else {
+        html += escapeHtml(blockText);
+      }
+    }
+  }
+  // 3. Tabular formats (Cisco, Huawei tabular, BIRD, MikroTik)
+  else {
+    const lines = raw.split("\n");
+    const resultLines = [];
+
+    for (const line of lines) {
+      const isCiscoBest = /^\s*\*>\S*/.test(line);
+      const isMikrotikBest = /^\s*\d+\s+DA[bv]/.test(line) || /^\s*DA[bv]/.test(line);
+      const isBirdBest = /\[\*BGP/i.test(line) || /\*\s+\(\d+\)/.test(line);
+
+      if (isCiscoBest || isMikrotikBest || isBirdBest) {
+        resultLines.push(`<span class="raw-best-route">${escapeHtml(line)}</span>`);
+      } else {
+        resultLines.push(escapeHtml(line));
+      }
+    }
+    html = resultLines.join("\n");
+  }
+
+  if (truncated) {
+    html += `\n\n<span class="meta">${escapeHtml(t("result.truncated"))}</span>`;
+  }
+  return html;
+}
+
+function renderRaw(output, truncated, isBgp = false) {
   const panel = document.getElementById("raw-panel");
   const pre = document.getElementById("raw");
-  pre.textContent = output ?? "";
-  if (truncated) {
-    pre.textContent += `\n\n${t("result.truncated")}`;
+  if (!output) {
+    pre.textContent = "";
+    panel.hidden = false;
+    return;
+  }
+
+  if (isBgp) {
+    pre.innerHTML = highlightBgpRaw(output, truncated);
+  } else {
+    pre.textContent = output;
+    if (truncated) {
+      pre.textContent += `\n\n${t("result.truncated")}`;
+    }
   }
   panel.hidden = false;
 }
 
 function renderBgp(result, queryTarget) {
-  renderRaw(result.raw_output, result.truncated);
+  renderRaw(result.raw_output, result.truncated, true);
 
   if (result.completeness?.state === "partial") {
     const box = document.getElementById("error");
@@ -728,18 +831,20 @@ function renderGraph(paths) {
       cx: node.x,
       cy: node.y,
       r: radius,
-      fill: "rgba(6, 9, 14, 0.9)",
+      fill: "var(--graph-node-bg)",
       stroke: colour,
-      "stroke-width": 2,
+      "stroke-width": 2.5,
+      filter: "drop-shadow(0 2px 4px var(--graph-shadow))",
     });
 
     const label = draw("text", {
       x: node.x,
       y: node.y + 5,
       "text-anchor": "middle",
-      fill: "var(--text-main)",
+      fill: "var(--graph-node-text)",
       "font-family": "var(--font-mono)",
       "font-size": 13,
+      "font-weight": "600",
     });
     label.textContent = isLocal ? t("form.router") : `AS${node.asn}`;
   }
@@ -755,6 +860,7 @@ function renderGraph(paths) {
       "text-anchor": "middle",
       "font-family": "var(--font-sans)",
       "font-size": 12,
+      "font-weight": "600",
       fill:
         best.rpki.status === "valid"
           ? "var(--accent-best)"

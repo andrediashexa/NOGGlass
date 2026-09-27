@@ -5,6 +5,7 @@
   "about.title": "About this instance",
   "app.name": "NOGGlass",
   "app.tagline": "Multi-vendor looking glass",
+  "badge.best": "Active Route",
   "captcha.desc": "Frequent queries require verification. Enter the 5 characters shown below:",
   "captcha.submit": "Verify & Run",
   "captcha.title": "Security Verification",
