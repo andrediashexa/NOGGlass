@@ -3,6 +3,7 @@ use crate::driver::{
     Origin, PingResult, RpkiStatus, RpkiValidation, TracerouteResult, VendorDriver,
 };
 use ipnet::IpNet;
+use std::net::IpAddr;
 
 /// One route line, split into fields.
 #[derive(Debug, Default)]
@@ -303,6 +304,10 @@ impl VendorDriver for HuaweiVrpDriver {
             return Ok(parse_detail_blocks(raw));
         }
 
+        if raw.contains("PrefixLen") {
+            return Ok(parse_ipv6_table_blocks(raw));
+        }
+
         // `display bgp routing-table` prints fixed-width columns under a header:
         //
         //  Status codes: * - valid, > - best, d - damped ...
@@ -501,6 +506,204 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
         result
     };
     result.partial(unreadable)
+}
+
+/// Reads Huawei VRP's multi-line IPv6 routing table format.
+fn parse_ipv6_table_blocks(raw: &str) -> BgpRouteResult {
+    let mut paths = Vec::new();
+    let mut current_network: Option<IpNet> = None;
+    let mut current_flags = String::new();
+    let mut current_rpki: Option<RpkiStatus> = None;
+    let mut current_next_hop: Option<IpAddr> = None;
+    let mut current_loc_prf: Option<u32> = None;
+    let mut current_med: Option<u32> = None;
+    let mut current_pref_val: Option<u32> = None;
+    let mut current_as_path_str = String::new();
+    let mut in_path = false;
+
+    let finish_path = |paths: &mut Vec<BgpPath>,
+                       current_network: Option<IpNet>,
+                       flags: &str,
+                       rpki: Option<RpkiStatus>,
+                       next_hop: Option<IpAddr>,
+                       loc_prf: Option<u32>,
+                       med: Option<u32>,
+                       pref_val: Option<u32>,
+                       as_path_str: &str| {
+        if next_hop.is_some() || !as_path_str.is_empty() {
+            let (as_path, origin) = parse_as_path(as_path_str);
+            paths.push(BgpPath {
+                prefix: current_network,
+                next_hop,
+                is_best: flags.contains('>') || flags.contains('x'),
+                is_valid: Some(flags.contains('*')),
+                as_path,
+                med,
+                local_pref: loc_prf,
+                weight: pref_val,
+                origin,
+                rpki: rpki.map(RpkiValidation::from_router).unwrap_or_default(),
+                ..BgpPath::default()
+            });
+        }
+    };
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with("Total")
+            || trimmed.starts_with("BGP")
+            || trimmed.starts_with("Status")
+            || trimmed.starts_with("Origin")
+            || trimmed.starts_with("RPKI")
+            || trimmed.starts_with("Route Flag")
+            || trimmed.starts_with("Paths:")
+            || trimmed.starts_with("VPN-Instance")
+            || trimmed.starts_with("Info:")
+            || trimmed.starts_with("Warning:")
+            || trimmed.starts_with("display ")
+            || trimmed.starts_with('<')
+            || trimmed.contains(" - valid")
+            || trimmed.contains(" - best")
+            || trimmed.contains(" - damped")
+            || trimmed.contains(" - history")
+            || trimmed.contains(" - internal")
+            || trimmed.contains(" - suppressed")
+            || trimmed.contains(" - Stale")
+            || trimmed.contains(" - not-found")
+            || trimmed.contains(" - invalid")
+            || trimmed.contains(" - IGP")
+            || trimmed.contains(" - EGP")
+            || trimmed.contains(" - incomplete")
+        {
+            continue;
+        }
+
+        let trimmed_start = line.trim_start();
+        let starts_with_flag = trimmed_start.starts_with('*') || trimmed_start.starts_with('>');
+
+        if starts_with_flag {
+            if in_path {
+                finish_path(
+                    &mut paths,
+                    current_network,
+                    &current_flags,
+                    current_rpki,
+                    current_next_hop,
+                    current_loc_prf,
+                    current_med,
+                    current_pref_val,
+                    &current_as_path_str,
+                );
+                current_flags.clear();
+                current_rpki = None;
+                current_next_hop = None;
+                current_loc_prf = None;
+                current_med = None;
+                current_pref_val = None;
+                current_as_path_str.clear();
+            }
+
+            in_path = true;
+            let mut tokens = trimmed_start.split_whitespace();
+            if let Some(t1) = tokens.next() {
+                if t1.chars().all(|c| "*>dhsixasS".contains(c)) {
+                    current_flags = t1.to_string();
+                    if let Some(t2) = tokens.next() {
+                        if matches!(t2, "V" | "I" | "N") {
+                            current_rpki = match t2 {
+                                "V" => Some(RpkiStatus::Valid),
+                                "I" => Some(RpkiStatus::Invalid),
+                                "N" => Some(RpkiStatus::NotFound),
+                                _ => None,
+                            };
+                        }
+                    }
+                }
+            }
+
+            if let Some(net_pos) = line.find("Network") {
+                if let Some(colon_pos) = line[net_pos..].find(':') {
+                    let after_colon = &line[net_pos + colon_pos + 1..];
+                    if let Some(prefix_pos) = after_colon.find("PrefixLen") {
+                        let ip_part = after_colon[..prefix_pos].trim();
+                        if let Some(plen_colon) = after_colon[prefix_pos..].find(':') {
+                            let plen_part = after_colon[prefix_pos + plen_colon + 1..].trim();
+                            let plen_token = plen_part.split_whitespace().next().unwrap_or("");
+                            if let Ok(net) = format!("{ip_part}/{plen_token}").parse::<IpNet>() {
+                                current_network = Some(net);
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        if in_path {
+            if let Some(nh_pos) = line.find("NextHop") {
+                if let Some(colon_pos) = line[nh_pos..].find(':') {
+                    let after_colon = &line[nh_pos + colon_pos + 1..];
+                    let nh_str = if let Some(lp_pos) = after_colon.find("LocPrf") {
+                        if let Some(lp_colon) = after_colon[lp_pos..].find(':') {
+                            let lp_val_str = after_colon[lp_pos + lp_colon + 1..].trim();
+                            if let Some(token) = lp_val_str.split_whitespace().next() {
+                                current_loc_prf = token.parse::<u32>().ok();
+                            }
+                        }
+                        after_colon[..lp_pos].trim()
+                    } else {
+                        after_colon.trim()
+                    };
+                    if let Some(token) = nh_str.split_whitespace().next() {
+                        current_next_hop = token.parse::<IpAddr>().ok();
+                    }
+                }
+            } else if let Some(med_pos) = line.find("MED") {
+                if let Some(colon_pos) = line[med_pos..].find(':') {
+                    let after_colon = &line[med_pos + colon_pos + 1..];
+                    let med_str = if let Some(pv_pos) = after_colon.find("PrefVal") {
+                        if let Some(pv_colon) = after_colon[pv_pos..].find(':') {
+                            let pv_val_str = after_colon[pv_pos + pv_colon + 1..].trim();
+                            if let Some(token) = pv_val_str.split_whitespace().next() {
+                                current_pref_val = token.parse::<u32>().ok();
+                            }
+                        }
+                        after_colon[..pv_pos].trim()
+                    } else {
+                        after_colon.trim()
+                    };
+                    if let Some(token) = med_str.split_whitespace().next() {
+                        current_med = token.parse::<u32>().ok();
+                    }
+                }
+            } else if let Some(path_pos) = line.find("Path/Ogn") {
+                if let Some(colon_pos) = line[path_pos..].find(':') {
+                    let path_text = line[path_pos + colon_pos + 1..].trim();
+                    current_as_path_str.push_str(path_text);
+                }
+            } else if !current_as_path_str.is_empty() && line.starts_with("        ") {
+                current_as_path_str.push(' ');
+                current_as_path_str.push_str(trimmed);
+            }
+        }
+    }
+
+    if in_path {
+        finish_path(
+            &mut paths,
+            current_network,
+            &current_flags,
+            current_rpki,
+            current_next_hop,
+            current_loc_prf,
+            current_med,
+            current_pref_val,
+            &current_as_path_str,
+        );
+    }
+
+    BgpRouteResult::new(paths, raw)
 }
 
 fn append_communities(text: &str, path: &mut BgpPath) {
@@ -991,5 +1194,60 @@ mod real_ne40e_tests {
             matches!(error, DriverError::ParseError(_)),
             "got {error:?}, which is not a refusal"
         );
+    }
+
+    #[test]
+    fn parses_huawei_multiline_ipv6_table() {
+        let raw = "\
+BGP Local router ID is 172.20.20.255
+ Status codes: * - valid, > - best, d - damped, x - best external, a - add path,
+               h - history,  i - internal, s - suppressed, S - Stale
+               Origin : i - IGP, e - EGP, ? - incomplete
+ RPKI validation codes: V - valid, I - invalid, N - not-found
+
+
+ Total Number of Routes: 20
+ *    N Network  : 2804:1B18:110::                          PrefixLen : 48  
+        NextHop  : 2001:12F8:0:2::54:131                    LocPrf    : 200 
+        MED      :                                          PrefVal   : 0
+        Label    : 
+        Path/Ogn : 269311 61708 61708 61708 61708 61708 61708 61708 61708 61708 61708i
+ *    N  
+        NextHop  : 2001:12F8:0:2::54:131                    LocPrf    : 200 
+        MED      :                                          PrefVal   : 0
+        Label    : 
+        Path/Ogn : 269311 61708 61708 61708 61708 61708 61708 61708 61708 61708 61708i
+ *>   V Network  : 2804:1EBC:FFFE::                         PrefixLen : 48  
+        NextHop  : 2001:12F8:0:2::54:131                    LocPrf    : 200 
+        MED      :                                          PrefVal   : 0
+        Label    : 
+        Path/Ogn : 269311 264446i
+";
+        let result = HuaweiVrpDriver.parse_bgp_route(raw).expect("parsed ipv6 table");
+        assert_eq!(result.paths.len(), 3);
+
+        // Primeiro caminho
+        assert_eq!(result.paths[0].prefix.unwrap().to_string(), "2804:1b18:110::/48");
+        assert_eq!(result.paths[0].next_hop.unwrap().to_string(), "2001:12f8:0:2::54:131");
+        assert_eq!(result.paths[0].local_pref, Some(200));
+        assert_eq!(result.paths[0].med, None);
+        assert_eq!(result.paths[0].weight, Some(0));
+        assert_eq!(result.paths[0].is_best, false);
+        assert_eq!(result.paths[0].is_valid, Some(true));
+        assert_eq!(result.paths[0].rpki.status, RpkiStatus::NotFound);
+        assert_eq!(result.paths[0].as_path.len(), 11);
+        assert_eq!(result.paths[0].as_path[0], 269311);
+        assert_eq!(result.paths[0].as_path[1], 61708);
+        assert_eq!(result.paths[0].origin, Some(Origin::Igp));
+
+        // Segundo caminho (mesmo prefixo)
+        assert_eq!(result.paths[1].prefix.unwrap().to_string(), "2804:1b18:110::/48");
+        assert_eq!(result.paths[1].is_best, false);
+
+        // Terceiro caminho (novo prefixo, best path, RPKI Valid)
+        assert_eq!(result.paths[2].prefix.unwrap().to_string(), "2804:1ebc:fffe::/48");
+        assert_eq!(result.paths[2].is_best, true);
+        assert_eq!(result.paths[2].rpki.status, RpkiStatus::Valid);
+        assert_eq!(result.paths[2].as_path, vec![269311, 264446]);
     }
 }
