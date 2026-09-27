@@ -27,6 +27,8 @@ struct JunosRouteTable {
 struct JunosRt {
     #[serde(rename = "rt-destination")]
     rt_destination: Option<Vec<JunosText>>,
+    #[serde(rename = "rt-prefix-length")]
+    rt_prefix_length: Option<Vec<JunosText>>,
     #[serde(rename = "rt-entry")]
     rt_entry: Option<Vec<JunosRtEntry>>,
 }
@@ -42,7 +44,11 @@ struct JunosRtEntry {
     #[serde(rename = "local-preference")]
     local_preference: Option<Vec<JunosText>>,
     metric: Option<Vec<JunosText>>,
+    metric2: Option<Vec<JunosText>>,
     nh: Option<Vec<JunosNh>>,
+    #[serde(rename = "protocol-nh")]
+    protocol_nh: Option<Vec<JunosNh>>,
+    gateway: Option<Vec<JunosText>>,
     communities: Option<Vec<JunosCommunity>>,
 }
 
@@ -53,13 +59,32 @@ struct JunosCommunity {
 
 #[derive(Deserialize, Debug)]
 struct JunosNh {
-    #[serde(rename = "to")]
     to: Option<Vec<JunosText>>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default, Clone)]
 struct JunosText {
-    data: String,
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
+    data: Option<String>,
+}
+
+fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(match v {
+        Some(serde_json::Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    })
 }
 
 impl VendorDriver for JuniperDriver {
@@ -142,21 +167,46 @@ impl VendorDriver for JuniperDriver {
                     for table in tables {
                         if let Some(rts) = table.rt {
                             for rt in rts {
-                                let network = rt
+                                let dest = rt
                                     .rt_destination
-                                    .and_then(|d| d.into_iter().next())
-                                    .map(|t| t.data)
+                                    .as_ref()
+                                    .and_then(|d| d.first())
+                                    .and_then(|t| t.data.as_deref())
                                     .unwrap_or_default();
+
+                                let prefix_len = rt
+                                    .rt_prefix_length
+                                    .as_ref()
+                                    .and_then(|d| d.first())
+                                    .and_then(|t| t.data.as_deref());
+
+                                let network_str = match prefix_len {
+                                    Some(len) if !dest.contains('/') && !len.is_empty() => {
+                                        format!("{dest}/{len}")
+                                    }
+                                    _ => dest.to_string(),
+                                };
+                                let prefix = parse_network(&network_str);
 
                                 if let Some(entries) = rt.rt_entry {
                                     for entry in entries {
-                                        let is_best = entry.active_tag.is_some();
+                                        // In Junos JSON, active-tag contains {"data": "*"} for the best path,
+                                        // and empty object {} or absent for inactive paths.
+                                        let is_best = entry
+                                            .active_tag
+                                            .as_ref()
+                                            .and_then(|t| t.first())
+                                            .and_then(|item| item.data.as_deref())
+                                            .map(|d| d.contains('*'))
+                                            .unwrap_or(false);
 
-                                        // RPKI validation nativo do JunOS
+                                        // RPKI validation native to Junos
                                         let rpki_status = match entry
                                             .validation_state
-                                            .and_then(|v| v.into_iter().next())
-                                            .map(|t| t.data.to_lowercase())
+                                            .as_ref()
+                                            .and_then(|v| v.first())
+                                            .and_then(|t| t.data.as_deref())
+                                            .map(str::to_lowercase)
                                             .as_deref()
                                         {
                                             Some("valid") => RpkiStatus::Valid,
@@ -169,26 +219,53 @@ impl VendorDriver for JuniperDriver {
 
                                         let next_hop = entry
                                             .nh
-                                            .and_then(|n| n.into_iter().next())
-                                            .and_then(|n| n.to)
-                                            .and_then(|t| t.into_iter().next())
-                                            .and_then(|t| parse_hop(&t.data));
+                                            .as_ref()
+                                            .and_then(|n| n.first())
+                                            .and_then(|n| n.to.as_ref())
+                                            .and_then(|t| t.first())
+                                            .and_then(|t| t.data.as_deref())
+                                            .or_else(|| {
+                                                entry
+                                                    .protocol_nh
+                                                    .as_ref()
+                                                    .and_then(|n| n.first())
+                                                    .and_then(|n| n.to.as_ref())
+                                                    .and_then(|t| t.first())
+                                                    .and_then(|t| t.data.as_deref())
+                                            })
+                                            .or_else(|| {
+                                                entry
+                                                    .gateway
+                                                    .as_ref()
+                                                    .and_then(|g| g.first())
+                                                    .and_then(|t| t.data.as_deref())
+                                            })
+                                            .and_then(parse_hop);
 
-                                        // Junos prints "65100 65500 I": AS
-                                        // numbers followed by the origin marker.
+                                        // Junos prints "65100 65500 I" or "AS path: 7018 13335 I (Atomic)\nAggregator: 13335 10.34.36.200".
+                                        // We parse only the primary AS path line and ignore aggregator / atomic tags.
                                         let mut as_path = Vec::new();
                                         let mut origin = None;
-                                        if let Some(ap_vec) = entry.as_path {
-                                            if let Some(ap_txt) = ap_vec.into_iter().next() {
-                                                for token in ap_txt.data.split_whitespace() {
-                                                    if let Ok(asn) = token.parse::<u32>() {
-                                                        as_path.push(asn);
-                                                    } else if let Some(marker) = token
-                                                        .chars()
-                                                        .next()
-                                                        .and_then(Origin::from_marker)
-                                                    {
-                                                        origin = Some(marker);
+                                        if let Some(ap_vec) = &entry.as_path {
+                                            if let Some(ap_txt) = ap_vec.first() {
+                                                if let Some(data) = ap_txt.data.as_deref() {
+                                                    let first_line =
+                                                        data.lines().next().unwrap_or(data);
+                                                    let cleaned = first_line
+                                                        .strip_prefix("AS path:")
+                                                        .unwrap_or(first_line);
+                                                    for token in cleaned.split_whitespace() {
+                                                        if let Ok(asn) = token.parse::<u32>() {
+                                                            as_path.push(asn);
+                                                        } else if origin.is_none() {
+                                                            if let Some(marker) = token
+                                                                .chars()
+                                                                .next()
+                                                                .and_then(Origin::from_marker)
+                                                            {
+                                                                origin = Some(marker);
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -196,21 +273,41 @@ impl VendorDriver for JuniperDriver {
 
                                         let local_pref = entry
                                             .local_preference
-                                            .and_then(|lp| lp.into_iter().next())
-                                            .and_then(|t| t.data.parse().ok());
+                                            .as_ref()
+                                            .and_then(|lp| lp.first())
+                                            .and_then(|t| t.data.as_deref())
+                                            .and_then(|s| s.parse().ok());
 
                                         let med = entry
                                             .metric
-                                            .and_then(|m| m.into_iter().next())
-                                            .and_then(|t| t.data.parse().ok());
+                                            .as_ref()
+                                            .and_then(|m| m.first())
+                                            .and_then(|t| t.data.as_deref())
+                                            .and_then(|s| s.parse().ok())
+                                            .or_else(|| {
+                                                entry
+                                                    .metric2
+                                                    .as_ref()
+                                                    .and_then(|m| m.first())
+                                                    .and_then(|t| t.data.as_deref())
+                                                    .and_then(|s| s.parse().ok())
+                                            });
 
                                         let mut communities = Vec::new();
-                                        if let Some(comms) = entry.communities {
+                                        if let Some(comms) = &entry.communities {
                                             for c in comms {
-                                                if let Some(list) = c.community {
+                                                if let Some(list) = &c.community {
                                                     for item in list {
-                                                        communities
-                                                            .push(Community::parse(&item.data));
+                                                        if let Some(comm_str) =
+                                                            item.data.as_deref()
+                                                        {
+                                                            let clean = comm_str
+                                                                .strip_prefix("large:")
+                                                                .unwrap_or(comm_str);
+                                                            communities.push(Community::parse(
+                                                                clean,
+                                                            ));
+                                                        }
                                                     }
                                                 }
                                             }
@@ -219,7 +316,7 @@ impl VendorDriver for JuniperDriver {
                                         paths.push(BgpPath {
                                             is_best,
                                             is_valid: Some(true),
-                                            prefix: parse_network(&network),
+                                            prefix,
                                             next_hop,
                                             as_path,
                                             local_pref,
@@ -246,3 +343,81 @@ impl VendorDriver for JuniperDriver {
         Ok(crate::summary::parse(raw))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::driver::{CommunityKind, Origin, RpkiSource, RpkiStatus};
+
+    #[test]
+    fn parses_junos_json_with_active_and_inactive_paths() {
+        let raw = r#"{
+            "route-information" : [
+            {
+                "route-table" : [
+                {
+                    "table-name" : [{"data" : "inet.0"}],
+                    "rt" : [
+                    {
+                        "rt-destination" : [{"data" : "1.1.1.0"}],
+                        "rt-prefix-length" : [{"data" : "24"}],
+                        "rt-entry" : [
+                        {
+                            "active-tag" : [{"data" : "*"}],
+                            "protocol-name" : [{"data" : "BGP"}],
+                            "gateway" : [{"data" : "12.122.83.238"}],
+                            "validation-state" : [{"data" : "valid"}],
+                            "as-path" : [{"data" : "AS path: 7018 13335 I (Atomic)\nAggregator: 13335 10.34.36.200"}],
+                            "communities" : [{"community" : [{"data" : "7018:2500"}, {"data" : "large:13335:10000017:0"}]}],
+                            "local-preference" : [{"data" : "100"}],
+                            "metric2" : [{"data" : "0"}]
+                        },
+                        {
+                            "active-tag" : [{}],
+                            "protocol-name" : [{"data" : "BGP"}],
+                            "protocol-nh" : [{"to" : [{"data" : "12.122.120.7"}]}],
+                            "validation-state" : [{"data" : "valid"}],
+                            "as-path" : [{"data" : "AS path: 7018 13335 E"}],
+                            "local-preference" : [{"data" : "100"}]
+                        }
+                        ]
+                    }
+                    ]
+                }
+                ]
+            }
+            ]
+        }"#;
+
+        let result = JuniperDriver
+            .parse_bgp_route(raw)
+            .expect("must parse Junos JSON without error");
+
+        assert_eq!(result.paths.len(), 2);
+
+        // Path 0: active (best) path
+        let p0 = &result.paths[0];
+        assert!(p0.is_best, "path 0 must be marked best");
+        assert_eq!(p0.prefix.unwrap().to_string(), "1.1.1.0/24");
+        assert_eq!(p0.next_hop.unwrap().to_string(), "12.122.83.238");
+        assert_eq!(p0.as_path, vec![7018, 13335]);
+        assert_eq!(p0.origin, Some(Origin::Igp));
+        assert_eq!(p0.local_pref, Some(100));
+        assert_eq!(p0.med, Some(0));
+        assert_eq!(p0.rpki.status, RpkiStatus::Valid);
+        assert_eq!(p0.rpki.source, RpkiSource::Router);
+        assert_eq!(p0.communities.len(), 2);
+        assert_eq!(p0.communities[0].raw, "7018:2500");
+        assert_eq!(p0.communities[0].kind, CommunityKind::Standard);
+        assert_eq!(p0.communities[1].raw, "13335:10000017:0");
+        assert_eq!(p0.communities[1].kind, CommunityKind::Large);
+
+        // Path 1: inactive path
+        let p1 = &result.paths[1];
+        assert!(!p1.is_best, "path 1 must NOT be marked best");
+        assert_eq!(p1.next_hop.unwrap().to_string(), "12.122.120.7");
+        assert_eq!(p1.as_path, vec![7018, 13335]);
+        assert_eq!(p1.origin, Some(Origin::Egp));
+    }
+}
+
