@@ -154,26 +154,29 @@ async fn run() -> Result<(), String> {
     }
 
     let inventory = Arc::new(inventory);
-    let any_pinned = inventory.routers.iter().any(|r| r.host_key.is_some());
-    let host_keys = inventory
+    let pinned_count = inventory
         .routers
         .iter()
-        .filter_map(|r| r.host_key.clone())
-        .collect::<Vec<_>>();
-    let host_key_policy = if any_pinned {
-        info!("SSH transport configured with pinned host keys for inventory routers");
-        HostKeyPolicy::Pinned(Arc::new(host_keys))
+        .filter(|r| r.host_key.is_some())
+        .count();
+    let total_count = inventory.routers.len();
+    if pinned_count == total_count && total_count > 0 {
+        info!("All {total_count} routers have pinned SSH host keys");
+    } else if pinned_count > 0 {
+        info!(
+            "{pinned_count} of {total_count} routers have pinned SSH host keys; unpinned routers connect with AcceptAny"
+        );
     } else {
         warn!(
             "running with SSH HostKeyPolicy::AcceptAny — no router host keys configured in nogglass.toml. \
              In production, set 'host_key' for routers to prevent Man-in-the-Middle attacks."
         );
-        HostKeyPolicy::AcceptAny
-    };
+    }
+
     let transport: Arc<dyn Transport> = Arc::new(SshTransport::new(
-        Duration::from_secs(10),
-        Duration::from_secs(20),
-        host_key_policy,
+        Duration::from_secs(15),
+        Duration::from_secs(30),
+        HostKeyPolicy::AcceptAny,
     ));
     let mut executor = Executor::new(inventory.clone(), Arc::new(BUILTIN.clone()), transport);
 

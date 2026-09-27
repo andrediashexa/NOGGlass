@@ -373,10 +373,22 @@ async fn run_query(
     }
 
     let target = parse_target(&request.target)?;
-    let execution = state
+    let execution = match state
         .executor
         .execute(&request.router, request.query_type, &target)
-        .await?;
+        .await
+    {
+        Ok(exec) => exec,
+        Err(err) => {
+            tracing::warn!(
+                router = %request.router,
+                target = %request.target,
+                error = %err,
+                "query execution failed"
+            );
+            return Err(err.into());
+        }
+    };
 
     let mut response: QueryResponse = execution.into();
     add_global_view(&state, &target, &mut response).await;
@@ -473,10 +485,19 @@ async fn handle_stream_query(
                 .event("result")
                 .json_data(payload)
                 .unwrap_or_else(|_| Event::default().event("error").data("serialisation failed")),
-            Err(error) => Event::default()
-                .event("error")
-                .json_data(error.body())
-                .unwrap_or_else(|_| Event::default().event("error").data("unknown error")),
+            Err(error) => {
+                tracing::warn!(
+                    router = %request.router,
+                    target = %request.target,
+                    code = %error.code,
+                    message = %error.message,
+                    "stream query execution failed"
+                );
+                Event::default()
+                    .event("error")
+                    .json_data(error.body())
+                    .unwrap_or_else(|_| Event::default().event("error").data("unknown error"))
+            }
         };
         let _ = sender.send(event).await;
     });

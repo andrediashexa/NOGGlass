@@ -92,17 +92,35 @@ impl SshTransport {
 
         let result = match &router.credentials {
             Credentials::PasswordEnv(variable) => {
-                let password = std::env::var(variable)
-                    .map_err(|_| DriverError::ConnectionFailed(format!("{variable} is not set")))?;
+                let password = std::env::var(variable).map_err(|_| {
+                    tracing::error!(
+                        router = %router.id,
+                        variable = %variable,
+                        "router credential error: environment variable is not set"
+                    );
+                    DriverError::ConnectionFailed(format!("{variable} is not set"))
+                })?;
                 if password.is_empty() {
+                    tracing::error!(
+                        router = %router.id,
+                        variable = %variable,
+                        "router credential error: environment variable is empty"
+                    );
                     return Err(DriverError::ConnectionFailed(format!(
                         "{variable} is empty"
                     )));
                 }
                 session
-                    .authenticate_password(user, password)
+                    .authenticate_password(user.clone(), password)
                     .await
-                    .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?
+                    .map_err(|e| {
+                        tracing::error!(
+                            router = %router.id,
+                            error = %e,
+                            "SSH authenticate_password network/protocol error"
+                        );
+                        DriverError::ConnectionFailed(e.to_string())
+                    })?
             }
             Credentials::KeyFile {
                 path,
@@ -112,23 +130,49 @@ impl SshTransport {
                     .as_ref()
                     .and_then(|variable| std::env::var(variable).ok())
                     .filter(|value| !value.is_empty());
-                let key = load_secret_key(path, passphrase.as_deref())
-                    .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?;
+                let key = load_secret_key(path, passphrase.as_deref()).map_err(|e| {
+                    tracing::error!(
+                        router = %router.id,
+                        path = %path,
+                        error = %e,
+                        "failed to load SSH private key file"
+                    );
+                    DriverError::ConnectionFailed(e.to_string())
+                })?;
                 session
-                    .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), None))
+                    .authenticate_publickey(
+                        user.clone(),
+                        PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                    )
                     .await
-                    .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?
+                    .map_err(|e| {
+                        tracing::error!(
+                            router = %router.id,
+                            error = %e,
+                            "SSH authenticate_publickey error"
+                        );
+                        DriverError::ConnectionFailed(e.to_string())
+                    })?
             }
             Credentials::None => {
+                tracing::error!(
+                    router = %router.id,
+                    "no credentials configured for router"
+                );
                 return Err(DriverError::ConnectionFailed(
                     "no credentials configured".to_string(),
-                ))
+                ));
             }
         };
 
         if !result.success() {
             // Never says which of user, password or method was wrong: that is
             // an oracle for anyone who can read the visitor-facing error.
+            tracing::error!(
+                router = %router.id,
+                username = %user,
+                "SSH authentication was refused by the router (check username/password in environment)"
+            );
             return Err(DriverError::ConnectionFailed(
                 "authentication was refused".to_string(),
             ));
@@ -241,10 +285,18 @@ impl client::Handler for ClientHandler {
                     }
                     russh::keys::PublicKeyOrCertificate::Certificate(c) => c.to_openssh().ok(),
                 };
-                Ok(match offered {
+                let matched = match &offered {
                     Some(offered) => allowed.iter().any(|a| a.trim() == offered.trim()),
                     None => false,
-                })
+                };
+                if !matched {
+                    tracing::error!(
+                        offered = ?offered,
+                        allowed = ?allowed,
+                        "SSH host key verification failed: server host key does not match pinned keys"
+                    );
+                }
+                Ok(matched)
             }
         }
     }
@@ -286,19 +338,43 @@ impl Transport for SshTransport {
             client::connect(config, (router.host.as_str(), router.port), handler),
         )
         .await
-        .map_err(|_| DriverError::ConnectionFailed("connection timed out".to_string()))?
-        .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?;
+        .map_err(|_| {
+            tracing::error!(
+                router = %router.id,
+                host = %router.host,
+                port = router.port,
+                timeout_secs = self.connect_timeout.as_secs(),
+                "SSH connection timed out"
+            );
+            DriverError::ConnectionFailed("connection timed out".to_string())
+        })?
+        .map_err(|e| {
+            tracing::error!(
+                router = %router.id,
+                host = %router.host,
+                port = router.port,
+                error = %e,
+                "SSH connection failed (TCP or handshake)"
+            );
+            DriverError::ConnectionFailed(e.to_string())
+        })?;
 
         self.authenticate(&mut session, router).await?;
 
         let vendor = crate::catalogue::BUILTIN
             .vendor(&router.vendor)
-            .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(router = %router.id, vendor = %router.vendor, error = %e, "unknown vendor in catalogue");
+                DriverError::ConnectionFailed(e.to_string())
+            })?;
 
         let mut channel = session
             .channel_open_session()
             .await
-            .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(router = %router.id, error = %e, "SSH channel_open_session failed");
+                DriverError::ConnectionFailed(e.to_string())
+            })?;
 
         // One exec request, no terminal, read until the channel closes.
         //
@@ -369,7 +445,16 @@ impl Transport for SshTransport {
             .await
             .map_err(|e| DriverError::IoError(e.to_string()))?;
 
-        let output = read_until_prompt(&mut channel, &prompt, self.idle_timeout, true).await?;
+        let output = read_until_prompt(&mut channel, &prompt, self.idle_timeout, true)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    router = %router.id,
+                    error = ?e,
+                    "failed reading router output until prompt"
+                );
+                e
+            })?;
 
         // Best effort: the answer is already in hand, so a failure to say
         // goodbye politely is not the visitor's problem.
@@ -629,3 +714,5 @@ mod host_key_tests {
         );
     }
 }
+
+
