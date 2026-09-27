@@ -725,60 +725,156 @@ function renderTable(paths) {
  * titles for assistive technology.
  */
 function renderGraph(paths) {
-  const columns = [];
-  const seen = new Map();
+  if (!paths || !paths.length) return;
 
-  for (const path of paths) {
-    path.as_path.forEach((asn, index) => {
-      // Depth is counted from the right, so every origin AS lands in the last
-      // column however long each path is.
-      const depth = path.as_path.length - index;
-      const previous = seen.get(asn);
-      seen.set(asn, Math.max(previous ?? 0, depth));
-    });
-  }
+  // 1. Sanitize paths: collapse consecutive AS-prepends for clean topological node representation
+  const cleanPaths = paths.map((p) => {
+    const rawAsPath = Array.isArray(p.as_path) ? p.as_path : [];
+    const deduped = rawAsPath.filter(
+      (asn, idx, arr) => idx === 0 || String(asn) !== String(arr[idx - 1]),
+    );
+    return {
+      ...p,
+      hops: ["local", ...deduped.map(String)],
+    };
+  });
 
-  const maxDepth = Math.max(...seen.values(), 1);
-  const placed = new Map();
-  for (const [asn, depth] of seen) {
-    const column = maxDepth - depth + 1;
-    if (!placed.has(column)) placed.set(column, []);
-    placed.get(column).push(asn);
-  }
+  // 2. Topological rank assignment (longest-path DAG relaxation from the local router)
+  const ranks = new Map();
+  ranks.set("local", 0);
 
-  // Columns with nobody in them are dropped rather than left as holes.
-  //
-  // A prepended path — `64496 64496 64496 65536 …` — gives one AS three
-  // depths and the node keeps the deepest, so the columns the other two would
-  // have filled belong to nobody. Iterating an array with holes yields
-  // `undefined` for them, and drawing threw on the first one: prepending is in
-  // every real routing table and in none of the mock's, which is why this only
-  // appeared against a router.
-  const nodes = new Map();
-  columns.push(["local"]);
-  nodes.set("local", { asn: "local", column: 0 });
-  for (const column of [...placed.keys()].sort((a, b) => a - b)) {
-    const members = placed.get(column);
-    const index = columns.length;
-    columns.push(members);
-    for (const asn of members) {
-      nodes.set(asn, { asn, column: index });
+  for (const path of cleanPaths) {
+    for (const asn of path.hops) {
+      if (!ranks.has(asn)) ranks.set(asn, 0);
     }
   }
 
+  const allHops = cleanPaths.map((p) => p.hops);
+  const numNodes = ranks.size;
+  for (let iter = 0; iter < numNodes; iter++) {
+    let changed = false;
+    for (const hops of allHops) {
+      for (let i = 0; i < hops.length - 1; i++) {
+        const u = hops[i];
+        const v = hops[i + 1];
+        const requiredRank = ranks.get(u) + 1;
+        if (ranks.get(v) < requiredRank) {
+          ranks.set(v, requiredRank);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  const maxRank = Math.max(...ranks.values(), 1);
+  const originAsns = new Set(
+    cleanPaths.map((p) => p.hops[p.hops.length - 1]).filter(Boolean),
+  );
+
+  // A terminal origin has no outgoing edges in any path; align to maxRank
+  const hasOutgoing = new Set();
+  for (const hops of allHops) {
+    for (let i = 0; i < hops.length - 1; i++) {
+      hasOutgoing.add(hops[i]);
+    }
+  }
+
+  for (const origin of originAsns) {
+    if (!hasOutgoing.has(origin)) {
+      ranks.set(origin, maxRank);
+    }
+  }
+
+  // 3. Group nodes by contiguous column ranks
+  const placed = new Map();
+  for (const [asn, rank] of ranks) {
+    if (asn === "local") continue;
+    if (!placed.has(rank)) placed.set(rank, []);
+    placed.get(rank).push(asn);
+  }
+
+  const columns = [["local"]];
+  const sortedRanks = [...placed.keys()].sort((a, b) => a - b);
+  for (const rank of sortedRanks) {
+    columns.push(placed.get(rank));
+  }
+
+  const nodes = new Map();
+  for (const [colIndex, members] of columns.entries()) {
+    for (const asn of members) {
+      nodes.set(asn, { asn, column: colIndex });
+    }
+  }
+
+  // 4. Vertical layout (Y-coordinates) using path centroids
+  const pathIndices = new Map();
+  cleanPaths.forEach((path, pIdx) => {
+    for (const asn of path.hops) {
+      if (!pathIndices.has(asn)) pathIndices.set(asn, []);
+      pathIndices.get(asn).push(pIdx);
+    }
+  });
+
+  const numPaths = Math.max(cleanPaths.length, 1);
+  const maxColumnMembers = Math.max(...columns.map((c) => c.length), 1);
   const columnWidth = 190;
   const rowHeight = 96;
   const radius = 34;
-  const height = Math.max(...columns.map((c) => c.length)) * rowHeight + 40;
-  const width = columns.length * columnWidth + 60;
+  const height = Math.max(
+    Math.max(numPaths, maxColumnMembers) * rowHeight + 80,
+    240,
+  );
+  const centerY = height / 2;
 
-  for (const [index, members] of columns.entries()) {
-    members.forEach((asn, row) => {
-      const node = nodes.get(asn);
-      node.x = 50 + index * columnWidth;
-      node.y = (height / (members.length + 1)) * (row + 1);
+  for (const [colIndex, members] of columns.entries()) {
+    if (members.length === 1 && members[0] === "local") {
+      const node = nodes.get("local");
+      node.x = 60;
+      node.y = centerY;
+      continue;
+    }
+
+    // Sort members in column by their average path index (top to bottom)
+    members.sort((a, b) => {
+      const aIndices = pathIndices.get(a) ?? [0];
+      const bIndices = pathIndices.get(b) ?? [0];
+      const aAvg = aIndices.reduce((sum, v) => sum + v, 0) / aIndices.length;
+      const bAvg = bIndices.reduce((sum, v) => sum + v, 0) / bIndices.length;
+      if (Math.abs(aAvg - bAvg) > 0.001) return aAvg - bAvg;
+      const aBest = cleanPaths[0]?.hops.includes(a) ? 0 : 1;
+      const bBest = cleanPaths[0]?.hops.includes(b) ? 0 : 1;
+      if (aBest !== bBest) return aBest - bBest;
+      return String(a).localeCompare(String(b));
     });
+
+    if (members.length === 1) {
+      const asn = members[0];
+      const indices = pathIndices.get(asn) ?? [0];
+      const isSharedAll = indices.length === numPaths;
+      const node = nodes.get(asn);
+      node.x = 60 + colIndex * columnWidth;
+      if (isSharedAll) {
+        node.y = centerY;
+      } else {
+        const avg = indices.reduce((sum, v) => sum + v, 0) / indices.length;
+        const offset = (avg - (numPaths - 1) / 2) * rowHeight;
+        node.y = Math.max(radius + 25, Math.min(height - radius - 25, centerY + offset));
+      }
+    } else {
+      const minDistance = radius * 2 + 24;
+      const totalSpan = (members.length - 1) * minDistance;
+      const startY = Math.max(radius + 25, centerY - totalSpan / 2);
+
+      members.forEach((asn, idx) => {
+        const node = nodes.get(asn);
+        node.x = 60 + colIndex * columnWidth;
+        node.y = startY + idx * minDistance;
+      });
+    }
   }
+
+  const width = columns.length * columnWidth + 80;
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -794,12 +890,15 @@ function renderGraph(paths) {
     return element;
   };
 
-  // Edges first, so nodes sit on top of them.
-  for (const path of paths) {
-    const hops = ["local", ...path.as_path];
-    for (let i = 0; i < hops.length - 1; i += 1) {
-      const from = nodes.get(hops[i]);
-      const to = nodes.get(hops[i + 1]);
+  // 5. Edges: draw alternative/backup paths first, best path last so it renders cleanly on top
+  const sortedPaths = [...cleanPaths].sort(
+    (a, b) => (a.is_best ? 1 : 0) - (b.is_best ? 1 : 0),
+  );
+
+  for (const path of sortedPaths) {
+    for (let i = 0; i < path.hops.length - 1; i += 1) {
+      const from = nodes.get(path.hops[i]);
+      const to = nodes.get(path.hops[i + 1]);
       if (!from || !to) continue;
       const midpoint = (from.x + to.x) / 2;
       draw("path", {
@@ -814,10 +913,7 @@ function renderGraph(paths) {
     }
   }
 
-  const originAsns = new Set(
-    paths.map((p) => p.as_path[p.as_path.length - 1]).filter(Boolean),
-  );
-
+  // 6. Nodes (Circles & Labels)
   for (const node of nodes.values()) {
     const isLocal = node.asn === "local";
     const isOrigin = originAsns.has(node.asn);
@@ -849,11 +945,12 @@ function renderGraph(paths) {
     label.textContent = isLocal ? t("form.router") : `AS${node.asn}`;
   }
 
-  // RPKI state of the best path, next to its origin.
+  // 7. RPKI state of the best path, next to its origin
   const best = paths.find((p) => p.is_best) ?? paths[0];
-  const originAsn = best.as_path[best.as_path.length - 1];
+  const cleanBest = cleanPaths.find((p) => p.is_best) ?? cleanPaths[0];
+  const originAsn = cleanBest.hops[cleanBest.hops.length - 1];
   const originNode = nodes.get(originAsn);
-  if (originNode) {
+  if (originNode && best.rpki?.status) {
     const badge = draw("text", {
       x: originNode.x,
       y: originNode.y + radius + 20,
