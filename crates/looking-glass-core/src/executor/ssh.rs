@@ -445,7 +445,7 @@ impl Transport for SshTransport {
             .await
             .map_err(|e| DriverError::IoError(e.to_string()))?;
 
-        let output = read_until_prompt(&mut channel, &prompt, self.idle_timeout, true)
+        let mut output = read_until_prompt(&mut channel, &prompt, self.idle_timeout, true)
             .await
             .map_err(|e| {
                 tracing::error!(
@@ -455,6 +455,32 @@ impl Transport for SshTransport {
                 );
                 e
             })?;
+
+        // If the output does not contain the command echo, but instead matches
+        // the paging command or greeting banner that arrived late, read the
+        // next prompt to capture the actual command answer.
+        let has_command_echo = output
+            .lines()
+            .any(|line| line.trim_end().ends_with(command) || line.contains(command));
+
+        if !has_command_echo {
+            if let Some(paging) = paging_command {
+                if output.contains(paging) {
+                    tracing::warn!(
+                        router = %router.id,
+                        "ssh output appears to be delayed paging response; reading next prompt for command output"
+                    );
+                    if let Ok(next) =
+                        read_until_prompt(&mut channel, &prompt, self.idle_timeout, false).await
+                    {
+                        if !next.is_empty() {
+                            output.push('\n');
+                            output.push_str(&next);
+                        }
+                    }
+                }
+            }
+        }
 
         // Best effort: the answer is already in hand, so a failure to say
         // goodbye politely is not the visitor's problem.
@@ -469,9 +495,10 @@ impl Transport for SshTransport {
 
 /// How long to wait for a router's opening banner.
 ///
-/// Only reached by a router that greets with nothing at all; one that prints a
-/// banner ends this read at its prompt, whenever that arrives.
-const GREETING_TIMEOUT: Duration = Duration::from_secs(3);
+/// Routers over WAN or public route-servers may take several seconds to load
+/// legal notices and present the initial shell prompt. When the router prints
+/// a banner, this read returns immediately as soon as its prompt arrives.
+const GREETING_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// Reads an exec channel until the router closes it.
 ///
@@ -597,6 +624,24 @@ display bgp routing-table 198.51.100.0 255.255.255.0
             strip_echo(raw, "display bgp peer"),
             " Total Number of Routes: 0"
         );
+    }
+
+    #[test]
+    fn echoed_command_strips_preceding_paging_artifacts() {
+        let raw = "\
+set cli screen-length 0
+Screen length set to 0
+rviews@route-server.ip.att.net> 
+show route aspath-regex \".* 273556 .*\" detail | display json
+{
+    \"route-information\": []
+}
+rviews@route-server.ip.att.net> ";
+        let cleaned = strip_echo(
+            raw,
+            "show route aspath-regex \".* 273556 .*\" detail | display json",
+        );
+        assert_eq!(cleaned, "{\n    \"route-information\": []\n}");
     }
 
     /// Default policy is documented as laboratory-only; this test exists so
