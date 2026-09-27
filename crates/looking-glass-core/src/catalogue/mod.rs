@@ -260,6 +260,19 @@ impl Catalogue {
         Ok(render(template, &[("target", target.to_string())]))
     }
 
+    /// Builds the BGP AS-Path regex lookup for one vendor.
+    pub fn bgp_aspath(&self, vendor: &str, asn: u32) -> Result<String, CatalogueError> {
+        let commands = self.vendor(vendor)?;
+        let template = commands
+            .bgp_route_asn
+            .as_ref()
+            .ok_or_else(|| CatalogueError::Unsupported {
+                vendor: vendor.to_string(),
+                query: "bgp_aspath".to_string(),
+            })?;
+        Ok(render(template, &[("asn", asn.to_string())]))
+    }
+
     /// Builds the BGP route lookup for one vendor.
     pub fn bgp_route(&self, vendor: &str, target: &QueryTarget) -> Result<String, CatalogueError> {
         let commands = self.vendor(vendor)?;
@@ -441,7 +454,11 @@ mod tests {
             catalogue
                 .bgp_route("huawei_vrp", &parse_target("AS65500").unwrap())
                 .unwrap(),
-            "display bgp routing-table regular-expression _65500_"
+            "display bgp routing-table regular-expression ^65500_"
+        );
+        assert_eq!(
+            catalogue.bgp_aspath("huawei_vrp", 65500).unwrap(),
+            "display bgp routing-table regular-expression ^65500_"
         );
     }
 

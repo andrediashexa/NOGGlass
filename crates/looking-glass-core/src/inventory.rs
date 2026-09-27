@@ -148,7 +148,12 @@ fn default_port() -> u16 {
 impl Router {
     /// Whether a visitor may run this query against this router.
     pub fn allows(&self, query: QueryType) -> bool {
-        self.queries.is_empty() || self.queries.contains(&query)
+        if self.queries.is_empty() {
+            // Default safe queries when unspecified: do NOT enable heavy aspath regex by default.
+            query != QueryType::BgpAspath
+        } else {
+            self.queries.contains(&query)
+        }
     }
 
     /// Whether this entry is the mock router rather than a real device.
@@ -562,6 +567,7 @@ impl Inventory {
                     QueryType::BgpRoute => {
                         commands.bgp_route_v4.is_some() || commands.bgp_route_v6.is_some()
                     }
+                    QueryType::BgpAspath => commands.bgp_route_asn.is_some(),
                     QueryType::BgpSummary => commands.bgp_summary.is_some(),
                 };
                 if !supported {

@@ -46,6 +46,7 @@
   "global.unavailable": "Global view unavailable.",
   "global.visibility": "Peers seeing it",
   "mock.warning": "This router serves fabricated data for demonstration.",
+  "query.bgp_aspath": "AS Path (Regex)",
   "query.bgp_route": "BGP route",
   "query.bgp_summary": "BGP summary",
   "query.ping": "Ping",

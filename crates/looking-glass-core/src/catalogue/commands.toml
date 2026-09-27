@@ -41,7 +41,7 @@ bgp_route_v4 = "display bgp routing-table {network} {netmask}"
 bgp_route_v6 = "display bgp ipv6 routing-table {network} {prefix_len}"
 bgp_route_ip_v4 = "display bgp routing-table {target}"
 bgp_route_ip_v6 = "display bgp ipv6 routing-table {target}"
-bgp_route_asn = "display bgp routing-table regular-expression _{asn}_"
+bgp_route_asn = "display bgp routing-table regular-expression ^{asn}_"
 bgp_summary = "display bgp peer"
 
 [cisco_iosxe]
@@ -54,7 +54,7 @@ traceroute_v4 = "traceroute {target} numeric"
 traceroute_v6 = "traceroute ipv6 {target} numeric"
 bgp_route_v4 = "show bgp ipv4 unicast {target}"
 bgp_route_v6 = "show bgp ipv6 unicast {target}"
-bgp_route_asn = "show bgp ipv4 unicast regexp _{asn}_"
+bgp_route_asn = "show bgp ipv4 unicast regexp ^{asn}_"
 bgp_summary = "show bgp ipv4 unicast summary"
 
 [cisco_iosxr]
@@ -67,7 +67,7 @@ traceroute_v4 = "traceroute {target} numeric"
 traceroute_v6 = "traceroute ipv6 {target} numeric"
 bgp_route_v4 = "show bgp ipv4 unicast {target}"
 bgp_route_v6 = "show bgp ipv6 unicast {target}"
-bgp_route_asn = "show bgp ipv4 unicast regexp _{asn}_"
+bgp_route_asn = "show bgp ipv4 unicast regexp ^{asn}_"
 bgp_summary = "show bgp ipv4 unicast summary"
 
 [juniper_junos]
@@ -81,7 +81,7 @@ traceroute_v6 = "traceroute inet6 {target} no-resolve"
 # Junos returns structured output, which is why it needs no text parser.
 bgp_route_v4 = "show route protocol bgp {target} detail | display json"
 bgp_route_v6 = "show route protocol bgp {target} detail | display json"
-bgp_route_asn = "show route aspath-regex \".*(^| ){asn}( |$).*\" detail | display json"
+bgp_route_asn = "show route aspath-regex \"^{asn}( |$).*\" detail | display json"
 bgp_summary = "show bgp summary | display json"
 
 [nokia_sros]
@@ -94,7 +94,7 @@ traceroute_v4 = "traceroute {target}"
 traceroute_v6 = "traceroute {target}"
 bgp_route_v4 = "show router bgp routes {target}"
 bgp_route_v6 = "show router bgp routes {target} ipv6"
-bgp_route_asn = "show router bgp routes aspath-regex \".*{asn}.*\""
+bgp_route_asn = "show router bgp routes aspath-regex \"^{asn}.*\""
 bgp_summary = "show router bgp summary"
 
 # RouterOS answers an exec request immediately and pages nothing. Given a
@@ -154,7 +154,7 @@ traceroute_v4 = "traceroute {target}"
 traceroute_v6 = "traceroute ipv6 {target}"
 bgp_route_v4 = "show ip bgp {target}"
 bgp_route_v6 = "show ipv6 bgp {target}"
-bgp_route_asn = "show ip bgp regexp _{asn}_"
+bgp_route_asn = "show ip bgp regexp ^{asn}_"
 bgp_summary = "show ip bgp summary"
 
 [frr]
@@ -167,7 +167,7 @@ traceroute_v4 = "traceroute {target}"
 traceroute_v6 = "traceroute ipv6 {target}"
 bgp_route_v4 = "show bgp ipv4 unicast {target}"
 bgp_route_v6 = "show bgp ipv6 unicast {target}"
-bgp_route_asn = "show bgp ipv4 unicast regexp _{asn}_"
+bgp_route_asn = "show bgp ipv4 unicast regexp ^{asn}_"
 bgp_summary = "show bgp summary"
 
 # The mock router. Answers from fixtures, never opens a session, and is enabled

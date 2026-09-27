@@ -38,6 +38,7 @@ pub enum QueryType {
     Ping,
     Traceroute,
     BgpRoute,
+    BgpAspath,
     BgpSummary,
 }
 

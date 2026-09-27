@@ -120,7 +120,23 @@ function onRouterChange() {
     select.appendChild(option);
   }
 
+  updatePlaceholder();
   document.getElementById("mock-warning").hidden = !router.is_mock;
+}
+
+function updatePlaceholder() {
+  const queryType = document.getElementById("query-type")?.value;
+  const target = document.getElementById("target");
+  if (!target) return;
+  if (queryType === "bgp_aspath") {
+    target.placeholder = "AS65500 ou 65500";
+  } else if (queryType === "bgp_route") {
+    target.placeholder = "198.51.100.0/24 ou 2001:db8::1";
+  } else if (queryType === "bgp_summary") {
+    target.placeholder = "";
+  } else {
+    target.placeholder = t("form.target.placeholder");
+  }
 }
 
 async function loadVersion() {
@@ -776,11 +792,39 @@ function renderGraph(paths) {
     }
   }
 
-  // Prioritize the best path first, followed by unique backup AS-paths, capping at 12
-  // distinct topological paths to maintain a clean and responsive SVG layout.
-  const cleanPaths = Array.from(uniquePathsMap.values())
-    .sort((a, b) => (b.is_best ? 1 : 0) - (a.is_best ? 1 : 0))
-    .slice(0, 12);
+  // Group unique paths by their first-hop ASN (upstream / peer neighbor) to ensure
+  // every border connection / upstream transit is represented in the topological DAG.
+  const allUnique = Array.from(uniquePathsMap.values());
+  const pathsByFirstHop = new Map();
+  for (const p of allUnique) {
+    const firstHop = p.hops[1] || "unknown";
+    if (!pathsByFirstHop.has(firstHop)) pathsByFirstHop.set(firstHop, []);
+    pathsByFirstHop.get(firstHop).push(p);
+  }
+
+  // Sort paths within each first-hop group with best paths first
+  for (const group of pathsByFirstHop.values()) {
+    group.sort((a, b) => (b.is_best ? 1 : 0) - (a.is_best ? 1 : 0));
+  }
+
+  // Round-robin pick across upstreams to guarantee complete topological diversity,
+  // capping at 24 distinct paths to preserve layout stability and responsiveness.
+  const selectedPaths = [];
+  const maxPaths = 24;
+  let added = true;
+  let round = 0;
+  while (selectedPaths.length < maxPaths && added) {
+    added = false;
+    for (const group of pathsByFirstHop.values()) {
+      if (round < group.length && selectedPaths.length < maxPaths) {
+        selectedPaths.push(group[round]);
+        added = true;
+      }
+    }
+    round++;
+  }
+
+  const cleanPaths = selectedPaths;
 
   // 2. Topological rank assignment (longest-path DAG relaxation from the local router)
   const ranks = new Map();
@@ -1032,6 +1076,7 @@ async function start() {
   loadVersion();
 
   document.getElementById("query-form").addEventListener("submit", onSubmit);
+  document.getElementById("query-type")?.addEventListener("change", updatePlaceholder);
   document.getElementById("clear-btn")?.addEventListener("click", onClear);
   document.getElementById("captcha-form")?.addEventListener("submit", onCaptchaSubmit);
   document.getElementById("captcha-refresh")?.addEventListener("click", fetchCaptcha);

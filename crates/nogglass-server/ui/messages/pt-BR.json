@@ -46,6 +46,7 @@
   "global.unavailable": "Visão global indisponível.",
   "global.visibility": "Peers que enxergam",
   "mock.warning": "Este roteador responde com dados fabricados, para demonstração.",
+  "query.bgp_aspath": "Caminho AS (Regex)",
   "query.bgp_route": "Rota BGP",
   "query.bgp_summary": "Resumo BGP",
   "query.ping": "Ping",

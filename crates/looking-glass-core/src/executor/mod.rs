@@ -272,7 +272,20 @@ impl Executor {
                     "ping and traceroute need a single address".to_string(),
                 ));
             }
+            (QueryType::BgpRoute, QueryTarget::Asn(_)) => {
+                return Err(ExecutionError::Unsupported(
+                    "bgp_route accepts an IP address or CIDR prefix; use bgp_aspath for AS numbers".to_string(),
+                ));
+            }
             (QueryType::BgpRoute, _) => self.catalogue.bgp_route(&router.vendor, target)?,
+            (QueryType::BgpAspath, QueryTarget::Asn(asn)) => {
+                self.catalogue.bgp_aspath(&router.vendor, *asn)?
+            }
+            (QueryType::BgpAspath, _) => {
+                return Err(ExecutionError::Unsupported(
+                    "bgp_aspath requires an AS number (e.g. AS65000 or 65000)".to_string(),
+                ));
+            }
             (QueryType::BgpSummary, _) => self.catalogue.bgp_summary(&router.vendor)?,
         };
         Ok(command)
@@ -334,7 +347,7 @@ impl Executor {
                 },
                 Err(other) => return Err(other.into()),
             },
-            QueryType::BgpRoute => match driver.parse_bgp_route(&raw) {
+            QueryType::BgpRoute | QueryType::BgpAspath => match driver.parse_bgp_route(&raw) {
                 Ok(mut result) => {
                     result.truncated = truncated;
                     QueryOutcome::BgpRoute(result)
@@ -377,7 +390,9 @@ impl Executor {
                     "ping and traceroute need a single address".to_string(),
                 ))
             }
-            (QueryType::BgpRoute, _) => QueryOutcome::BgpRoute(mock.bgp_route(target)),
+            (QueryType::BgpRoute | QueryType::BgpAspath, _) => {
+                QueryOutcome::BgpRoute(mock.bgp_route(target))
+            }
             (QueryType::BgpSummary, _) => QueryOutcome::BgpSummary(
                 crate::summary::parse(
                     "Mock router — fabricated data\n\

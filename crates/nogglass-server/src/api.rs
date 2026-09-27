@@ -184,6 +184,7 @@ async fn vendor_commands(
         "ping": commands.ping_v4,
         "traceroute": commands.traceroute_v4,
         "bgp_route": commands.bgp_route_v4,
+        "bgp_aspath": commands.bgp_route_asn,
         "bgp_summary": commands.bgp_summary,
     })))
 }
