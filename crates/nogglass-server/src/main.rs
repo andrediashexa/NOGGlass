@@ -198,6 +198,11 @@ async fn run() -> Result<(), String> {
         }
     };
 
+    let ui_state = Arc::new(
+        ui::UiState::from_settings(&inventory.ui)
+            .map_err(|e| format!("{e}\nNOGGlass will not start with an invalid UI configuration."))?,
+    );
+
     let app = api::routes(AppState {
         executor,
         inventory,
@@ -208,7 +213,7 @@ async fn run() -> Result<(), String> {
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
     })
-    .merge(ui::routes())
+    .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))
     .layer(tower_http::trace::TraceLayer::new_for_http())
     .layer(tower_http::compression::CompressionLayer::new());

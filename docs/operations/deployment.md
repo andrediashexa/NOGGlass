@@ -77,9 +77,13 @@ docker build -t nogglass:latest .
 ```bash
 curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/docker-compose.yml
 curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/nogglass.example.toml
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/logo_nogglass.png
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/nogglass.png
 
 docker compose up -d                      # starts and fails loudly if misconfigured
 docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
+docker cp logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
+docker cp nogglass.png nogglass:/etc/nogglass/nogglass.png
 docker compose restart
 docker compose logs -f nogglass
 ```
@@ -106,11 +110,16 @@ configuration management can write it.
    sudo chmod +x /usr/local/bin/nogglass
    ```
 
-2. Create a dedicated unprivileged user:
+2. Create a dedicated unprivileged user and copy configuration and visual assets:
    ```bash
    sudo useradd -r -s /bin/false nogglass
    sudo mkdir -p /etc/nogglass /var/log/nogglass
-   sudo chown -R nogglass:nogglass /etc/nogglass
+   sudo cp nogglass.example.toml /etc/nogglass/nogglass.toml
+   sudo cp crates/nogglass-server/ui/assets/logo_nogglass.png /etc/nogglass/logo_nogglass.png
+   sudo cp crates/nogglass-server/ui/assets/nogglass.png /etc/nogglass/nogglass.png
+   sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
+   sudo chmod 750 /etc/nogglass /var/log/nogglass
+   sudo chmod 640 /etc/nogglass/nogglass.toml /etc/nogglass/logo_nogglass.png /etc/nogglass/nogglass.png
    ```
 
 3. Configure secrets in `/etc/nogglass/nogglass.env` (mode `0600`):

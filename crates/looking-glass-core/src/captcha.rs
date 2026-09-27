@@ -132,18 +132,14 @@ impl CaptchaEngine {
             return false;
         }
 
-        let expected_sig = Self::sign_payload(&clean_user_code, salt, timestamp, secret_key);
-
-        let expected_bytes = match hex::decode(&expected_sig) {
-            Ok(b) => b,
-            Err(_) => return false,
-        };
         let provided_bytes = match hex::decode(provided_sig) {
             Ok(b) => b,
             Err(_) => return false,
         };
 
-        ring::constant_time::verify_slices_are_equal(&expected_bytes, &provided_bytes).is_ok()
+        let key = hmac::Key::new(hmac::HMAC_SHA256, secret_key.as_bytes());
+        let msg = format!("{}:{}:{}", clean_user_code, salt, timestamp);
+        hmac::verify(&key, msg.as_bytes(), &provided_bytes).is_ok()
     }
 
     /// Extracts the plaintext code from the generated SVG (for automated tests).

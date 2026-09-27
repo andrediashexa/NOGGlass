@@ -8,11 +8,13 @@
 //! Locale routing follows ADR-0004: `/pt`, `/en` and `/es`, with a request that
 //! carries no locale redirected by `Accept-Language`.
 
-use axum::extract::Path;
+use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use axum::Router as AxumRouter;
+use looking_glass_core::inventory::{Theme, UiSettings};
+use std::sync::Arc;
 
 const INDEX_HTML: &str = include_str!("../ui/index.html");
 const APP_CSS: &str = include_str!("../ui/assets/app.css");
@@ -26,7 +28,127 @@ const MESSAGES_ES: &str = include_str!("../ui/messages/es.json");
 /// Locales the interface ships in. English is the source locale.
 pub const LOCALES: [&str; 3] = ["pt", "en", "es"];
 
-pub fn routes() -> AxumRouter {
+/// Runtime state for UI customizations.
+#[derive(Clone, Debug)]
+pub struct UiState {
+    pub theme: Theme,
+    pub logo_height_px: u32,
+    pub background_blur_px: u32,
+    pub background_opacity_percent: u32,
+    pub logo_bytes: Arc<Vec<u8>>,
+    pub logo_content_type: HeaderValue,
+    pub bg_bytes: Arc<Vec<u8>>,
+    pub bg_content_type: HeaderValue,
+}
+
+impl UiState {
+    pub fn from_settings(settings: &UiSettings) -> Result<Self, String> {
+        let (logo_bytes, logo_content_type) = if let Some(path) = &settings.logo_path {
+            match std::fs::read(path) {
+                Ok(data) => {
+                    let mime = detect_mime(path, &data);
+                    tracing::info!(
+                        path = %path,
+                        bytes = data.len(),
+                        mime = ?mime.to_str().unwrap_or(""),
+                        "loaded custom logo"
+                    );
+                    (Arc::new(data), mime)
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    tracing::info!(
+                        path = %path,
+                        "custom logo file not found; falling back to built-in logo"
+                    );
+                    (
+                        Arc::new(LOGO_NOGGLASS_PNG.to_vec()),
+                        HeaderValue::from_static("image/png"),
+                    )
+                }
+                Err(e) => return Err(format!("cannot read logo file '{path}': {e}")),
+            }
+        } else {
+            (
+                Arc::new(LOGO_NOGGLASS_PNG.to_vec()),
+                HeaderValue::from_static("image/png"),
+            )
+        };
+
+        let (bg_bytes, bg_content_type) = if let Some(path) = &settings.background_path {
+            match std::fs::read(path) {
+                Ok(data) => {
+                    let mime = detect_mime(path, &data);
+                    tracing::info!(
+                        path = %path,
+                        bytes = data.len(),
+                        mime = ?mime.to_str().unwrap_or(""),
+                        "loaded custom background"
+                    );
+                    (Arc::new(data), mime)
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    tracing::info!(
+                        path = %path,
+                        "custom background file not found; falling back to built-in wallpaper"
+                    );
+                    (
+                        Arc::new(NOGGLASS_PNG.to_vec()),
+                        HeaderValue::from_static("image/png"),
+                    )
+                }
+                Err(e) => return Err(format!("cannot read background file '{path}': {e}")),
+            }
+        } else {
+            (
+                Arc::new(NOGGLASS_PNG.to_vec()),
+                HeaderValue::from_static("image/png"),
+            )
+        };
+
+        Ok(Self {
+            theme: settings.theme,
+            logo_height_px: settings.logo_height_px,
+            background_blur_px: settings.background_blur_px,
+            background_opacity_percent: settings.background_opacity_percent,
+            logo_bytes,
+            logo_content_type,
+            bg_bytes,
+            bg_content_type,
+        })
+    }
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self::from_settings(&UiSettings::default()).expect("default UiSettings always loads")
+    }
+}
+
+fn detect_mime(path: &str, data: &[u8]) -> HeaderValue {
+    let trimmed = data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data);
+    let lower = path.to_ascii_lowercase();
+    if trimmed.starts_with(b"<svg")
+        || trimmed.starts_with(b"<?xml")
+        || lower.ends_with(".svg")
+    {
+        HeaderValue::from_static("image/svg+xml")
+    } else if trimmed.starts_with(b"\xff\xd8\xff")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+    {
+        HeaderValue::from_static("image/jpeg")
+    } else if (trimmed.starts_with(b"RIFF") && trimmed.len() > 12 && &trimmed[8..12] == b"WEBP")
+        || lower.ends_with(".webp")
+    {
+        HeaderValue::from_static("image/webp")
+    } else if trimmed.starts_with(b"GIF8") || lower.ends_with(".gif") {
+        HeaderValue::from_static("image/gif")
+    } else {
+        HeaderValue::from_static("image/png")
+    }
+}
+
+pub fn routes(state: Arc<UiState>) -> AxumRouter {
     AxumRouter::new()
         .route("/", get(redirect_to_locale))
         .route("/{locale}/", get(index))
@@ -36,6 +158,7 @@ pub fn routes() -> AxumRouter {
         .route("/assets/nogglass.png", get(bg_png))
         .route("/assets/logo_nogglass.png", get(logo_png))
         .route("/assets/messages/{file}", get(messages))
+        .with_state(state)
 }
 
 /// Sends a visitor to a locale, honouring `Accept-Language`.
@@ -87,19 +210,50 @@ pub fn negotiate(accept_language: &str) -> &'static str {
     best.map(|(locale, _)| locale).unwrap_or(default)
 }
 
-async fn index(Path(locale): Path<String>) -> Response {
+async fn index(State(ui): State<Arc<UiState>>, Path(locale): Path<String>) -> Response {
     let locale = locale.trim_end_matches('/');
     if !LOCALES.contains(&locale) {
         return (StatusCode::NOT_FOUND, "unknown locale").into_response();
     }
 
-    // The locale is stamped into the document so the page renders in the right
-    // language before any script runs.
+    let theme_str = match ui.theme {
+        Theme::Dark => "dark",
+        Theme::Light => "light",
+    };
+
+    let custom_style = format!(
+        "<style id=\"nogglass-custom-vars\">:root {{ --logo-height: {}px !important; --bg-blur: {}px !important; --bg-opacity: {:.2} !important; }}</style>",
+        ui.logo_height_px,
+        ui.background_blur_px,
+        (ui.background_opacity_percent as f32) / 100.0
+    );
+
+    // The locale and theme are stamped into the document so the page renders in the right
+    // language and theme before any script runs.
     let html = INDEX_HTML
         .replace("data-locale=\"en\"", &format!("data-locale=\"{locale}\""))
-        .replace("<html lang=\"en\"", &format!("<html lang=\"{locale}\""));
+        .replace(
+            "<html lang=\"en\"",
+            &format!("<html lang=\"{locale}\" data-theme=\"{theme_str}\""),
+        )
+        .replace("<!-- NOGGLASS_CUSTOM_VARS -->", &custom_style);
 
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response()
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            ),
+            (
+                header::CACHE_CONTROL,
+                HeaderValue::from_static(
+                    "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0",
+                ),
+            ),
+        ],
+        html,
+    )
+        .into_response()
 }
 
 async fn stylesheet() -> impl IntoResponse {
@@ -110,29 +264,33 @@ async fn script() -> impl IntoResponse {
     asset("text/javascript; charset=utf-8", APP_JS)
 }
 
-async fn bg_png() -> impl IntoResponse {
+async fn bg_png(State(ui): State<Arc<UiState>>) -> impl IntoResponse {
     (
         [
-            (header::CONTENT_TYPE, HeaderValue::from_static("image/png")),
+            (header::CONTENT_TYPE, ui.bg_content_type.clone()),
             (
                 header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=86400"),
+                HeaderValue::from_static(
+                    "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0",
+                ),
             ),
         ],
-        NOGGLASS_PNG,
+        (*ui.bg_bytes).clone(),
     )
 }
 
-async fn logo_png() -> impl IntoResponse {
+async fn logo_png(State(ui): State<Arc<UiState>>) -> impl IntoResponse {
     (
         [
-            (header::CONTENT_TYPE, HeaderValue::from_static("image/png")),
+            (header::CONTENT_TYPE, ui.logo_content_type.clone()),
             (
                 header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=86400"),
+                HeaderValue::from_static(
+                    "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0",
+                ),
             ),
         ],
-        LOGO_NOGGLASS_PNG,
+        (*ui.logo_bytes).clone(),
     )
 }
 
@@ -148,16 +306,17 @@ async fn messages(Path(file): Path<String>) -> Response {
 
 /// Serves an embedded asset.
 ///
-/// Assets change only when the binary does, but the binary is replaced on
-/// upgrades, so caching is short: a stale script against a new API is worse
-/// than a few extra requests.
+/// Assets change only when the binary does, but when running behind edge CDNs
+/// like Cloudflare, s-maxage=0 ensures changes reflect immediately.
 fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, HeaderValue::from_static(content_type)),
             (
                 header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=300"),
+                HeaderValue::from_static(
+                    "no-cache, must-revalidate, max-age=0, s-maxage=0",
+                ),
             ),
         ],
         body,
@@ -228,5 +387,69 @@ mod tests {
             referenced += 1;
         }
         assert!(referenced > 10, "the page should be fully translated");
+    }
+
+    #[test]
+    fn ui_state_loads_default_embedded_assets() {
+        let state = UiState::default();
+        assert_eq!(state.theme, Theme::Dark);
+        assert_eq!(state.logo_height_px, 76);
+        assert_eq!(state.background_blur_px, 1);
+        assert_eq!(state.background_opacity_percent, 35);
+        assert_eq!(state.logo_content_type, "image/png");
+        assert_eq!(state.bg_content_type, "image/png");
+        assert_eq!(state.logo_bytes.as_slice(), LOGO_NOGGLASS_PNG);
+        assert_eq!(state.bg_bytes.as_slice(), NOGGLASS_PNG);
+    }
+
+    #[test]
+    fn ui_state_falls_back_when_file_not_found() {
+        let settings = UiSettings {
+            logo_path: Some("/nonexistent/custom_logo_12345.png".to_string()),
+            background_path: Some("/nonexistent/custom_bg_12345.png".to_string()),
+            ..Default::default()
+        };
+        let state = UiState::from_settings(&settings).unwrap();
+        assert_eq!(state.logo_bytes.as_slice(), LOGO_NOGGLASS_PNG);
+        assert_eq!(state.bg_bytes.as_slice(), NOGGLASS_PNG);
+    }
+
+    #[test]
+    fn ui_state_loads_existing_custom_file() {
+        let temp_dir = std::env::temp_dir();
+        let custom_logo = temp_dir.join("test_custom_logo.svg");
+        std::fs::write(&custom_logo, b"<svg>custom logo</svg>").unwrap();
+
+        let settings = UiSettings {
+            logo_path: Some(custom_logo.to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        let state = UiState::from_settings(&settings).unwrap();
+        assert_eq!(state.logo_content_type, "image/svg+xml");
+        assert_eq!(state.logo_bytes.as_slice(), b"<svg>custom logo</svg>");
+
+        let _ = std::fs::remove_file(&custom_logo);
+    }
+
+    #[tokio::test]
+    async fn index_renders_custom_theme_and_variables() {
+        let settings = UiSettings {
+            theme: Theme::Light,
+            logo_height_px: 100,
+            background_blur_px: 4,
+            background_opacity_percent: 60,
+            ..Default::default()
+        };
+        let state = Arc::new(UiState::from_settings(&settings).unwrap());
+        let response = index(State(state), Path("pt".to_string())).await;
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let body_str = String::from_utf8_lossy(&body);
+
+        assert!(body_str.contains("data-theme=\"light\""));
+        assert!(body_str.contains("--logo-height: 100px !important"));
+        assert!(body_str.contains("--bg-blur: 4px !important"));
+        assert!(body_str.contains("--bg-opacity: 0.60 !important"));
     }
 }

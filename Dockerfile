@@ -58,7 +58,7 @@ COPY crates ./crates
 
 # The release build stamps the version, so /api/version and the footer report
 # what is actually running instead of "dev".
-ARG NOGGLASS_VERSION=dev
+ARG NOGGLASS_VERSION=1.0.0
 ARG NOGGLASS_COMMIT=unknown
 ARG NOGGLASS_BUILT_AT=unknown
 ENV NOGGLASS_VERSION=$NOGGLASS_VERSION \

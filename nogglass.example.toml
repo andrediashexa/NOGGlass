@@ -128,3 +128,31 @@ trusted_proxies = []
 [global_view]
 enabled = false
 timeout_ms = 1500
+
+# ---------------------------------------------------------------------------
+# User interface & visual appearance.
+#
+# Customise the theme, branding logo, background wallpaper, and visual effects.
+# ---------------------------------------------------------------------------
+
+[ui]
+# Visual theme: "dark" (default) or "light".
+theme = "dark"
+
+# Path to logo image file on the host (PNG, SVG, JPEG, WebP).
+# When this file does not exist, the built-in NOGGlass logo is used as fallback.
+logo_path = "/etc/nogglass/logo_nogglass.png"
+
+# Logo height in pixels (default 76).
+logo_height_px = 76
+
+# Path to background image file on the host (PNG, JPEG, WebP).
+# When this file does not exist, the built-in background wallpaper is used as fallback.
+background_path = "/etc/nogglass/nogglass.png"
+
+# Background blur radius in pixels (default 1).
+background_blur_px = 1
+
+# Background opacity percentage from 0 to 100 (default 35).
+background_opacity_percent = 35
+

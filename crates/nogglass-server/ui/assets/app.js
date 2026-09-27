@@ -114,14 +114,29 @@ function onRouterChange() {
 async function loadVersion() {
   try {
     const info = await fetch("/api/version").then((r) => r.json());
-    document.getElementById("version").textContent = info.version;
-    document.getElementById("build-meta").textContent =
-      `${t("about.commit")} ${info.commit} · ${t("about.built")} ${info.built_at}`;
+    const ver = info.version && info.version !== "dev" ? info.version : "1.0.0";
+    const versionEl = document.getElementById("version");
+    if (versionEl) {
+      versionEl.textContent = ver;
+    }
+    const buildMeta = document.getElementById("build-meta");
+    if (buildMeta) {
+      if (info.commit && info.commit !== "unknown") {
+        let meta = `· ${t("about.commit")} ${info.commit}`;
+        if (info.built_at && info.built_at !== "unknown") {
+          meta += ` · ${t("about.built")} ${info.built_at}`;
+        }
+        buildMeta.textContent = meta;
+        buildMeta.hidden = false;
+      } else {
+        buildMeta.textContent = "";
+        buildMeta.hidden = true;
+      }
+    }
     const link = document.getElementById("version-link");
-    link.href =
-      info.version === "dev"
-        ? "https://github.com/andrediashexa/looking-glass"
-        : `https://github.com/andrediashexa/looking-glass/releases/tag/v${info.version}`;
+    if (link) {
+      link.href = `https://github.com/andrediashexa/looking-glass/releases/tag/v${ver}`;
+    }
   } catch {
     // The footer is not worth breaking the page over.
   }

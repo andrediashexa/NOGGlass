@@ -90,7 +90,10 @@ impl VersionInfo {
     /// placeholders.
     pub fn from_build() -> Self {
         Self {
-            version: option_env!("NOGGLASS_VERSION").unwrap_or("dev").to_string(),
+            version: match option_env!("NOGGLASS_VERSION") {
+                Some(v) if !v.is_empty() && v != "dev" => v.to_string(),
+                _ => env!("CARGO_PKG_VERSION").to_string(),
+            },
             commit: option_env!("NOGGLASS_COMMIT")
                 .unwrap_or("unknown")
                 .to_string(),
@@ -671,8 +674,8 @@ queries = ["bgp_route"]
             .await
             .unwrap();
         let body = body_json(response).await;
-        // An unstamped build says "dev" rather than inventing a number.
-        assert_eq!(body["version"], "dev");
+        // An unstamped build falls back to the Cargo package version.
+        assert_eq!(body["version"], "1.0.0");
     }
 
     /// The router list is public, so it must not describe the management plane.

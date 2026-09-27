@@ -1,6 +1,4 @@
-/* Design tokens from ADR-0008: dark NOC theme, neon accents.
-   Every colour used by the interface is defined here once, so the graph and the
-   tables cannot drift apart. */
+/* Design tokens: dark NOC theme by default, clean daylight theme in light mode. */
 :root {
   --bg-base: #06090e;
   --bg-card: rgba(13, 20, 31, 0.75);
@@ -12,9 +10,48 @@
   --accent-invalid: #ff4d4d;
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
+  --bg-input: rgba(6, 9, 14, 0.8);
+  --bg-pre: rgba(6, 9, 14, 0.85);
+  --bg-topbar: rgba(6, 9, 14, 0.9);
+  --bg-grid: rgba(30, 58, 86, 0.25);
+  --bg-community: rgba(192, 132, 252, 0.15);
+  --btn-submit-text: #04110a;
+  --btn-clear-bg: rgba(255, 255, 255, 0.06);
+  --btn-clear-hover: rgba(255, 255, 255, 0.12);
+  --captcha-bg: #06090e;
+  --captcha-modal-bg: rgba(13, 20, 31, 0.95);
+  --captcha-modal-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 255, 0.2);
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SFMono-Regular", monospace;
+  --logo-height: 76px;
+  --bg-blur: 1px;
+  --bg-opacity: 0.35;
   color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg-base: #f8fafc;
+  --bg-card: rgba(255, 255, 255, 0.90);
+  --border-card: rgba(203, 213, 225, 0.85);
+  --accent-best: #059669;
+  --accent-backup: #0284c7;
+  --accent-local: #ea580c;
+  --accent-transit: #7c3aed;
+  --accent-invalid: #dc2626;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --bg-input: #ffffff;
+  --bg-pre: #ffffff;
+  --bg-topbar: rgba(255, 255, 255, 0.92);
+  --bg-grid: rgba(148, 163, 184, 0.25);
+  --bg-community: rgba(124, 58, 237, 0.12);
+  --btn-submit-text: #ffffff;
+  --btn-clear-bg: rgba(0, 0, 0, 0.05);
+  --btn-clear-hover: rgba(0, 0, 0, 0.1);
+  --captcha-bg: #f8fafc;
+  --captcha-modal-bg: rgba(255, 255, 255, 0.98);
+  --captcha-modal-shadow: 0 12px 36px rgba(0, 0, 0, 0.12), 0 0 20px rgba(2, 132, 199, 0.12);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -37,15 +74,15 @@ body::before {
   width: 100vw;
   height: 100vh;
   background-image:
-    linear-gradient(rgba(30, 58, 86, 0.25) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(30, 58, 86, 0.25) 1px, transparent 1px),
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px),
     url("/assets/nogglass.png");
   background-size: 48px 48px, 48px 48px, cover;
   background-position: center, center, center;
   background-repeat: repeat, repeat, no-repeat;
-  filter: blur(1px);
+  filter: blur(var(--bg-blur, 1px));
   transform: scale(1.005);
-  opacity: 0.35;
+  opacity: var(--bg-opacity, 0.35);
   pointer-events: none;
   z-index: -1;
 }
@@ -61,7 +98,7 @@ main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }
   justify-content: space-between;
   padding: calc(12px + env(safe-area-inset-top, 0px)) 24px 12px;
   border-bottom: 1px solid var(--border-card);
-  background: rgba(6, 9, 14, 0.9);
+  background: var(--bg-topbar);
   backdrop-filter: blur(12px);
   position: sticky;
   top: env(safe-area-inset-top, 0px);
@@ -70,9 +107,9 @@ main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }
 
 .brand { display: flex; align-items: center; gap: 16px; }
 .brand-logo {
-  height: 76px;
+  height: var(--logo-height, 76px);
   width: auto;
-  max-width: 360px;
+  max-width: min(80vw, 600px);
   display: block;
   object-fit: contain;
 }
@@ -109,7 +146,7 @@ main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }
 select, input {
   font: 14px var(--font-mono);
   color: var(--text-main);
-  background: rgba(6, 9, 14, 0.8);
+  background: var(--bg-input);
   border: 1px solid var(--border-card);
   border-radius: 8px;
   padding: 9px 10px;
@@ -121,7 +158,7 @@ input:focus, select:focus, button:focus-visible {
 }
 button {
   font: 600 14px var(--font-sans);
-  color: #04110a;
+  color: var(--btn-submit-text, #04110a);
   background: var(--accent-best);
   border: 0;
   border-radius: 8px;
@@ -137,14 +174,14 @@ button[disabled] { opacity: 0.6; cursor: progress; }
   align-items: center;
 }
 .btn-clear {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--btn-clear-bg);
   color: var(--text-muted);
   border: 1px solid var(--border-card);
 }
 .btn-clear:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--btn-clear-hover);
   color: var(--text-main);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--border-card);
 }
 
 /* --- notices --- */
@@ -193,17 +230,17 @@ td.cell-communities {
 .badge-invalid { color: var(--accent-invalid); }
 .badge-not_found, .badge-not_checked { color: var(--text-muted); }
 
-.community { display: inline-block; margin: 0; padding: 2px 8px; border-radius: 999px; background: rgba(192, 132, 252, 0.15); color: var(--accent-transit); font-size: 12px; }
+.community { display: inline-block; margin: 0; padding: 2px 8px; border-radius: 999px; background: var(--bg-community); color: var(--accent-transit); font-size: 12px; }
 
 pre {
   margin: 0;
   padding: 12px;
   overflow-x: auto;
-  background: rgba(6, 9, 14, 0.85);
+  background: var(--bg-pre);
   border: 1px solid var(--border-card);
   border-radius: 8px;
   font: 12.5px/1.5 var(--font-mono);
-  color: var(--text-muted);
+  color: var(--text-main);
 }
 
 footer {
@@ -251,13 +288,13 @@ tr[data-established="false"] td { color: var(--accent-invalid); }
 .captcha-modal {
   border: 1px solid var(--border-card);
   border-radius: 12px;
-  background: rgba(13, 20, 31, 0.95);
+  background: var(--captcha-modal-bg);
   backdrop-filter: blur(16px);
   color: var(--text-main);
   padding: 0;
   max-width: 360px;
   width: 90vw;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 255, 0.2);
+  box-shadow: var(--captcha-modal-shadow);
 }
 .captcha-modal::backdrop {
   background: rgba(0, 0, 0, 0.7);
@@ -284,7 +321,7 @@ tr[data-established="false"] td { color: var(--accent-invalid); }
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #06090e;
+  background: var(--captcha-bg);
   padding: 8px;
   border-radius: 8px;
   border: 1px solid var(--border-card);

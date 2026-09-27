@@ -14,7 +14,7 @@
 use crate::catalogue::Catalogue;
 use crate::driver::QueryType;
 use crate::target::QueryLimits;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::net::IpAddr;
@@ -411,6 +411,76 @@ impl RpkiSettings {
     }
 }
 
+/// Available interface themes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Theme {
+    Dark,
+    Light,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self::Dark
+    }
+}
+
+/// Interface customization and branding settings.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct UiSettings {
+    /// Visual theme ("dark" or "light").
+    #[serde(default)]
+    pub theme: Theme,
+    /// Path to a custom logo image file on the host filesystem.
+    #[serde(default = "default_logo_path")]
+    pub logo_path: Option<String>,
+    /// Height of the logo in pixels.
+    #[serde(default = "default_logo_height_px")]
+    pub logo_height_px: u32,
+    /// Path to a custom background wallpaper image on the host filesystem.
+    #[serde(default = "default_background_path")]
+    pub background_path: Option<String>,
+    /// Background blur radius in pixels.
+    #[serde(default = "default_background_blur_px")]
+    pub background_blur_px: u32,
+    /// Background opacity percentage (0 to 100).
+    #[serde(default = "default_background_opacity_percent")]
+    pub background_opacity_percent: u32,
+}
+
+fn default_logo_path() -> Option<String> {
+    Some("/etc/nogglass/logo_nogglass.png".to_string())
+}
+
+fn default_background_path() -> Option<String> {
+    Some("/etc/nogglass/nogglass.png".to_string())
+}
+
+fn default_logo_height_px() -> u32 {
+    76
+}
+
+fn default_background_blur_px() -> u32 {
+    1
+}
+
+fn default_background_opacity_percent() -> u32 {
+    35
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self {
+            theme: Theme::Dark,
+            logo_path: default_logo_path(),
+            logo_height_px: default_logo_height_px(),
+            background_path: default_background_path(),
+            background_blur_px: default_background_blur_px(),
+            background_opacity_percent: default_background_opacity_percent(),
+        }
+    }
+}
+
 /// The whole configuration file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Inventory {
@@ -422,6 +492,8 @@ pub struct Inventory {
     pub rate_limit: RateLimitSettings,
     #[serde(default, rename = "global_view")]
     pub global_view: GlobalViewSettings,
+    #[serde(default)]
+    pub ui: UiSettings,
     #[serde(rename = "router", default)]
     pub routers: Vec<Router>,
 }
@@ -492,6 +564,17 @@ impl Inventory {
             if !router.is_mock() && matches!(router.credentials, Credentials::None) {
                 return Err(InventoryError::NoCredentials(router.id.clone()));
             }
+        }
+
+        if self.ui.logo_height_px == 0 {
+            return Err(InventoryError::Malformed(
+                "ui.logo_height_px must be greater than 0".to_string(),
+            ));
+        }
+        if self.ui.background_opacity_percent > 100 {
+            return Err(InventoryError::Malformed(
+                "ui.background_opacity_percent must be between 0 and 100".to_string(),
+            ));
         }
 
         Ok(())
@@ -763,5 +846,52 @@ host = "192.0.2.1"
         inventory
             .check_secrets(|_| Some("secret".into()))
             .expect("all secrets present");
+    }
+
+    #[test]
+    fn loads_ui_settings_with_defaults() {
+        let inventory = Inventory::from_toml(SAMPLE).unwrap();
+        assert_eq!(inventory.ui.theme, Theme::Dark);
+        assert_eq!(inventory.ui.logo_height_px, 76);
+        assert_eq!(inventory.ui.background_blur_px, 1);
+        assert_eq!(
+            inventory.ui.logo_path.as_deref(),
+            Some("/etc/nogglass/logo_nogglass.png")
+        );
+        assert_eq!(
+            inventory.ui.background_path.as_deref(),
+            Some("/etc/nogglass/nogglass.png")
+        );
+    }
+
+    #[test]
+    fn loads_custom_ui_settings() {
+        let toml = format!(
+            "{SAMPLE}\n[ui]\ntheme = \"light\"\nlogo_path = \"/etc/nogglass/logo.png\"\nlogo_height_px = 96\nbackground_path = \"/etc/nogglass/bg.png\"\nbackground_blur_px = 3\nbackground_opacity_percent = 50\n"
+        );
+        let inventory = Inventory::from_toml(&toml).unwrap();
+        assert_eq!(inventory.ui.theme, Theme::Light);
+        assert_eq!(inventory.ui.logo_height_px, 96);
+        assert_eq!(inventory.ui.background_blur_px, 3);
+        assert_eq!(inventory.ui.background_opacity_percent, 50);
+        assert_eq!(
+            inventory.ui.logo_path.as_deref(),
+            Some("/etc/nogglass/logo.png")
+        );
+        assert_eq!(
+            inventory.ui.background_path.as_deref(),
+            Some("/etc/nogglass/bg.png")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_ui_settings() {
+        let bad_opacity = format!("{SAMPLE}\n[ui]\nbackground_opacity_percent = 101\n");
+        let err = Inventory::from_toml(&bad_opacity).unwrap_err();
+        assert!(matches!(err, InventoryError::Malformed(_)));
+
+        let bad_logo = format!("{SAMPLE}\n[ui]\nlogo_height_px = 0\n");
+        let err = Inventory::from_toml(&bad_logo).unwrap_err();
+        assert!(matches!(err, InventoryError::Malformed(_)));
     }
 }

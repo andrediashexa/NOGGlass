@@ -99,15 +99,30 @@ sudo useradd -r -s /bin/false nogglass 2>/dev/null || true
 # 2. Create application directories
 sudo mkdir -p /etc/nogglass /var/log/nogglass
 
-# 3. Copy template and restrict permissions
+# 3. Copy template, existing visual assets, and restrict permissions
 sudo cp nogglass.example.toml /etc/nogglass/nogglass.toml
+sudo cp crates/nogglass-server/ui/assets/logo_nogglass.png /etc/nogglass/logo_nogglass.png
+sudo cp crates/nogglass-server/ui/assets/nogglass.png /etc/nogglass/nogglass.png
 sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
 sudo chmod 750 /etc/nogglass /var/log/nogglass
-sudo chmod 640 /etc/nogglass/nogglass.toml
+sudo chmod 640 /etc/nogglass/nogglass.toml /etc/nogglass/logo_nogglass.png /etc/nogglass/nogglass.png
 ```
 
 #### Setup for Container Installation (Docker / Method 2)
-When running via Docker Compose, no host user is needed. Configuration is stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and rebuilds. See [Method 2 in Section 4](#method-2-running-with-docker-compose) for bootstrapping the volume.
+When running via Docker Compose, no system user on the host is needed. Configuration and visual assets are stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and container rebuilds:
+
+```bash
+# 1. Start the container to initialize the named volume
+docker compose up -d nogglass
+
+# 2. Copy configuration template and existing visual assets into the volume
+docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
+docker cp crates/nogglass-server/ui/assets/logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
+docker cp crates/nogglass-server/ui/assets/nogglass.png nogglass:/etc/nogglass/nogglass.png
+
+# 3. Restart the container to apply configuration
+docker compose restart nogglass
+```
 
 
 ### 3.2. Configuration File Anatomy (`nogglass.toml`)
@@ -161,6 +176,14 @@ enabled = true
 requests_per_minute = 10
 burst = 5
 trusted_proxies = ["127.0.0.1", "::1"]
+
+[ui]
+theme = "dark" # or "light"
+logo_path = "/etc/nogglass/logo_nogglass.png"
+logo_height_px = 76
+background_path = "/etc/nogglass/nogglass.png"
+background_blur_px = 1
+background_opacity_percent = 35
 ```
 
 ### 3.3. Supported Vendor Identifiers
@@ -189,11 +212,16 @@ trusted_proxies = ["127.0.0.1", "::1"]
    sudo chmod +x /usr/local/bin/nogglass
    ```
 
-2. Create a dedicated system user (if not already created in section 3.1):
+2. Create a dedicated system user and configure application files:
    ```bash
    sudo useradd -r -s /bin/false nogglass 2>/dev/null || true
+   sudo mkdir -p /etc/nogglass /var/log/nogglass
+   sudo cp nogglass.example.toml /etc/nogglass/nogglass.toml
+   sudo cp crates/nogglass-server/ui/assets/logo_nogglass.png /etc/nogglass/logo_nogglass.png
+   sudo cp crates/nogglass-server/ui/assets/nogglass.png /etc/nogglass/nogglass.png
    sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
    sudo chmod 750 /etc/nogglass /var/log/nogglass
+   sudo chmod 640 /etc/nogglass/nogglass.toml /etc/nogglass/logo_nogglass.png /etc/nogglass/nogglass.png
    ```
 
 3. Create the environment file `/etc/nogglass/nogglass.env` (permissions `0600`):
@@ -267,13 +295,15 @@ Running with Docker Compose stores your configuration in a Docker named volume (
        name: nogglass-config
    ```
 
-2. Bootstrap configuration into the Docker volume:
+2. Bootstrap configuration and visual assets into the Docker volume:
    ```bash
    # Bring up the container (initializes the volume)
    docker compose up -d nogglass
 
-   # Copy your configured nogglass.toml into the volume
+   # Copy configuration template and existing visual assets into the volume
    docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
+   docker cp crates/nogglass-server/ui/assets/logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
+   docker cp crates/nogglass-server/ui/assets/nogglass.png nogglass:/etc/nogglass/nogglass.png
 
    # Restart to load the new configuration
    docker compose restart nogglass
