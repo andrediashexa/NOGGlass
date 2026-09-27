@@ -60,7 +60,7 @@
   "result.paths": "Caminos",
   "result.raw": "Salida del router",
   "result.truncated": "La salida superó el límite configurado y fue cortada.",
-  "result.truncated_danger": "La consulta devolvió un volumen excesivo de datos y fue interrumpida para proteger el procesamiento del enrutador. No se renderizaron rutas. La salida sin procesar parcial se puede inspeccionar a continuación.",
+  "result.truncated_danger": "La consulta devolvió un volumen excesivo de datos y fue interrumpida para proteger el procesamiento del enrutador.",
   "result.unknown": "no informado",
   "rpki.invalid": "Inválido",
   "rpki.not_checked": "No verificado",

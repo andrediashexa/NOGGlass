@@ -60,7 +60,7 @@
   "result.paths": "Paths",
   "result.raw": "Router output",
   "result.truncated": "The output was longer than the configured limit and was cut.",
-  "result.truncated_danger": "The query returned an excessive volume of data and was stopped to protect router control-plane processing. No paths were rendered. The partial raw output can be inspected below.",
+  "result.truncated_danger": "The query returned an excessive volume of data and was stopped to protect router control-plane processing.",
   "result.unknown": "not reported",
   "rpki.invalid": "Invalid",
   "rpki.not_checked": "Not checked",

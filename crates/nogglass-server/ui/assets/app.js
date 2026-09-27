@@ -393,7 +393,12 @@ function render(response, target) {
 
   if (response.kind === "bgp_route") {
     renderBgp(response.result, target);
-    renderGlobalView(response.agreement, response.global);
+    if (!response.result.truncated) {
+      renderGlobalView(response.agreement, response.global);
+    } else {
+      const globalPanel = document.getElementById("global-panel");
+      if (globalPanel) globalPanel.hidden = true;
+    }
   } else if (response.kind === "raw") {
     renderRaw(response.result?.raw_output ?? response.output, response.truncated);
   } else if (response.kind === "bgp_summary") {
@@ -525,17 +530,20 @@ function renderRaw(output, truncated, isBgp = false) {
 }
 
 function renderBgp(result, queryTarget) {
-  renderRaw(result.raw_output, result.truncated, true);
-
   if (result.truncated) {
     document.getElementById("paths-panel").hidden = true;
     document.getElementById("graph-panel").hidden = true;
     document.getElementById("graph").replaceChildren();
+    document.getElementById("raw-panel").hidden = true;
+    const globalPanel = document.getElementById("global-panel");
+    if (globalPanel) globalPanel.hidden = true;
     const box = document.getElementById("error");
     box.textContent = t("result.truncated_danger");
     box.hidden = false;
     return;
   }
+
+  renderRaw(result.raw_output, result.truncated, true);
 
   if (result.completeness?.state === "partial") {
     const box = document.getElementById("error");

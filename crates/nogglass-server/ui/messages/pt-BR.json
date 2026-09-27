@@ -60,7 +60,7 @@
   "result.paths": "Caminhos",
   "result.raw": "Saída do roteador",
   "result.truncated": "A saída passou do limite configurado e foi cortada.",
-  "result.truncated_danger": "A consulta retornou um volume excessivo de dados e foi interrompida para proteger o processamento do roteador. Nenhum caminho foi renderizado. A saída bruta parcial pode ser inspecionada abaixo.",
+  "result.truncated_danger": "A consulta retornou um volume excessivo de dados e foi interrompida para proteger o processamento do roteador.",
   "result.unknown": "não informado",
   "rpki.invalid": "Inválido",
   "rpki.not_checked": "Não verificado",
