@@ -173,6 +173,32 @@ async fn run() -> Result<(), String> {
         );
     }
 
+    // NOGGlass's own BGP session(s), if configured (#171, ADR-0016). Holding
+    // the runtime for the life of the process keeps the sessions up; dropping
+    // it stops them. Disabled by default, so most deployments open no socket.
+    let _bgp_runtime = if inventory.bgp.enabled {
+        info!(
+            peers = inventory.bgp.peers.len(),
+            local_as = ?inventory.bgp.local_as,
+            "bgp: starting NOGGlass's own BGP session(s)"
+        );
+        let runtime = looking_glass_core::bgp::spawn(&inventory.bgp);
+        // Operational visibility while the query path that reads this RIB is
+        // still being built: report how many prefixes the session has learned.
+        let rib = runtime.rib();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                ticker.tick().await;
+                let prefixes = rib.read().await.prefix_count();
+                info!(prefixes, "bgp: local RIB");
+            }
+        });
+        Some(runtime)
+    } else {
+        None
+    };
+
     let transport: Arc<dyn Transport> = Arc::new(SshTransport::new(
         Duration::from_secs(15),
         Duration::from_secs(30),
@@ -276,6 +302,7 @@ async fn run() -> Result<(), String> {
         global_view,
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
+        bgp_rib: _bgp_runtime.as_ref().map(|runtime| runtime.rib()),
     })
     .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))

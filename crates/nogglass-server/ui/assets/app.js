@@ -355,12 +355,19 @@ async function onSubmit(event) {
   };
   rememberInUrl(payload);
 
+  // NOGGlass's own BGP session (#171) is a source whose routes come from the
+  // local RIB, not from running a query on a router.
+  const selected = state.routers.find((router) => router.id === payload.router);
+  const isLocalBgp = Boolean(selected && selected.local_bgp);
+
   try {
-    const response = await fetch("/api/query", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = isLocalBgp
+      ? await fetch(`/api/bgp/route?target=${encodeURIComponent(payload.target)}`)
+      : await fetch("/api/query", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
     const body = await response.json();
     if (!response.ok) {
       if (body.code === "captcha_required") {
