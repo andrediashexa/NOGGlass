@@ -1,6 +1,6 @@
 # ADR-0016 — One Rust engine for the BGP session and the BMP station
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-27
 - **Deciders:** André Dias, Marcelo Gondim
 
@@ -12,9 +12,8 @@ a BMP station that receives what the operator's routers monitor (issue #172).
 Both need an engine that speaks the protocol and hands NOGGlass **typed** data,
 never text to scrape. This ADR proposes **one Rust engine for both**, and names
 **NetGauze**, embedded in the binary, as the choice — with **Rotonda** (a Rust
-sidecar) as the sanctioned fallback. It is Proposed: it records the
-recommendation for the maintainers to accept or reject, and MUST NOT be merged as
-Accepted until they decide.
+sidecar) as the sanctioned fallback. Accepted by the maintainers on 2026-09-27;
+implementation follows, #171 (BGP session) first, then #172 (BMP station).
 
 ## 5W2H
 
@@ -73,10 +72,10 @@ flowchart TB
 
 ## Decision
 
-**Proposed:** adopt **one Rust engine for both** #171 and #172, and make it
-**NetGauze embedded in the NOGGlass binary** — `netgauze-bgp-speaker` for the
-session and `netgauze-bmp-service` / `netgauze-bmp-pkt` for the station, mapped
-into the normalised model.
+Adopt **one Rust engine for both** #171 and #172, and make it **NetGauze embedded
+in the NOGGlass binary** — `netgauze-bgp-speaker` for the session and
+`netgauze-bmp-service` / `netgauze-bmp-pkt` for the station, mapped into the
+normalised model.
 
 - The engine **MUST** be Rust and **MUST** expose typed protocol structures;
   parsing engine output as text is not acceptable.
@@ -121,6 +120,6 @@ flowchart LR
   so discovering mid-implementation that embedding is too much work does not
   require a new decision — only moving the two boxes above into a sidecar and
   reading its JSON.
-- **If the maintainers prefer Rotonda from the start,** or reject the Rust-only
-  constraint, this ADR is amended before merge or superseded — it is Proposed
-  precisely so that conversation happens here.
+- **Changing the choice later** — preferring Rotonda from the start, or dropping
+  the Rust-only constraint — means a superseding ADR (R7), since this one is now
+  Accepted and immutable.
