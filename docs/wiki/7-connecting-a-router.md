@@ -59,23 +59,6 @@ credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
 queries = ["ping", "traceroute", "bgp_route", "bgp_summary"]
 ```
 
-Prefer YAML? Name the file `nogglass.yaml` (or `.yml`) and write the same entry
-as YAML — NOGGlass picks the format from the extension and validates both the
-same way:
-
-```yaml
-router:
-  - id: edge-01                 # appears in URLs; do not change it later
-    name: Edge 01               # what visitors see
-    vendor: huawei_vrp
-    host: 192.0.2.10            # management address, never shown to visitors
-    username: nogglass
-    location: Sao Paulo         # groups the selector
-    credentials:
-      password_env: NOGGLASS_EDGE01_PASSWORD
-    queries: [ping, traceroute, bgp_route, bgp_summary]
-```
-
 The password is **named** here and **read from the environment**, so this file
 stays free of secrets and can live in version control:
 

@@ -51,8 +51,8 @@ ADR before implementation begins.
 
 A web interface for the LG **owner** to manage the whole deployment — routers
 (add, edit, remove, test connectivity), global limits, rate limiting, RPKI,
-global view, and UI/branding — instead of hand-editing `nogglass.toml` /
-`nogglass.yaml` and restarting. It manages *configuration*; it MUST preserve the
+global view, and UI/branding — instead of hand-editing `nogglass.toml`
+and restarting. It manages *configuration*; it MUST preserve the
 router-is-sacred, read-only invariants, and it MUST NOT write secrets to disk —
 passwords stay named in the environment, exactly as the inventory keeps them
 today. It needs its own ADR for the authentication model and the configuration

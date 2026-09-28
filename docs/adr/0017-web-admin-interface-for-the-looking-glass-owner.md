@@ -4,7 +4,7 @@
 
 ## TL;DR
 
-NOGGlass is configured today by hand-editing `nogglass.toml` / `nogglass.yaml`
+NOGGlass is configured today by hand-editing `nogglass.toml`
 on the host and restarting. This ADR proposes a **single-owner web admin
 interface** to manage the inventory and settings from a browser, and — because
 it turns a read-only service into one that writes state — fixes the shape of
@@ -92,8 +92,8 @@ is an owner tool: exactly one principal, no per-tenant model (that is
   `rename` over the target, so a crash mid-write can never leave a half-written
   or empty inventory. The previous version SHOULD be kept as a `.bak`.
 - The model gains `Serialize` (it is `Deserialize` today). The writer SHOULD
-  emit the inventory in the file's current format (TOML or YAML, per ADR after
-  #202) and MUST round-trip through validation after serializing.
+  emit the inventory back as TOML and MUST round-trip through validation
+  after serializing.
 - After a successful swap, the server MUST reload the inventory **without
   dropping in-flight queries**; a signal- or watch-based reload is preferred
   over requiring a manual restart.
