@@ -68,7 +68,9 @@ impl LocalRib {
         });
     }
 
-    /// Every path for a prefix, across peers, in a stable order (by peer).
+    /// Every path for an **exact** prefix, across peers, in a stable order (by
+    /// peer). Empty when the RIB holds no such prefix. For a route query prefer
+    /// [`Self::route_result`], which matches the way a router answers.
     pub fn paths_for(&self, prefix: &IpNet) -> Vec<BgpPath> {
         self.by_prefix
             .get(prefix)
@@ -76,15 +78,36 @@ impl LocalRib {
             .unwrap_or_default()
     }
 
-    /// The route query answer for `prefix`, as the normalised result the API
-    /// already serves for the SSH drivers — every peer's path for it.
+    /// The most specific prefix in the RIB that covers `query` — the longest
+    /// prefix whose network contains the query address and whose length is no
+    /// greater than the query's. `None` when nothing covers it.
+    ///
+    /// This is what makes a host or more-specific query behave like `show ip
+    /// route <addr>`: walk candidate lengths from the query's down to 0 and take
+    /// the first the RIB holds. A same-family lookup only — an IPv4 query never
+    /// matches an IPv6 prefix.
+    pub fn longest_match(&self, query: &IpNet) -> Option<IpNet> {
+        let addr = query.addr();
+        (0..=query.prefix_len()).rev().find_map(|len| {
+            let candidate = IpNet::new(addr, len).ok()?.trunc();
+            self.by_prefix.contains_key(&candidate).then_some(candidate)
+        })
+    }
+
+    /// The route query answer for `query`, as the normalised result the API
+    /// already serves for the SSH drivers — every peer's path for the route that
+    /// covers it (longest-prefix match, [`Self::longest_match`]).
     ///
     /// A route learned over BGP has no raw router text, so `raw_output` is
-    /// empty; the RIB either holds the prefix or it does not, so the answer is
+    /// empty; the RIB either covers the query or it does not, so the answer is
     /// always [`Completeness::Complete`](crate::driver::Completeness) — an empty
-    /// result means "no peer advertises this prefix", never "the lookup failed".
-    pub fn route_result(&self, prefix: &IpNet) -> BgpRouteResult {
-        BgpRouteResult::new(self.paths_for(prefix), String::new())
+    /// result means "no route covers this", never "the lookup failed".
+    pub fn route_result(&self, query: &IpNet) -> BgpRouteResult {
+        let paths = self
+            .longest_match(query)
+            .map(|prefix| self.paths_for(&prefix))
+            .unwrap_or_default();
+        BgpRouteResult::new(paths, String::new())
     }
 
     /// How many distinct prefixes the RIB holds.
@@ -286,5 +309,96 @@ mod tests {
         // Empty means "no peer advertises this", a real answer — not a failure.
         assert!(result.paths.is_empty());
         assert_eq!(result.completeness, Completeness::Complete);
+    }
+
+    /// Loads a RIB with one path per given prefix (all from one peer).
+    fn rib_with(prefixes: &[&str]) -> LocalRib {
+        let mut rib = LocalRib::new();
+        for p in prefixes {
+            rib.apply_update(
+                peer("192.0.2.1"),
+                vec![path(p, "192.0.2.1", vec![65100])],
+                &[],
+            );
+        }
+        rib
+    }
+
+    /// The single matched prefix a query resolves to, if any.
+    fn matched(rib: &LocalRib, query: &str) -> Option<String> {
+        let result = rib.route_result(&net(query));
+        result.paths.first().map(|p| p.prefix.unwrap().to_string())
+    }
+
+    #[test]
+    fn a_host_query_finds_the_covering_route() {
+        let rib = rib_with(&["203.0.113.0/24"]);
+        // 203.0.113.5/32 is not in the RIB, but the /24 covers it.
+        assert_eq!(
+            matched(&rib, "203.0.113.5/32"),
+            Some("203.0.113.0/24".into())
+        );
+    }
+
+    #[test]
+    fn the_most_specific_covering_route_wins() {
+        let rib = rib_with(&["203.0.113.0/24", "203.0.113.0/26", "0.0.0.0/0"]);
+        // The /26 is the longest that covers 203.0.113.5.
+        assert_eq!(
+            matched(&rib, "203.0.113.5/32"),
+            Some("203.0.113.0/26".into())
+        );
+    }
+
+    #[test]
+    fn an_exact_prefix_query_still_returns_itself() {
+        let rib = rib_with(&["203.0.113.0/24", "198.51.100.0/24"]);
+        assert_eq!(
+            matched(&rib, "203.0.113.0/24"),
+            Some("203.0.113.0/24".into())
+        );
+    }
+
+    #[test]
+    fn a_more_specific_query_returns_the_covering_route() {
+        let rib = rib_with(&["203.0.113.0/24"]);
+        // Nothing at /25, but the /24 covers 203.0.113.128/25.
+        assert_eq!(
+            matched(&rib, "203.0.113.128/25"),
+            Some("203.0.113.0/24".into())
+        );
+    }
+
+    #[test]
+    fn a_default_route_covers_anything_when_nothing_more_specific_exists() {
+        let rib = rib_with(&["0.0.0.0/0"]);
+        assert_eq!(matched(&rib, "8.8.8.8/32"), Some("0.0.0.0/0".into()));
+    }
+
+    #[test]
+    fn a_query_no_route_covers_is_empty() {
+        let rib = rib_with(&["203.0.113.0/24"]);
+        assert_eq!(matched(&rib, "8.8.8.8/32"), None);
+    }
+
+    #[test]
+    fn longest_match_is_same_family_only() {
+        let rib = rib_with(&["0.0.0.0/0"]);
+        // An IPv6 host must not match the IPv4 default route.
+        assert_eq!(matched(&rib, "2001:db8::1/128"), None);
+    }
+
+    #[test]
+    fn ipv6_longest_prefix_match_works() {
+        let rib = rib_with(&["2001:db8::/32", "2001:db8:100::/48"]);
+        assert_eq!(
+            matched(&rib, "2001:db8:100::5/128"),
+            Some("2001:db8:100::/48".into())
+        );
+        // Outside the /48 but inside the /32.
+        assert_eq!(
+            matched(&rib, "2001:db8:200::1/128"),
+            Some("2001:db8::/32".into())
+        );
     }
 }
