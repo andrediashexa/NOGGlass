@@ -75,19 +75,28 @@ flowchart TB
 
 ## Supported Vendors and Drivers
 
-| Vendor Identifier | Target Hardware / Operating System | Capabilities |
-|---|---|---|
-| `huawei_vrp` | Huawei NE40E, NE8000, S-Series | Tabular BGP, asdot ASN decoding, detail RPKI extraction, multi-line status tolerance |
-| `juniper_junos` | Juniper MX, PTX, QFX, SRX, vMX | Structured native JSON parsing (`| display json`), native RTR RPKI |
-| `cisco_iosxr` | Cisco IOS-XR | Native JSON extraction pipeline, structured path attributes |
-| `cisco_iosxe` | Cisco IOS-XE / Classic IOS | Tabular output parsing, BGP communities, metric extraction |
-| `mikrotik_routeros`| MikroTik RouterOS v6 and v7 | Key-value property parsing, BGP session monitoring |
-| `datacom_dmos` | Datacom DM4000 and DM4200 series | Tabular CLI extraction, next-hop resolution |
-| `nokia_sros` | Nokia 7750 SR (TiMOS classic & MD-CLI)| Tabular parsing, multi-hop traceroute decoding |
-| `bird_routing_daemon`| BIRD 2 Internet Routing Daemon | CLI command parsing, table summaries |
-| `arista_eos` | Arista EOS 7000 / vEOS Series | Detail and tabular BGP parsing, Unix ping statistics, BGP summary |
-| `frr` | FRRouting (FRR) Routing Daemon | Cisco-compatible BGP detail/table parsing, vtysh integration |
-| `mock` | Synthetic Lab Driver | Deterministic fixtures for CI, testing, and public demonstrations |
+Not every driver is equally proven. **Verified end to end** means the product
+queried a real device running that software over SSH and returned the answer;
+**Supported** means a CLI-compatible driver not yet run on its own device; and
+**Unverified** means it was written from documentation and never run — and, on
+this project's own evidence, a driver in that state is probably wrong in ways
+nobody has noticed yet. See [`docs/reference/vendor-support.md`](docs/reference/vendor-support.md)
+for the versions each was tested against and what each real device changed
+([ADR-0015](docs/adr/0015-vendor-drivers-are-verified-against-real-devices.md)).
+
+| Vendor Identifier | Target Hardware / Operating System | Verification | Capabilities |
+|---|---|---|---|
+| `huawei_vrp` | Huawei NE40E, NE8000, S-Series | ✅ Verified end to end (VRP 8.180) | Tabular BGP, asdot ASN decoding, detail RPKI extraction, multi-line status tolerance |
+| `cisco_iosxr` | Cisco IOS-XR | ✅ Verified end to end (IOS-XR 7.9.2) | Native JSON extraction pipeline, structured path attributes |
+| `cisco_iosxe` | Cisco IOS-XE / Classic IOS | ✅ Verified end to end (IOS-XE 17.03.08a) | Tabular output parsing, BGP communities, metric extraction |
+| `mikrotik_routeros`| MikroTik RouterOS v6 and v7 | ✅ v7 verified end to end (7.16.2) · ⚠️ v6 unverified | Key-value property parsing, BGP session monitoring |
+| `bird_routing_daemon`| BIRD 2 Internet Routing Daemon | ✅ Verified end to end (BIRD 2.15.1) | CLI command parsing, table summaries |
+| `arista_eos` | Arista EOS 7000 / vEOS Series | 🟡 Supported (Cisco/Netmiko-compatible CLI) | Detail and tabular BGP parsing, Unix ping statistics, BGP summary |
+| `frr` | FRRouting (FRR) Routing Daemon | 🟡 Supported (Cisco/Quagga-compatible vtysh) | Cisco-compatible BGP detail/table parsing, vtysh integration |
+| `juniper_junos` | Juniper MX, PTX, QFX, SRX, vMX | ⚠️ Unverified (no image runs BGP yet) | Structured native JSON parsing (`| display json`), native RTR RPKI |
+| `nokia_sros` | Nokia 7750 SR (TiMOS classic & MD-CLI)| ⚠️ Unverified (licence unavailable) | Tabular parsing, multi-hop traceroute decoding |
+| `datacom_dmos` | Datacom DM4000 and DM4200 series | ⚠️ Unverified (needs hardware) | Tabular CLI extraction, next-hop resolution |
+| `mock` | Synthetic Lab Driver | ✅ CI fixtures | Deterministic fixtures for CI, testing, and public demonstrations |
 
 ---
 
