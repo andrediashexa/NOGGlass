@@ -49,3 +49,5 @@ stateDiagram-v2
 | [0013](0013-product-name-and-branding.md) | Product name: NOGGlass | Accepted |
 | [0014](0014-release-every-change-with-patch-prereleases.md) | Every change is released; patch releases are pre-releases | Accepted |
 | [0015](0015-vendor-drivers-are-verified-against-real-devices.md) | A vendor driver is verified against a real device, or it is not verified | Accepted |
+| [0016](0016-one-rust-engine-for-bgp-session-and-bmp.md) | One Rust engine for the BGP session and the BMP station | Accepted, but reverted (#194) |
+| [0017](0017-web-admin-interface-for-the-looking-glass-owner.md) | Web admin interface for the Looking Glass owner | **Proposed** — deferred to post-1.0 |

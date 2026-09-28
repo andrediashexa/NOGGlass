@@ -166,7 +166,7 @@ Comprehensive project documentation is maintained in English under [`docs/`](doc
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community collaboration standards and professional conduct |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Issue workflow, branch naming, Conventional Commits, and pull request policies |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability disclosure channels, responsible disclosure window, and testing boundaries |
-| [`docs/adr/`](docs/adr/) | Architectural Decision Records (ADR-0001 through ADR-0015) |
+| [`docs/adr/`](docs/adr/) | Architectural Decision Records (ADR-0001 through ADR-0017) |
 | [`docs/process/roadmap.md`](docs/process/roadmap.md) | Direction: what is in 1.0.0 and what is deferred to post-1.0 |
 | [`docs/operations/deployment.md`](docs/operations/deployment.md) | Advanced production deployment guide, Systemd hardening, and TLS termination |
 
