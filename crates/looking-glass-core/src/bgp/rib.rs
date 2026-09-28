@@ -110,6 +110,20 @@ impl LocalRib {
         BgpRouteResult::new(paths, String::new())
     }
 
+    /// Every path whose AS-path contains `asn`, across every prefix and peer —
+    /// the answer to an AS-path query. Matches the AS anywhere in the path (the
+    /// origin or a transit AS), like a router's `bgp_aspath`.
+    pub fn route_result_for_as(&self, asn: u32) -> BgpRouteResult {
+        let paths = self
+            .by_prefix
+            .values()
+            .flat_map(|peers| peers.values())
+            .filter(|path| path.as_path.contains(&asn))
+            .cloned()
+            .collect();
+        BgpRouteResult::new(paths, String::new())
+    }
+
     /// How many distinct prefixes the RIB holds.
     pub fn prefix_count(&self) -> usize {
         self.by_prefix.len()
@@ -337,6 +351,52 @@ mod tests {
     fn matched(rib: &LocalRib, query: &str) -> Option<String> {
         let result = rib.route_result(&net(query));
         result.paths.first().map(|p| p.prefix.unwrap().to_string())
+    }
+
+    #[test]
+    fn an_as_path_query_matches_the_as_anywhere_in_the_path() {
+        let mut rib = LocalRib::new();
+        rib.apply_update(
+            peer("192.0.2.1"),
+            vec![
+                // 65001 is the origin here.
+                path("203.0.113.0/24", "192.0.2.1", vec![65000, 65001]),
+                // 65001 is a transit AS here.
+                path("198.51.100.0/24", "192.0.2.1", vec![65001, 65002, 65003]),
+                // 65001 is absent here.
+                path("192.0.2.0/24", "192.0.2.1", vec![65000, 65009]),
+            ],
+            &[],
+        );
+        // A v6 route through 65001 too, to prove the search is family-agnostic.
+        rib.apply_update(
+            peer("192.0.2.1"),
+            vec![path("2001:db8::/32", "192.0.2.1", vec![65001])],
+            &[],
+        );
+
+        let result = rib.route_result_for_as(65001);
+        let mut prefixes: Vec<String> = result
+            .paths
+            .iter()
+            .map(|p| p.prefix.unwrap().to_string())
+            .collect();
+        prefixes.sort();
+        assert_eq!(
+            prefixes,
+            vec!["198.51.100.0/24", "2001:db8::/32", "203.0.113.0/24"]
+        );
+    }
+
+    #[test]
+    fn an_as_path_query_with_no_match_is_empty() {
+        let mut rib = LocalRib::new();
+        rib.apply_update(
+            peer("192.0.2.1"),
+            vec![path("203.0.113.0/24", "192.0.2.1", vec![65000, 65001])],
+            &[],
+        );
+        assert!(rib.route_result_for_as(64999).paths.is_empty());
     }
 
     #[test]

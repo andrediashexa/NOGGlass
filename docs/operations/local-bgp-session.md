@@ -86,6 +86,13 @@ It lists every configured peer with its remote AS, its live session state
 has advertised — built from the configuration, the session state, and the RIB.
 Same `404 bgp_disabled` when `[bgp]` is off.
 
+An AS-number target on the route endpoint answers `bgp_aspath` — every route
+whose AS-path contains that AS, across both families:
+
+```
+GET /api/bgp/route?target=AS65001
+```
+
 ```mermaid
 flowchart LR
     router[Your router] -->|BGP/179| eng[NetGauze session]
