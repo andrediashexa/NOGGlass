@@ -381,10 +381,10 @@ async fn run_query(
         return Err(refusal);
     }
 
-    let target = parse_target(&request.target)?;
+    let target = resolve_target(request.query_type, &request.target)?;
     let execution = match state
         .executor
-        .execute(&request.router, request.query_type, &target)
+        .execute(&request.router, request.query_type, target.as_ref())
         .await
     {
         Ok(exec) => exec,
@@ -400,8 +400,24 @@ async fn run_query(
     };
 
     let mut response: QueryResponse = execution.into();
-    add_global_view(&state, &target, &mut response).await;
+    if let Some(target) = &target {
+        add_global_view(&state, target, &mut response).await;
+    }
     Ok(Json(response))
+}
+
+/// Validates the request target for the query type.
+///
+/// `bgp_summary` describes every session and takes no target, so an empty
+/// target is accepted for it (and the interface sends none). Every other query
+/// needs one. A target supplied for a no-target query is still validated, so
+/// hostile input is rejected either way — it is simply ignored afterwards.
+fn resolve_target(query: QueryType, raw: &str) -> Result<Option<QueryTarget>, ApiError> {
+    if query.requires_target() || !raw.trim().is_empty() {
+        Ok(Some(parse_target(raw)?))
+    } else {
+        Ok(None)
+    }
 }
 
 /// The same query, as a stream of events via GET query string.
@@ -476,16 +492,18 @@ async fn handle_stream_query(
             .await;
 
         let response = async {
-            let target = parse_target(&request.target)?;
+            let target = resolve_target(request.query_type, &request.target)?;
             let _ = sender
                 .send(Event::default().event("running").data("{}"))
                 .await;
             let execution = state
                 .executor
-                .execute(&request.router, request.query_type, &target)
+                .execute(&request.router, request.query_type, target.as_ref())
                 .await?;
             let mut response: QueryResponse = execution.into();
-            add_global_view(&state, &target, &mut response).await;
+            if let Some(target) = &target {
+                add_global_view(&state, target, &mut response).await;
+            }
             Ok::<QueryResponse, ApiError>(response)
         }
         .await;
@@ -752,6 +770,51 @@ queries = ["bgp_route"]
                 ))
                 .unwrap(),
             "198.51.100.78:5000",
+        );
+
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(body_json(response).await["code"], "target_unparseable");
+    }
+
+    #[tokio::test]
+    async fn bgp_summary_runs_without_a_target() {
+        // The interface sends an empty target for bgp_summary, which describes
+        // every session and takes none. The API must accept that and return the
+        // parsed table, not a target_empty error.
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"demo","type":"bgp_summary","target":""}"#,
+                ))
+                .unwrap(),
+            "198.51.100.90:5000",
+        );
+
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await;
+        assert_eq!(body["kind"], "bgp_summary");
+        assert!(
+            !body["result"]["peers"].as_array().unwrap().is_empty(),
+            "the summary carries the session table"
+        );
+    }
+
+    #[tokio::test]
+    async fn bgp_summary_still_rejects_a_hostile_target() {
+        // A target is ignored for bgp_summary, but if one is supplied it is
+        // still validated, so an injection attempt is refused rather than
+        // passed through untouched.
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"demo","type":"bgp_summary","target":"198.51.100.1; reload"}"#,
+                ))
+                .unwrap(),
+            "198.51.100.91:5000",
         );
 
         let response = app().oneshot(request).await.unwrap();
