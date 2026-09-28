@@ -3,12 +3,12 @@
 ## TL;DR
 
 Today NOGGlass only reads other people's routers over SSH, on demand. This
-document plans a second source of truth: NOGGlass **holds its own BGP session(s)**
-to one or more peers and answers from the live feed it receives — an always-on
-RIB instead of a login per question. It MUST stay read-only toward the network:
-it **announces nothing** by default and only ever listens. The open decision is
-**which BGP engine** drives the session — FRR, BIRD, GoBGP or a native Rust
-speaker — recorded in an ADR before code lands. Tracked in issue #171.
+document plans a second source of truth: an operator configures NOGGlass to
+**peer over BGP with their own router**, NOGGlass receives that router's routes
+into a **local RIB**, and the looking glass answers from that live table instead
+of a login per question. It stays read-only: it **announces nothing** and only
+ever receives. The open decision is **which Rust BGP engine** drives the session,
+recorded in an ADR before code lands. Tracked in issue #171.
 
 The key words "MUST", "MUST NOT", "SHOULD", "RECOMMENDED" and "MAY" are to be
 interpreted as in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
@@ -17,10 +17,10 @@ interpreted as in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 | Question | Answer |
 |---|---|
-| **What** | A BGP speaker inside NOGGlass that establishes and maintains sessions with configured peers, receives their routes, and serves them through the existing API/UI as the normalised path model ([ADR-0006](../adr/0006-structured-bgp-model-and-data-sources.md)). |
-| **Why** | SSH answers one question per login and shows only what a command was typed for. A live BGP feed gives the looking glass the full received table, updated continuously, with no router credentials to hold and no vendor CLI to scrape. |
-| **Who** | Operators who want a looking glass fed by a real session; maintainers who pick the engine and own the ADR. Visitors only see faster, fuller answers. |
-| **Where** | A new component in the workspace; configuration under `NOGGLASS_*`; a new inbound TCP listener (BGP/179). The SSH drivers do not change. |
+| **What** | A BGP speaker inside NOGGlass that peers with the operator's own router(s), receives that router's routes into a local RIB, and serves them through the existing API/UI as the normalised path model ([ADR-0006](../adr/0006-structured-bgp-model-and-data-sources.md)). |
+| **Why** | SSH answers one question per login and shows only what a command was typed for. Peering NOGGlass directly with the router gives the looking glass that router's full table, held locally and updated continuously, with no credentials to store and no vendor CLI to scrape. |
+| **Who** | Operators who point their own router at NOGGlass; maintainers who pick the engine and own the ADR. Visitors only see faster, fuller answers. |
+| **Where** | A new component in the workspace; configuration under `NOGGLASS_*`; a BGP session with the operator's router (TCP/179, inbound or outbound). The SSH drivers do not change. |
 | **When** | After the engine decision (ADR-00XX). This document is the plan and the discussion; implementation is a follow-up per the decision. |
 | **How** | A BGP engine maintains the session; NOGGlass maps its RIB into `BgpPath`/summary and preserves raw. Export policy is reject-all. |
 | **How much** | One long-lived session process/task and its memory (a full IPv4 table is ~1.9M paths — engine choice dominates the footprint); measured `mem_limit` per the Compose rule. Engineering: a session manager, a RIB→model mapper, and the engine integration. |
@@ -56,11 +56,11 @@ Routes flow in; nothing NOGGlass holds is ever advertised out.
 
 ```mermaid
 flowchart LR
-    peer1[Peer AS64500]-->|BGP/179| eng
-    peer2[Peer AS64501]-->|BGP/179| eng
+    r1[Operator router A]-->|BGP/179| eng
+    r2[Operator router B]-->|BGP/179| eng
     subgraph NOGGlass
-      eng[BGP engine\nsession + RIB]-->|structured routes| map[RIB to normalised\nBgpPath + raw]
-      map-->store[(Live RIB\ncache)]
+      eng[BGP engine\nsession + local RIB]-->|structured routes| map[RIB to normalised\nBgpPath + raw]
+      map-->store[(Local RIB)]
       store-->api[Axum API]
       ssh[SSH drivers]-->api
     end
@@ -75,6 +75,7 @@ sequenceDiagram
     participant E as BGP engine
     participant M as Mapper
     participant A as API
+    Note over P: P is the operator's own router
     P->>E: OPEN / KEEPALIVE (session up)
     P->>E: UPDATE (NLRI + attributes)
     E->>M: structured route add/withdraw
@@ -86,22 +87,25 @@ sequenceDiagram
 ### The decision: which engine drives the session
 
 This is the point of the work and **MUST** be settled in an ADR before
-implementation. Candidates:
+implementation. The operator preference is a Rust engine, and the job — peer
+with a router, hold its RIB locally, answer from it — is a route-collector, not
+a transit router. Two Rust options fit it, and each one also covers BMP (issue
+#172), so a single choice **MAY** serve both features. Candidates, Rust first:
 
-| Engine | Integration | For | Against |
+| Engine | Shape | For | Against |
 |---|---|---|---|
-| **GoBGP** | gRPC API (typed messages) or embedded Go lib | Structured routes over gRPC — **no CLI scraping**, the exact pain this project was built around; large tables, add-path, multiprotocol; already speaks BMP as a client | Separate Go runtime → a sidecar, in tension with the single-binary model; needs a Rust gRPC client (tonic) |
-| **BIRD 2** | `birdc` control socket | The de-facto looking-glass engine (alice-lg / birdwatcher); tiny footprint; superb RIB and filter language; proven at IXP scale | Control output is semi-structured text — parsing again, though far tamer than vendor CLI |
-| **FRR** | vtysh, or northbound gRPC/YANG | Full router; already in the lab as the reference peer | Heaviest; controlling it means parsing vtysh, the very thing the SSH drivers already fight |
-| **Native Rust** | in-process (`netgauze` / `zettabgp` / `bgp-rs`) | Single binary preserved; typed end to end; no IPC | A correct BGP FSM, session management and RIB is a lot of code and risk to own |
+| **Rotonda** (NLnet Labs) | Rust BGP+BMP collector daemon; in-memory RIB; queryable JSON/HTTPS API | Purpose-built to open BGP/BMP sessions and collect peers' routes into a RIB — exactly this feature; typed JSON out, no scraping; same house as Routinator/NSD/Unbound; **also delivers #172** | A separate process (sidecar), so not the single binary; pre-1.0; its Roto filter language to learn |
+| **NetGauze** crates (`netgauze-bgp-speaker`, `netgauze-bmp-*`) | Rust libraries compiled into the NOGGlass binary | Keeps the single binary; typed end to end; one dependency family does **both** the BGP session and BMP; Apache-2.0 | We own the RIB and the glue; the speaker crate is young (~27% documented, v0.13, 2026); more engineering |
+| **Holo** (NLnet-funded) | Full Rust routing daemon; gRPC/gNMI/YANG northbound | Solid engineering; structured northbound; MIT | It is a *router* meant to install routes — more than a looking glass needs; sidecar |
+| GoBGP / BIRD / FRR | Go / C daemons | Mature, huge deployments, proven at scale | Not Rust; BIRD/FRR mean parsing control-plane text again — the pain this project fights; GoBGP is gRPC-clean but a Go sidecar |
 
-**Recommendation (open to discussion).** GoBGP as the engine, run as a sidecar,
-with a small Rust gRPC client mapping its structured routes into the normalised
-model. The whole history of this codebase is the cost of scraping vendor text,
-and GoBGP is the one option that hands us **typed** routes and so never tempts us
-to invent a value a peer did not send. BIRD is the strong alternative and the
-traditional choice; a native-Rust speaker is the long-term "single binary, no
-dependencies" endgame and **MAY** supersede the sidecar later.
+**Recommendation (open to discussion).** Given NOGGlass's "one Rust binary"
+identity, lead with **NetGauze embedded**: the session FSM and BMP receiver
+compile into the binary, everything stays typed, and one dependency family
+covers this issue and #172. Fall back to **Rotonda** (a Rust sidecar) if owning
+the RIB and glue is too much for a first cut — it is the lowest-risk way to get
+the feature running and it, too, delivers both features. All candidates are
+pre-1.0, so the ADR **MUST** pin a version; the Rust licences are permissive.
 
 No engine is chosen here. The comparison is the input to the ADR, which the
 implementation blocks on. The decision is tracked in issue #171.
