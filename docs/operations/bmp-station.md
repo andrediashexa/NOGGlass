@@ -60,13 +60,13 @@ description = "Edge router, NYC" # optional, shown in the interface
 ```
 
 `listen` is required when enabled — a station must listen somewhere. Each
-`[[bmp.router]]` needs a distinct `id` and `address`. An **empty** router list
-is allowed but means NOGGlass accepts any source that reaches a listener,
-relying on network ACLs alone; it logs a warning at startup. Unknown keys are
-rejected, so a typo cannot leave the station silently mis-set. `source_id`
-(default `"bmp-local"`) and `source_name` (default `"BMP monitored routes"`)
-name the source; `source_id` **MUST NOT** collide with a router id or with
-`bgp.source_id`.
+`[[bmp.router]]` needs a distinct `id` and `address`, and **is its own query
+source** in the interface, named by its `description` (or its `id`). The `id`
+**MUST NOT** collide with a router id or with `bgp.source_id`. An **empty**
+router list is allowed but means NOGGlass accepts any source that reaches a
+listener, relying on network ACLs alone; each such source then appears keyed by
+the address it connects from, and the station logs a warning at startup. Unknown
+keys are rejected, so a typo cannot leave the station silently mis-set.
 
 On the router side, export the routes that actually carry data. A common gotcha:
 a router that monitors a peer's **pre-policy** Adj-RIB-In may not retain it (FRR,
@@ -78,44 +78,47 @@ for a worked FRR example.
 ## Querying the monitored routes
 
 ```
-GET /api/bmp/route?target=203.0.113.0/24
+GET /api/bmp/route?router=edge01&target=203.0.113.0/24
 ```
 
-It returns the same shape as a router `bgp_route` answer — every monitored
-peer's path for the prefix, in the normalised model
+`router` names which monitored router to answer from (its `[[bmp.router]]` id,
+or the connecting address when there is no allow-list). It returns the same
+shape as a router `bgp_route` answer — every monitored peer's path for the
+prefix, in the normalised model
 ([ADR-0006](../adr/0006-structured-bgp-model-and-data-sources.md)), keyed by the
 peer's address, with `raw_output` empty because a BMP-learned route has no router
-text. An empty result means "no monitored peer reports this prefix", never a
-failed lookup. The endpoint answers `404 bmp_disabled` when `[bmp]` is off.
-Lookups are rate-limited like every other query. Matching is exact-prefix (or
-host) for now.
+text. An empty result means "this router reports no such prefix" (including when
+it is not currently connected), never a failed lookup. The endpoint answers
+`404 bmp_disabled` when `[bmp]` is off. Lookups are rate-limited like every other
+query. Matching is exact-prefix (or host) for now.
 
 ```mermaid
 flowchart LR
     r1[Router A] -->|BMP/11019| st[NetGauze station]
     r2[Router B] -->|BMP/11019| st
-    st --> rib[(Local RIB)]
-    visitor[Visitor] -->|"GET /api/bmp/route"| api[Axum API]
-    api --> rib
+    st --> ra[(RIB: Router A)]
+    st --> rb[(RIB: Router B)]
+    visitor[Visitor] -->|"GET /api/bmp/route?router=…"| api[Axum API]
+    api --> ra
+    api --> rb
     classDef ro fill:#efe;
-    class st,rib ro;
+    class st,ra,rb ro;
 ```
 
 ## Status
 
 The station listens, admits routers by the allow-list, and parses their stream
-with NetGauze's BMP codec into the RIB; a Route Monitoring message installs its
-peer's routes and a Peer Down forgets them. This is proven end to end by a
-loopback test that sends an encoded Route Monitoring message and reads the route
-back out of the RIB. Two refinements are tracked under #172:
+with NetGauze's BMP codec into **that router's** RIB; a Route Monitoring message
+installs its peer's routes and a Peer Down forgets them. Each monitored router
+has its own RIB, so one router's view is isolated from another's, a reconnecting
+router re-synchronises from empty, and a router whose last session closes stops
+answering rather than serving a stale table. Proven end to end against a real
+FRR 9.1 stream (a captured fixture) and by a loopback test. One refinement is
+tracked under #172:
 
-- **One aggregate view for now.** Every monitored router feeds one shared RIB,
-  keyed by monitored peer. Per-router RIBs — isolating each router's view and
-  letting a disconnected router's routes be dropped cleanly — are a later slice;
-  until then, routes learned over a session outlive its close until an explicit
-  Peer Down or a reconnect re-synchronises.
-- **BMP v3 only.** v4 messages are parsed but not yet mapped; they change no
-  routes rather than being mishandled.
+- **BMP v3 only.** v4 messages are parsed but not yet mapped; the station warns
+  once per session and changes no routes, rather than dropping v4 routes
+  silently.
 
 ## Consequences
 

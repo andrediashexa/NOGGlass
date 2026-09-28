@@ -16,27 +16,25 @@
 //! - a frame that will not decode ends that session rather than being guessed.
 
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
 
 use netgauze_bmp_pkt::codec::BmpCodec;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tokio_util::codec::FramedRead;
 use tracing::{info, warn};
 
-use crate::bgp::rib::LocalRib;
-use crate::bgp::runtime::SharedRib;
 use crate::bmp::config::{BmpRouterConfig, BmpSettings};
 use crate::bmp::mapping::apply_bmp_message;
+use crate::bmp::rib::BmpRibs;
 
-/// Whether a connecting address may talk to the station.
+/// Whether a connecting address may talk to the station, and under what key its
+/// routes are held.
 #[derive(Debug, PartialEq)]
 enum Admission<'a> {
-    /// A configured router, named for logs.
+    /// A configured router, held under its id.
     Known(&'a str),
-    /// No allow-list configured; the operator relies on network ACLs.
+    /// No allow-list configured; held under the source address.
     Unlisted,
     /// An address outside a non-empty allow-list: refuse.
     Refused,
@@ -57,24 +55,24 @@ fn admit(routers: &[BmpRouterConfig], addr: IpAddr) -> Admission<'_> {
     }
 }
 
-/// A running BMP station: the listeners accepting routers and the RIB they
-/// fill.
+/// A running BMP station: the listeners accepting routers and the per-router
+/// RIBs they fill.
 ///
 /// Holding this keeps the listeners alive; dropping it aborts them. The server
-/// keeps it for the process lifetime and hands [`Self::rib`] to the API.
+/// keeps it for the process lifetime and hands [`Self::ribs`] to the API.
 pub struct BmpStation {
     // Owns the accept-loop tasks; kept only to keep them running.
     _listeners: Vec<JoinHandle<()>>,
     // The addresses actually bound, for logging and tests (a `:0` request
     // resolves to a concrete port here).
     local_addrs: Vec<SocketAddr>,
-    rib: SharedRib,
+    ribs: BmpRibs,
 }
 
 impl BmpStation {
-    /// A shared handle to the RIB, for the API to read.
-    pub fn rib(&self) -> SharedRib {
-        self.rib.clone()
+    /// A shared handle to the per-router RIBs, for the API to read.
+    pub fn ribs(&self) -> BmpRibs {
+        self.ribs.clone()
     }
 
     /// The addresses the station is actually listening on.
@@ -89,7 +87,7 @@ impl BmpStation {
 /// A listener that fails to bind is logged and skipped rather than aborting the
 /// others — one unusable address must not take the station down.
 pub async fn spawn(settings: &BmpSettings) -> BmpStation {
-    let rib: SharedRib = Arc::new(RwLock::new(LocalRib::new()));
+    let ribs = BmpRibs::new();
 
     if settings.routers.is_empty() {
         warn!(
@@ -105,9 +103,9 @@ pub async fn spawn(settings: &BmpSettings) -> BmpStation {
                 let bound = listener.local_addr().unwrap_or(*addr);
                 info!(%bound, "bmp: station listening");
                 local_addrs.push(bound);
-                let rib = rib.clone();
+                let ribs = ribs.clone();
                 let routers = settings.routers.clone();
-                listeners.push(tokio::spawn(accept_loop(listener, routers, rib)));
+                listeners.push(tokio::spawn(accept_loop(listener, routers, ribs)));
             }
             Err(err) => warn!(%addr, %err, "bmp: could not bind listener"),
         }
@@ -116,29 +114,33 @@ pub async fn spawn(settings: &BmpSettings) -> BmpStation {
     BmpStation {
         _listeners: listeners,
         local_addrs,
-        rib,
+        ribs,
     }
 }
 
 /// Accepts connections on one listener forever, admitting or refusing each by
-/// the allow-list and handing the admitted ones their own reader task.
-async fn accept_loop(listener: TcpListener, routers: Vec<BmpRouterConfig>, rib: SharedRib) {
+/// the allow-list and handing the admitted ones their own reader task, keyed by
+/// the router they belong to.
+async fn accept_loop(listener: TcpListener, routers: Vec<BmpRouterConfig>, ribs: BmpRibs) {
     loop {
         match listener.accept().await {
             Ok((stream, peer)) => {
-                match admit(&routers, peer.ip()) {
+                let key = match admit(&routers, peer.ip()) {
                     Admission::Refused => {
                         warn!(%peer, "bmp: refusing a connection from an address not in the allow-list");
                         // Dropping `stream` closes it.
                         continue;
                     }
                     Admission::Known(id) => {
-                        info!(%peer, router = %id, "bmp: router connected")
+                        info!(%peer, router = %id, "bmp: router connected");
+                        id.to_string()
                     }
-                    Admission::Unlisted => info!(%peer, "bmp: source connected (no allow-list)"),
-                }
-                let rib = rib.clone();
-                tokio::spawn(handle_connection(stream, peer, rib));
+                    Admission::Unlisted => {
+                        info!(%peer, "bmp: source connected (no allow-list)");
+                        peer.ip().to_string()
+                    }
+                };
+                tokio::spawn(handle_connection(stream, peer, key, ribs.clone()));
             }
             Err(err) => {
                 warn!(%err, "bmp: accept failed");
@@ -149,14 +151,14 @@ async fn accept_loop(listener: TcpListener, routers: Vec<BmpRouterConfig>, rib: 
     }
 }
 
-/// Reads one router's BMP stream to end of session, applying each decoded
-/// message to the RIB. A decode error ends the session (fail closed).
+/// Reads one router's BMP stream to end of session into that router's RIB, keyed
+/// by `key`. A decode error ends the session (fail closed).
 ///
-/// Routes learned over this session are left in the RIB when it closes: a peer
-/// really going away arrives as an explicit Peer Down, and a reconnecting
-/// router re-synchronises. Forgetting a disconnected router's routes cleanly
-/// needs the per-router RIBs that are a later slice of #172.
-async fn handle_connection(stream: TcpStream, peer: SocketAddr, rib: SharedRib) {
+/// The RIB starts fresh for a reconnecting router and is dropped when its last
+/// session closes, so a disconnected router stops answering rather than serving
+/// a stale table (see [`BmpRibs`]).
+async fn handle_connection(stream: TcpStream, peer: SocketAddr, key: String, ribs: BmpRibs) {
+    let rib = ribs.on_connect(&key).await;
     let mut frames = FramedRead::new(stream, BmpCodec::default());
     let mut warned_unmapped = false;
     while let Some(frame) = frames.next().await {
@@ -180,6 +182,7 @@ async fn handle_connection(stream: TcpStream, peer: SocketAddr, rib: SharedRib) 
             }
         }
     }
+    ribs.on_disconnect(&key).await;
     info!(%peer, "bmp: session closed");
 }
 
@@ -313,19 +316,22 @@ mod tests {
             .unwrap();
         client.flush().await.unwrap();
 
-        // The reader task runs concurrently; poll the RIB until the route lands.
+        // The reader task runs concurrently; poll the router's RIB until the
+        // route lands. The connection is keyed by the configured router id.
         let prefix = "203.0.113.0/24".parse().unwrap();
         let mut filled = false;
         for _ in 0..50 {
-            if !station.rib().read().await.paths_for(&prefix).is_empty() {
-                filled = true;
-                break;
+            if let Some(rib) = station.ribs().get("loopback").await {
+                if !rib.read().await.paths_for(&prefix).is_empty() {
+                    filled = true;
+                    break;
+                }
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(filled, "the monitored route should reach the RIB");
+        assert!(filled, "the monitored route should reach the router's RIB");
 
-        let rib = station.rib();
+        let rib = station.ribs().get("loopback").await.unwrap();
         let guard = rib.read().await;
         let paths = guard.paths_for(&prefix);
         assert_eq!(paths.len(), 1);
@@ -356,6 +362,7 @@ mod tests {
             .await;
 
         tokio::time::sleep(Duration::from_millis(150)).await;
-        assert!(station.rib().read().await.is_empty());
+        // A refused source is never keyed, so no RIB exists for it.
+        assert!(station.ribs().live_keys().await.is_empty());
     }
 }

@@ -26,9 +26,9 @@ use std::net::{IpAddr, SocketAddr};
 
 /// The `[bmp]` section: whether NOGGlass runs a BMP station, and where.
 ///
-/// The `Default` is the disabled, empty station — a fresh install opens no
-/// listener.
-#[derive(Debug, Clone, Deserialize)]
+/// The derived `Default` is the disabled, empty station — a fresh install opens
+/// no listener.
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BmpSettings {
     /// Off by default. While off, no listener is opened and the rest of this
@@ -41,40 +41,12 @@ pub struct BmpSettings {
     #[serde(default)]
     pub listen: Vec<SocketAddr>,
     /// The routers expected to export BMP here. Acts as an allow-list: the
-    /// runtime accepts sessions only from these addresses. Empty means the
-    /// operator relies on network ACLs alone, which is allowed but noted.
+    /// runtime accepts sessions only from these addresses. Each is also its own
+    /// query source, keyed by its `id`. Empty means the operator relies on
+    /// network ACLs alone, which is allowed but noted; sources then appear keyed
+    /// by the address that connects.
     #[serde(default, rename = "router")]
     pub routers: Vec<BmpRouterConfig>,
-    /// The id the station's routes are offered under as a query source, as it
-    /// appears in URLs and the API. MUST NOT collide with a router id or the
-    /// local BGP session's id. Every monitored router feeds this one source
-    /// until per-router RIBs (a later slice) let each be its own.
-    #[serde(default = "default_source_id")]
-    pub source_id: String,
-    /// The name shown for the station in the source selector. Operator data,
-    /// like a router's name, so it is not a translated UI string.
-    #[serde(default = "default_source_name")]
-    pub source_name: String,
-}
-
-fn default_source_id() -> String {
-    "bmp-local".to_string()
-}
-
-fn default_source_name() -> String {
-    "BMP monitored routes".to_string()
-}
-
-impl Default for BmpSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            listen: Vec::new(),
-            routers: Vec::new(),
-            source_id: default_source_id(),
-            source_name: default_source_name(),
-        }
-    }
 }
 
 /// One router expected to export BMP to NOGGlass.
@@ -106,9 +78,6 @@ impl BmpSettings {
                 "bmp.enabled is true but bmp.listen is empty; a BMP station must listen somewhere"
                     .to_string(),
             );
-        }
-        if self.source_id.trim().is_empty() {
-            return Err("bmp.source_id must not be empty".to_string());
         }
 
         let mut ids = BTreeSet::new();
@@ -149,21 +118,7 @@ mod tests {
         assert!(!bmp.enabled);
         assert!(bmp.listen.is_empty());
         assert!(bmp.routers.is_empty());
-        assert_eq!(bmp.source_id, "bmp-local");
-        assert_eq!(bmp.source_name, "BMP monitored routes");
         assert!(bmp.validate().is_ok());
-    }
-
-    #[test]
-    fn an_empty_source_id_is_refused() {
-        let bmp = parse(
-            r#"
-            enabled = true
-            listen = ["[::]:11019"]
-            source_id = "   "
-            "#,
-        );
-        assert!(bmp.validate().unwrap_err().contains("source_id"));
     }
 
     #[test]
