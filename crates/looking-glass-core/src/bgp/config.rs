@@ -99,13 +99,19 @@ impl BgpSettings {
                 return Err("a [[bgp.peer]] has an empty id".to_string());
             }
             if peer.remote_as == 0 {
-                return Err(format!("bgp.peer '{}' has remote_as 0, which is not a real AS", peer.id));
+                return Err(format!(
+                    "bgp.peer '{}' has remote_as 0, which is not a real AS",
+                    peer.id
+                ));
             }
             if !ids.insert(peer.id.clone()) {
                 return Err(format!("bgp.peer id '{}' is used more than once", peer.id));
             }
             if !hosts.insert(peer.host) {
-                return Err(format!("bgp.peer host '{}' is configured more than once", peer.host));
+                return Err(format!(
+                    "bgp.peer host '{}' is configured more than once",
+                    peer.host
+                ));
             }
             if peer.passive && self.listen.is_empty() {
                 return Err(format!(

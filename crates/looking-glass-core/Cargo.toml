@@ -30,6 +30,7 @@ base64.workspace = true
 hex.workspace = true
 rand.workspace = true
 ring.workspace = true
+netgauze-bgp-pkt = "0.13"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
