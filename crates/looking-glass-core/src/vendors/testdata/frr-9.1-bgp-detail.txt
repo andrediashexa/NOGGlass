@@ -1,0 +1,8 @@
+BGP routing table entry for 198.51.100.0/24, version 1
+Paths: (1 available, best #1, table default)
+  Advertised to non peer-group peers:
+  172.31.0.2
+  65100
+    172.31.0.2 from 172.31.0.2 (172.31.0.2)
+      Origin IGP, metric 0, valid, external, best (First path received)
+      Last update: Mon Sep 28 20:34:43 2026
