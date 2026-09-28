@@ -141,6 +141,18 @@ pub fn paths_from_update(update: &BgpUpdateMessage, peer: Option<IpAddr>) -> Vec
         .collect()
 }
 
+/// The prefixes an UPDATE withdraws, for the RIB to drop.
+///
+/// IPv4 unicast only, matching [`paths_from_update`]; MP_UNREACH (other
+/// families) is a later slice.
+pub fn withdrawn_from_update(update: &BgpUpdateMessage) -> Vec<IpNet> {
+    update
+        .withdraw_routes()
+        .iter()
+        .map(|address| IpNet::V4(address.network().address()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,5 +309,19 @@ mod tests {
         );
         let path = &paths_from_update(&update, None)[0];
         assert_eq!(path.next_hop, None);
+    }
+
+    #[test]
+    fn withdrawn_routes_are_read_out() {
+        let update = BgpUpdateMessage::new(
+            vec![nlri("198.51.100.0/24"), nlri("203.0.113.0/24")],
+            vec![],
+            vec![],
+        );
+        let withdrawn = withdrawn_from_update(&update);
+        let shown: Vec<String> = withdrawn.iter().map(|n| n.to_string()).collect();
+        assert_eq!(shown, vec!["198.51.100.0/24", "203.0.113.0/24"]);
+        // A withdraw-only UPDATE advertises nothing.
+        assert!(paths_from_update(&update, None).is_empty());
     }
 }

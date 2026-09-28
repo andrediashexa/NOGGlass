@@ -10,14 +10,18 @@
 //! - [`mapping`] turns a received NetGauze UPDATE into the normalised
 //!   [`BgpPath`](crate::driver::BgpPath) model, so a route learned by BGP reads
 //!   the same way as one scraped over SSH.
+//! - [`rib`] holds the routes in memory, one Adj-RIB-In per peer, and answers
+//!   prefix queries.
 //!
 //! The session runtime (the NetGauze supervisor and per-peer event loop) that
-//! feeds [`mapping`] and fills the RIB lands in a later change.
+//! drives [`mapping`] into the [`rib`] lands in a later change.
 //!
 //! [ADR-0016]: ../../docs/adr/0016-one-rust-engine-for-bgp-session-and-bmp.md
 
 pub mod config;
 pub mod mapping;
+pub mod rib;
 
 pub use config::{BgpPeerConfig, BgpSettings};
-pub use mapping::paths_from_update;
+pub use mapping::{paths_from_update, withdrawn_from_update};
+pub use rib::LocalRib;
