@@ -49,6 +49,10 @@ pub struct AppState {
     /// (#172). `None` when `[bmp]` is disabled, and then the BMP-RIB endpoint is
     /// absent. Each monitored router is its own source, keyed by its id.
     pub bmp_ribs: Option<looking_glass_core::bmp::BmpRibs>,
+    /// The RPKI enricher, shared with the executor, so a route served from a
+    /// local RIB (#171/#172) is origin-validated like a scraped one (#184).
+    /// `None` when RPKI is disabled.
+    pub rpki: Option<Arc<looking_glass_core::rpki::Enricher>>,
 }
 
 impl AppState {
@@ -589,7 +593,12 @@ async fn rib_route_response(
         }
     };
 
-    let result = rib.read().await.route_result(&prefix);
+    let mut result = rib.read().await.route_result(&prefix);
+    // Origin-validate the local-RIB paths the same way the executor does for
+    // scraped routes, so every source is consistent. A no-op when RPKI is off.
+    if let Some(enricher) = &state.rpki {
+        enricher.enrich(&mut result).await;
+    }
     let mut response = QueryResponse {
         router: source.to_string(),
         command: format!("{label} lookup for {prefix}"),
@@ -868,6 +877,7 @@ queries = ["bgp_route"]
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
             bmp_ribs: None,
+            rpki: None,
         })
     }
 
@@ -893,6 +903,7 @@ queries = ["bgp_route"]
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: Some(rib),
             bmp_ribs: None,
+            rpki: None,
         })
     }
 
@@ -918,6 +929,7 @@ queries = ["bgp_route"]
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
             bmp_ribs: Some(ribs),
+            rpki: None,
         })
     }
 
@@ -1098,6 +1110,7 @@ host = "192.0.2.200"
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
             bmp_ribs: None,
+            rpki: None,
         };
 
         let target = parse_target("203.0.113.0/24").unwrap();
@@ -1341,6 +1354,9 @@ host = "192.0.2.200"
         let json = body_json(res).await;
         assert_eq!(json["kind"], "bgp_route");
         assert_eq!(json["result"]["paths"][0]["as_path"][0], 65100);
+        // RPKI is disabled in this test app (rpki: None), so enrichment is a
+        // no-op and the path stays unchecked rather than being invented.
+        assert_eq!(json["result"]["paths"][0]["rpki"]["status"], "not_checked");
     }
 
     #[tokio::test]
