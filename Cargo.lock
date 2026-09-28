@@ -1462,8 +1462,6 @@ dependencies = [
 [[package]]
 name = "netgauze-bgp-speaker"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfd313341ce4a1dbf0d5bdf5ddeee15f92072559839c592d7ae7641a6eedc45a"
 dependencies = [
  "chrono",
  "futures",
