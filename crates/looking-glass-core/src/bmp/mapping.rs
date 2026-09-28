@@ -10,6 +10,7 @@
 //! Observe-only: this only ever records what a router reported. IPv4 and IPv6
 //! unicast, matching the BGP mapper (#179); other families arrive with it.
 
+use std::collections::BTreeMap;
 use std::net::IpAddr;
 
 use netgauze_bgp_pkt::BgpMessage;
@@ -18,6 +19,7 @@ use netgauze_bmp_pkt::BmpMessage;
 
 use crate::bgp::mapping::{paths_from_update, withdrawn_from_update};
 use crate::bgp::rib::LocalRib;
+use crate::bmp::rib::BmpPeer;
 use crate::driver::BgpPath;
 
 /// The paths a BMP Route Monitoring message reports for its monitored peer.
@@ -75,6 +77,54 @@ pub fn apply_bmp_message(rib: &mut LocalRib, message: &BmpMessage) {
 /// The monitored peer's address from a header, if present.
 fn peer_address(header: &netgauze_bmp_pkt::PeerHeader) -> Option<IpAddr> {
     header.address()
+}
+
+/// Updates a router's peer table from one received BMP message, so the neighbour
+/// summary knows which peers the router monitors and whether each is up.
+///
+/// - Peer Up records the peer as up, with its AS from the per-peer header.
+/// - Route Monitoring also records the peer up (a peer sending routes is up),
+///   which recovers the table when a station connected mid-session and missed
+///   the Peer Up.
+/// - Peer Down marks a known peer down rather than forgetting it, so the summary
+///   can still show it as down.
+pub fn record_peer_event(peers: &mut BTreeMap<IpAddr, BmpPeer>, message: &BmpMessage) {
+    let BmpMessage::V3(value) = message else {
+        return;
+    };
+    match value {
+        BmpMessageValue::PeerUpNotification(peer_up) => {
+            let header = peer_up.peer_header();
+            if let Some(addr) = header.address() {
+                peers.insert(
+                    addr,
+                    BmpPeer {
+                        asn: header.peer_as(),
+                        up: true,
+                    },
+                );
+            }
+        }
+        BmpMessageValue::RouteMonitoring(rm) => {
+            let header = rm.peer_header();
+            if let Some(addr) = header.address() {
+                let entry = peers.entry(addr).or_insert(BmpPeer {
+                    asn: header.peer_as(),
+                    up: true,
+                });
+                entry.asn = header.peer_as();
+                entry.up = true;
+            }
+        }
+        BmpMessageValue::PeerDownNotification(pd) => {
+            if let Some(addr) = pd.peer_header().address() {
+                if let Some(entry) = peers.get_mut(&addr) {
+                    entry.up = false;
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Whether [`apply_bmp_message`] silently ignored this message because its BMP
@@ -185,6 +235,22 @@ mod tests {
         )
         .expect("valid peer down");
         BmpMessage::V3(BmpMessageValue::PeerDownNotification(pd))
+    }
+
+    #[test]
+    fn record_peer_event_tracks_up_and_down() {
+        let mut peers = BTreeMap::new();
+        // Route Monitoring records the peer up, with its AS from the header
+        // (the test peer_header uses AS 64496).
+        record_peer_event(&mut peers, &route_monitoring("192.0.2.1", "203.0.113.0/24"));
+        let addr = "192.0.2.1".parse().unwrap();
+        assert_eq!(peers[&addr].asn, 64496);
+        assert!(peers[&addr].up);
+
+        // Peer Down marks the known peer down rather than forgetting it.
+        record_peer_event(&mut peers, &peer_down("192.0.2.1"));
+        assert!(!peers[&addr].up);
+        assert_eq!(peers[&addr].asn, 64496, "the AS is retained while down");
     }
 
     #[test]

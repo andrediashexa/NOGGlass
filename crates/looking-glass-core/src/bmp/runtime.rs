@@ -158,7 +158,7 @@ async fn accept_loop(listener: TcpListener, routers: Vec<BmpRouterConfig>, ribs:
 /// session closes, so a disconnected router stops answering rather than serving
 /// a stale table (see [`BmpRibs`]).
 async fn handle_connection(stream: TcpStream, peer: SocketAddr, key: String, ribs: BmpRibs) {
-    let rib = ribs.on_connect(&key).await;
+    let session = ribs.on_connect(&key).await;
     let mut frames = FramedRead::new(stream, BmpCodec::default());
     let mut warned_unmapped = false;
     while let Some(frame) = frames.next().await {
@@ -173,8 +173,8 @@ async fn handle_connection(stream: TcpStream, peer: SocketAddr, key: String, rib
                         warned_unmapped = true;
                     }
                 }
-                let mut guard = rib.write().await;
-                apply_bmp_message(&mut guard, &message);
+                apply_bmp_message(&mut *session.rib.write().await, &message);
+                crate::bmp::mapping::record_peer_event(&mut *session.peers.write().await, &message);
             }
             Err(err) => {
                 warn!(%peer, ?err, "bmp: could not decode a message; closing the session");

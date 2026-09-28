@@ -94,6 +94,17 @@ query. Matching is longest-prefix, so a host or more-specific query returns the 
 An AS-number target answers `bgp_aspath` instead — every route the router
 monitors whose AS-path contains that AS (`GET /api/bmp/route?router=edge01&target=AS65001`).
 
+The router also answers `bgp_summary` — its neighbour table, built from the peers
+BMP reports (Peer Up/Down) and the RIB:
+
+```
+GET /api/bmp/summary?router=edge01
+```
+
+It lists each monitored peer with its AS, whether it is up (`Established`) or
+down (`Idle`), and how many prefixes it has advertised. A router not currently
+connected answers an empty table.
+
 ```mermaid
 flowchart LR
     r1[Router A] -->|BMP/11019| st[NetGauze station]

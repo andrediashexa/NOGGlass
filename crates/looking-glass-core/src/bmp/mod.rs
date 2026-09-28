@@ -20,8 +20,10 @@ pub mod config;
 pub mod mapping;
 pub mod rib;
 pub mod runtime;
+pub mod summary;
 
 pub use config::{BmpRouterConfig, BmpSettings};
-pub use mapping::{apply_bmp_message, paths_from_route_monitoring};
-pub use rib::BmpRibs;
+pub use mapping::{apply_bmp_message, paths_from_route_monitoring, record_peer_event};
+pub use rib::{BmpPeer, BmpRibs, BmpSession, SharedPeers};
 pub use runtime::{spawn, BmpStation};
+pub use summary::bmp_summary;

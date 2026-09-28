@@ -367,8 +367,10 @@ async function onSubmit(event) {
         : `/api/bgp/route?target=${encodeURIComponent(payload.target)}`;
   } else if (selected && selected.local_bmp) {
     localRibUrl =
-      `/api/bmp/route?router=${encodeURIComponent(payload.router)}` +
-      `&target=${encodeURIComponent(payload.target)}`;
+      payload.type === "bgp_summary"
+        ? `/api/bmp/summary?router=${encodeURIComponent(payload.router)}`
+        : `/api/bmp/route?router=${encodeURIComponent(payload.router)}` +
+          `&target=${encodeURIComponent(payload.target)}`;
   }
 
   try {

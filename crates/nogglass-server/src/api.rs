@@ -133,6 +133,7 @@ pub fn routes(state: AppState) -> AxumRouter {
         .route("/api/bgp/route", get(bgp_rib_route))
         .route("/api/bgp/summary", get(bgp_summary))
         .route("/api/bmp/route", get(bmp_rib_route))
+        .route("/api/bmp/summary", get(bmp_summary))
         .with_state(state)
 }
 
@@ -243,7 +244,11 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
                         location: None,
                         is_mock: false,
                     },
-                    queries: vec![QueryType::BgpRoute, QueryType::BgpAspath],
+                    queries: vec![
+                        QueryType::BgpRoute,
+                        QueryType::BgpSummary,
+                        QueryType::BgpAspath,
+                    ],
                     local_bgp: false,
                     local_bmp: true,
                 });
@@ -611,6 +616,59 @@ async fn bmp_rib_route(
         )),
     };
     rib_route_response(&state, &rib, &request.router, "BMP RIB", &request.target).await
+}
+
+/// Which monitored router to summarise.
+#[derive(Debug, Deserialize)]
+pub struct BmpSummaryRequest {
+    pub router: String,
+}
+
+/// Answers `bgp_summary` for one monitored router (#190): the neighbour table
+/// built from the peers BMP reported (Peer Up/Down) and the router's RIB — the
+/// same answer a vendor router gives. A router not currently connected answers an
+/// empty table. Returns 404 when `[bmp]` is disabled.
+async fn bmp_summary(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
+    Query(request): Query<BmpSummaryRequest>,
+) -> Result<Json<QueryResponse>, ApiError> {
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok());
+    if let Some(refusal) = state.check_rate_limit(peer, forwarded, true) {
+        return Err(refusal);
+    }
+
+    let Some(ribs) = state.bmp_ribs.as_ref() else {
+        return Err(ApiError {
+            status: StatusCode::NOT_FOUND,
+            code: "bmp_disabled",
+            message: "NOGGlass is not running a BMP station".to_string(),
+        });
+    };
+
+    // A router that is configured but not connected has no peer table or RIB, so
+    // it answers an empty summary rather than an error.
+    let result = match (
+        ribs.get_peers(&request.router).await,
+        ribs.get(&request.router).await,
+    ) {
+        (Some(peers), Some(rib)) => {
+            looking_glass_core::bmp::bmp_summary(&*peers.read().await, &*rib.read().await)
+        }
+        _ => looking_glass_core::bmp::bmp_summary(
+            &std::collections::BTreeMap::new(),
+            &looking_glass_core::bgp::LocalRib::new(),
+        ),
+    };
+    Ok(Json(QueryResponse {
+        router: request.router.clone(),
+        command: format!("BMP neighbour summary for {}", request.router),
+        duration_ms: 0,
+        outcome: OutcomeBody::BgpSummary { result },
+    }))
 }
 
 /// The shared body of the RIB-lookup endpoints: parse the target, read the RIB —
@@ -1601,8 +1659,8 @@ host = "192.0.2.200"
         use looking_glass_core::driver::BgpPath;
 
         let ribs = BmpRibs::new();
-        let rib = ribs.on_connect("edge01").await;
-        rib.write().await.apply_update(
+        let session = ribs.on_connect("edge01").await;
+        session.rib.write().await.apply_update(
             "192.0.2.1".parse().unwrap(),
             vec![BgpPath {
                 prefix: Some("203.0.113.0/24".parse().unwrap()),
@@ -1650,7 +1708,7 @@ host = "192.0.2.200"
         assert_eq!(bmp["name"], "Edge 01");
         assert_eq!(
             bmp["queries"],
-            serde_json::json!(["bgp_route", "bgp_aspath"])
+            serde_json::json!(["bgp_route", "bgp_summary", "bgp_aspath"])
         );
     }
 
@@ -1688,5 +1746,61 @@ host = "192.0.2.200"
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
         let json = body_json(res).await;
         assert_eq!(json["code"], "bmp_disabled");
+    }
+
+    #[tokio::test]
+    async fn bmp_summary_lists_the_monitored_peers() {
+        use looking_glass_core::bmp::BmpRibs;
+        use looking_glass_core::driver::BgpPath;
+
+        let ribs = BmpRibs::new();
+        let session = ribs.on_connect("edge01").await;
+        session.rib.write().await.apply_update(
+            "192.0.2.10".parse().unwrap(),
+            vec![BgpPath {
+                prefix: Some("203.0.113.0/24".parse().unwrap()),
+                peer: Some("192.0.2.10".parse().unwrap()),
+                ..Default::default()
+            }],
+            &[],
+        );
+        session.peers.write().await.insert(
+            "192.0.2.10".parse().unwrap(),
+            looking_glass_core::bmp::BmpPeer {
+                asn: 65010,
+                up: true,
+            },
+        );
+
+        let config = format!("{INVENTORY}{BMP_CONFIG}");
+        let app = app_with_bmp_ribs(&config, ribs);
+        let req = Request::get("/api/bmp/summary?router=edge01")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let json = body_json(res).await;
+        assert_eq!(json["kind"], "bgp_summary");
+        assert_eq!(json["result"]["peers"][0]["peer_ip"], "192.0.2.10");
+        assert_eq!(json["result"]["peers"][0]["peer_as"], 65010);
+        assert_eq!(json["result"]["peers"][0]["state"], "Established");
+        assert_eq!(json["result"]["peers"][0]["prefixes_received"], 1);
+    }
+
+    #[tokio::test]
+    async fn bmp_summary_is_absent_when_bmp_is_disabled() {
+        let app = app();
+        let req = Request::get("/api/bmp/summary?router=edge01")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(body_json(res).await["code"], "bmp_disabled");
     }
 }
