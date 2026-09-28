@@ -81,23 +81,27 @@ sequenceDiagram
 
 ### The decision: how the station is built
 
-To be settled in an ADR before implementation. This is **independent** of the
-BGP-session engine choice (issue #171): BMP is receive-only, and the common BGP
-speakers are BMP *clients* (the monitored side), not stations — so choosing
-GoBGP or BIRD for a session does **not** hand us a BMP collector.
+To be settled in an ADR before implementation. The two Rust engines shortlisted
+for the BGP session (issue #171) **also** speak BMP as a station, so the same
+choice can serve both features — note this is the *station* (collector) role;
+ordinary BGP speakers like GoBGP or BIRD are BMP *clients* (the monitored side)
+and do **not** give us a collector. Candidates, Rust first:
 
 | Approach | For | Against |
 |---|---|---|
-| **Native Rust station** (`netgauze` / `zettabgp` parse BMP + BGP) | Keeps the single-binary model; typed end to end; no external pipeline; the BMP wire format is small and well-scoped | We own the listener, the per-session FSM and per-peer RIB bookkeeping |
-| **OpenBMP / obmp** as a sidecar | Battle-tested at scale | Heavy — a Kafka pipeline and a datastore; breaks single-binary; large operational surface |
-| **pmacct `pmbmpd`** as a sidecar | Mature collector, lighter than OpenBMP | Still an external process and its output format to consume; another moving part |
+| **NetGauze** (`netgauze-bmp-service` + `netgauze-bmp-pkt`, BMP v3/v4) embedded | Keeps the single binary; typed end to end; an actor-based BMP receiver already exists; same family as the BGP-session option, so **one dependency covers #171 and #172**; Apache-2.0 | We own the per-peer RIB bookkeeping; young crate (2026) |
+| **Rotonda** (NLnet Labs) as a sidecar | Purpose-built to open BMP (and BGP) sessions and collect routes into a RIB with a queryable JSON API; **also delivers #171**; NLnet Labs pedigree | A separate process, so not the single binary; pre-1.0 |
+| **OpenBMP / obmp** as a sidecar | Battle-tested at scale | Heavy — a Kafka pipeline and a datastore; large operational surface |
+| **pmacct `pmbmpd`** as a sidecar | Mature collector, lighter than OpenBMP | Still an external process and its output format to consume |
 
-**Recommendation (open to discussion).** A native Rust BMP station built on a
-vetted parsing crate (`netgauze` looks the best fit — it parses BMP and the
-embedded BGP messages into typed structures). BMP's framing is simple, typed
-parsing keeps us honest about "never invent a value," and staying in-process
-preserves the single-binary deployment. External collectors remain a **MAY** for
-very large fleets that already run one.
+**Recommendation (open to discussion).** Embed **NetGauze**'s BMP crates in the
+binary: the framing is small and well-scoped, typed parsing keeps us honest about
+"never invent a value," staying in-process preserves the single-binary
+deployment, and it is the same dependency family as the recommended BGP-session
+engine — so #171 and #172 can be **one** decision. **Rotonda** (a Rust sidecar)
+is the turnkey fallback that also covers both; the heavier external collectors
+remain a **MAY** for very large fleets that already run one. All are pre-1.0, so
+the ADR **MUST** pin a version.
 
 No approach is chosen here. The table is the input to the ADR, which the
 implementation blocks on. The decision is tracked in issue #172.
@@ -112,6 +116,8 @@ implementation blocks on. The decision is tracked in issue #172.
   memory grows with the fleet.
 - **Ruled out:** any router-facing action. BMP is observe-only and so is this;
   there is no configuration that turns the station into a speaker.
-- **Independent of the BGP session** (issue #171): that is an outbound session
-  NOGGlass runs as a peer; this is an inbound monitoring feed routers push. They
-  share the normalised model, and neither blocks the other.
+- **Independent of the BGP session** (issue #171) as a *feature*: that is a
+  peering NOGGlass runs, this is an inbound monitoring feed routers push, and
+  neither blocks the other. As an *engine*, though, the two shortlisted Rust
+  options do both, so they share the normalised model and **MAY** share one
+  implementation.
