@@ -99,6 +99,11 @@ pub fn spawn(settings: &BgpSettings) -> BgpRuntime {
                     while let Some(result) = received_rx.recv().await {
                         match result {
                             Ok((_state, event)) => {
+                                if let netgauze_bgp_speaker::events::BgpEvent::UpdateMsgErr(err) =
+                                    &event
+                                {
+                                    warn!(peer = %peer_ip, ?err, "bgp: peer sent an UPDATE we could not parse; the session will reset");
+                                }
                                 let mut guard = rib.write().await;
                                 apply_bgp_event(&mut guard, peer_ip, &event);
                             }
