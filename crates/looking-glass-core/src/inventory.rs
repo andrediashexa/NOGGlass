@@ -458,7 +458,11 @@ pub struct UiSettings {
     #[serde(default = "default_true", alias = "show_routes")]
     pub show_paths: bool,
     /// Whether to display the "SAÍDA DO ROTEADOR" raw CLI output panel (default: true).
-    #[serde(default = "default_true", alias = "show_raw", alias = "show_router_output")]
+    #[serde(
+        default = "default_true",
+        alias = "show_raw",
+        alias = "show_router_output"
+    )]
     pub show_raw_output: bool,
 }
 
@@ -511,6 +515,9 @@ pub struct Inventory {
     pub global_view: GlobalViewSettings,
     #[serde(default)]
     pub ui: UiSettings,
+    /// The BMP station NOGGlass runs (issue #172). Off unless enabled.
+    #[serde(default)]
+    pub bmp: crate::bmp::BmpSettings,
     #[serde(rename = "router", default)]
     pub routers: Vec<Router>,
 }
@@ -595,6 +602,8 @@ impl Inventory {
                 "ui.background_opacity_percent must be between 0 and 100".to_string(),
             ));
         }
+
+        self.bmp.validate().map_err(InventoryError::Malformed)?;
 
         Ok(())
     }
@@ -917,9 +926,8 @@ host = "192.0.2.1"
         assert!(!inventory.ui.show_raw_output);
 
         // Test with aliases
-        let toml_aliases = format!(
-            "{SAMPLE}\n[ui]\nshow_graph = false\nshow_routes = false\nshow_raw = false\n"
-        );
+        let toml_aliases =
+            format!("{SAMPLE}\n[ui]\nshow_graph = false\nshow_routes = false\nshow_raw = false\n");
         let inventory_aliases = Inventory::from_toml(&toml_aliases).unwrap();
         assert!(!inventory_aliases.ui.show_best_path);
         assert!(!inventory_aliases.ui.show_paths);
