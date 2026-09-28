@@ -17,9 +17,6 @@ async-trait = "0.1"
 ipnet = { version = "2.9", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-# YAML inventory support, alongside TOML. serde_norway is the maintained,
-# pure-Rust fork of the archived serde_yaml (no C toolchain needed).
-serde_norway = "0.9"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "signal"] }
 toml = "0.8"
