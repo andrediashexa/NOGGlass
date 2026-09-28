@@ -68,6 +68,13 @@ rejected, so a typo cannot leave the station silently mis-set. `source_id`
 name the source; `source_id` **MUST NOT** collide with a router id or with
 `bgp.source_id`.
 
+On the router side, export the routes that actually carry data. A common gotcha:
+a router that monitors a peer's **pre-policy** Adj-RIB-In may not retain it (FRR,
+for one, keeps it only with `soft-reconfiguration inbound`), so the station RIB
+stays empty even though the session is up. Prefer **post-policy** monitoring,
+which streams the routes as installed after inbound policy. See `lab/localbmp/`
+for a worked FRR example.
+
 ## Querying the monitored routes
 
 ```

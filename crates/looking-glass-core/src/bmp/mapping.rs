@@ -195,4 +195,45 @@ mod tests {
         assert_eq!(paths[0].prefix.unwrap().to_string(), "198.51.100.0/24");
         assert_eq!(paths[0].peer, Some("192.0.2.9".parse().unwrap()));
     }
+
+    /// A real BMP stream captured from FRR 9.1 (a station exporting a peer's
+    /// post-policy Adj-RIB-In over BMP) decodes through NetGauze's `BmpCodec`
+    /// and fills the RIB with the monitored peer's routes. This is the
+    /// end-to-end proof against a real exporter, frozen as a fixture:
+    /// Initiation, Peer Up, two Route Monitoring announcements for the
+    /// documentation prefixes, then the post- and pre-policy End-of-RIB markers
+    /// (empty UPDATEs), all keyed by the monitored neighbour 172.30.0.2. See
+    /// `lab/localbmp/` for how the capture was produced.
+    #[test]
+    fn a_real_frr_bmp_stream_fills_the_rib() {
+        use netgauze_bmp_pkt::codec::BmpCodec;
+        use tokio_util::codec::Decoder;
+
+        let bytes = include_bytes!("testdata/frr-9.1-bmp-stream.bin");
+        let mut buf = bytes::BytesMut::from(&bytes[..]);
+        let mut codec = BmpCodec::default();
+        let mut rib = LocalRib::new();
+
+        let mut messages = 0;
+        while let Some(message) = codec.decode(&mut buf).expect("FRR's BMP stream decodes") {
+            apply_bmp_message(&mut rib, &message);
+            messages += 1;
+        }
+        assert_eq!(
+            messages, 6,
+            "Init, Peer Up, 2x Route Monitoring, 2x End-of-RIB"
+        );
+        assert!(buf.is_empty(), "the whole stream is consumed");
+
+        let peer = "172.30.0.2".parse().unwrap();
+        for prefix in ["203.0.113.0/24", "198.51.100.0/24"] {
+            let paths = rib.paths_for(&prefix.parse().unwrap());
+            assert_eq!(paths.len(), 1, "{prefix} is monitored once");
+            assert_eq!(
+                paths[0].peer,
+                Some(peer),
+                "{prefix} is keyed by the neighbour"
+            );
+        }
+    }
 }
