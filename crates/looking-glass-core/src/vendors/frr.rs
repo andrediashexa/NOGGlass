@@ -158,6 +158,59 @@ traceroute to 198.51.100.1 (198.51.100.1), 30 hops max, 60 byte packets
         assert_eq!(result.hops[1].ip.as_deref(), Some("198.51.100.1"));
     }
 
+    // Captured from a real FRR 9.1.0 (quay.io/frrouting/frr:9.1.0) with an eBGP
+    // session, verifying the parsers against what the device actually prints —
+    // not documentation (ADR-0015). See lab/frr/.
+    #[test]
+    fn parses_real_frr_9_1_summary() {
+        let raw = include_str!("testdata/frr-9.1-bgp-summary.txt");
+        let result = FrrDriver
+            .parse_bgp_summary(raw)
+            .expect("real summary parses");
+        assert_eq!(result.router_id.as_deref(), Some("172.31.0.3"));
+        assert_eq!(result.local_as, Some(65001));
+        assert_eq!(result.peers.len(), 1);
+        assert_eq!(result.peers[0].peer_ip, "172.31.0.2");
+        assert_eq!(result.peers[0].peer_as, 65100);
+        assert_eq!(result.peers[0].state, "Established");
+        assert_eq!(result.peers[0].uptime, "00:00:10");
+        assert_eq!(result.peers[0].prefixes_received, 2);
+    }
+
+    #[test]
+    fn parses_real_frr_9_1_table() {
+        let raw = include_str!("testdata/frr-9.1-bgp-table.txt");
+        let result = FrrDriver.parse_bgp_route(raw).expect("real table parses");
+        assert_eq!(result.paths.len(), 2);
+        let first = result
+            .paths
+            .iter()
+            .find(|p| p.prefix.unwrap().to_string() == "198.51.100.0/24")
+            .expect("198.51.100.0/24 is in the table");
+        assert_eq!(first.next_hop.unwrap().to_string(), "172.31.0.2");
+        assert_eq!(first.as_path, vec![65100]);
+        assert_eq!(first.origin, Some(Origin::Igp));
+        // The eBGP route carries no LOCAL_PREF; the blank column must stay None,
+        // and the AS must not be swallowed as the weight.
+        assert_eq!(first.local_pref, None);
+    }
+
+    #[test]
+    fn parses_real_frr_9_1_detail() {
+        let raw = include_str!("testdata/frr-9.1-bgp-detail.txt");
+        let result = FrrDriver.parse_bgp_route(raw).expect("real detail parses");
+        assert_eq!(result.paths.len(), 1);
+        let best = result.best().expect("best path");
+        assert_eq!(best.prefix.unwrap().to_string(), "198.51.100.0/24");
+        assert_eq!(best.next_hop.unwrap().to_string(), "172.31.0.2");
+        assert_eq!(best.as_path, vec![65100]);
+        assert_eq!(best.origin, Some(Origin::Igp));
+        assert_eq!(best.med, Some(0));
+        // eBGP default: no LOCAL_PREF advertised, so it stays None (never 0).
+        assert_eq!(best.local_pref, None);
+        assert!(best.is_best);
+    }
+
     #[test]
     fn empty_route_and_failed_ping_fail_closed() {
         let empty_bgp = "% Network not in table\n";

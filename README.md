@@ -92,7 +92,7 @@ for the versions each was tested against and what each real device changed
 | `mikrotik_routeros`| MikroTik RouterOS v6 and v7 | ✅ v7 verified end to end (7.16.2) · ⚠️ v6 unverified | Key-value property parsing, BGP session monitoring |
 | `bird_routing_daemon`| BIRD 2 Internet Routing Daemon | ✅ Verified end to end (BIRD 2.15.1) | CLI command parsing, table summaries |
 | `arista_eos` | Arista EOS 7000 / vEOS Series | 🟡 Supported (Cisco/Netmiko-compatible CLI) | Detail and tabular BGP parsing, Unix ping statistics, BGP summary |
-| `frr` | FRRouting (FRR) Routing Daemon | 🟡 Supported (Cisco/Quagga-compatible vtysh) | Cisco-compatible BGP detail/table parsing, vtysh integration |
+| `frr` | FRRouting (FRR) Routing Daemon | ✅ Verified (FRR 9.1.0) | Cisco-compatible BGP detail/table parsing, vtysh integration |
 | `juniper_junos` | Juniper MX, PTX, QFX, SRX, vMX | ⚠️ Unverified (no image runs BGP yet) | Structured native JSON parsing (`| display json`), native RTR RPKI |
 | `nokia_sros` | Nokia 7750 SR (TiMOS classic & MD-CLI)| ⚠️ Unverified (licence unavailable) | Tabular parsing, multi-hop traceroute decoding |
 | `datacom_dmos` | Datacom DM4000 and DM4200 series | ⚠️ Unverified (needs hardware) | Tabular CLI extraction, next-hop resolution |

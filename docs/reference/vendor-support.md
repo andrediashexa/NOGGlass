@@ -2,11 +2,12 @@
 
 ## TL;DR
 
-Eight drivers, and they are not equally trustworthy. Five have read output from
-a device running the vendor's own software, and **all five** have answered
-every query through the whole product, SSH and all. The rest have been written from
-documentation and never run against anything, which — on the evidence of the
-three — means they are probably wrong in ways nobody has noticed yet
+The drivers are not equally trustworthy. Five have answered every query through
+the whole product, SSH and all (**verified end to end**), and FRR has parsed
+output captured from a real device (**verified**). The rest were written from
+documentation and never run against anything, which — on the evidence of every
+driver that has since met a real device — means they are probably wrong in ways
+nobody has noticed yet
 ([ADR-0015](../adr/0015-vendor-drivers-are-verified-against-real-devices.md)).
 
 This page says which is which. It is meant to be read before publishing a
@@ -56,7 +57,7 @@ flowchart TB
 | **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
 | **Datacom DmOS** | `datacom_dmos` | Unverified | — | Cannot be virtualised; needs hardware |
 | **Arista EOS** | `arista_eos` | Supported | vEOS / EOS 7000 Series | Cisco/Netmiko compatible CLI |
-| **FRRouting (FRR)** | `frr` | Supported | FRR 8.x / 9.x / 10.x | Cisco/Quagga compatible vtysh |
+| **FRRouting (FRR)** | `frr` | **Verified** | FRR 9.1.0 | `lab/frr/`, two containers over eBGP |
 
 ## What each real device changed
 
