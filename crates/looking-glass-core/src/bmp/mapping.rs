@@ -77,6 +77,21 @@ fn peer_address(header: &netgauze_bmp_pkt::PeerHeader) -> Option<IpAddr> {
     header.address()
 }
 
+/// Whether [`apply_bmp_message`] silently ignored this message because its BMP
+/// version is not yet mapped, as opposed to a v3 message that legitimately
+/// carries no routes for us.
+///
+/// Only v3 is mapped today. A v4 Route Monitoring would carry routes NOGGlass
+/// drops on the floor, so the caller should say so (fail closed: an unmapped
+/// feed is reported, never mistaken for "no routes"). Returns `None` for a
+/// mapped v3 message.
+pub fn unmapped_version(message: &BmpMessage) -> Option<&'static str> {
+    match message {
+        BmpMessage::V3(_) => None,
+        _ => Some("BMP v4"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +196,12 @@ mod tests {
         let paths = rib.paths_for(&"203.0.113.0/24".parse().unwrap());
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].peer, Some("192.0.2.2".parse().unwrap()));
+    }
+
+    #[test]
+    fn a_v3_message_is_not_flagged_as_unmapped() {
+        assert!(unmapped_version(&route_monitoring("192.0.2.1", "203.0.113.0/24")).is_none());
+        assert!(unmapped_version(&peer_down("192.0.2.1")).is_none());
     }
 
     #[test]

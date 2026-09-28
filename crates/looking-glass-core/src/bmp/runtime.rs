@@ -158,9 +158,19 @@ async fn accept_loop(listener: TcpListener, routers: Vec<BmpRouterConfig>, rib: 
 /// needs the per-router RIBs that are a later slice of #172.
 async fn handle_connection(stream: TcpStream, peer: SocketAddr, rib: SharedRib) {
     let mut frames = FramedRead::new(stream, BmpCodec::default());
+    let mut warned_unmapped = false;
     while let Some(frame) = frames.next().await {
         match frame {
             Ok(message) => {
+                // Fail closed rather than silently: if the peer speaks a BMP
+                // version we do not map yet, its routes will not appear, so say
+                // so once instead of leaving the RIB mysteriously empty.
+                if !warned_unmapped {
+                    if let Some(version) = crate::bmp::mapping::unmapped_version(&message) {
+                        warn!(%peer, %version, "bmp: this peer's BMP version is not mapped yet; its routes will not appear");
+                        warned_unmapped = true;
+                    }
+                }
                 let mut guard = rib.write().await;
                 apply_bmp_message(&mut guard, &message);
             }
