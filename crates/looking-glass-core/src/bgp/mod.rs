@@ -21,7 +21,9 @@
 pub mod config;
 pub mod mapping;
 pub mod rib;
+pub mod session;
 
 pub use config::{BgpPeerConfig, BgpSettings};
 pub use mapping::{paths_from_update, withdrawn_from_update};
 pub use rib::LocalRib;
+pub use session::apply_bgp_event;

@@ -1321,6 +1321,7 @@ dependencies = [
  "hex",
  "ipnet",
  "netgauze-bgp-pkt",
+ "netgauze-bgp-speaker",
  "rand 0.8.8",
  "regex",
  "reqwest",
@@ -1447,12 +1448,38 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15235fb499f3e2e3c7d681965f3a06a2eac1c282431215e8bd4b76f206a02703"
 dependencies = [
+ "bytes",
  "ipnet",
  "netgauze-iana",
  "netgauze-parse-utils",
  "serde",
  "strum_macros",
  "thiserror 2.0.20",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "netgauze-bgp-speaker"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfd313341ce4a1dbf0d5bdf5ddeee15f92072559839c592d7ae7641a6eedc45a"
+dependencies = [
+ "chrono",
+ "futures",
+ "futures-core",
+ "futures-util",
+ "netgauze-bgp-pkt",
+ "netgauze-iana",
+ "netgauze-parse-utils",
+ "pin-project",
+ "rand 0.10.3",
+ "serde",
+ "strum_macros",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -1663,6 +1690,26 @@ checksum = "44dc769b75f93afdddd8c7fa12d685292ddeff1e66f7f0f3a234cf1818afe892"
 dependencies = [
  "base64ct",
  "ctutils",
+]
+
+[[package]]
+name = "pin-project"
+version = "1.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2466b2336ed02bcdca6b294417127b90ec92038d1d5c4fbeac971a922e0e0924"
+dependencies = [
+ "pin-project-internal",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "1.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c96395f0a926bc13b1c17622aaddda1ecb55d49c8f1bf9777e4d877800a43f8b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
