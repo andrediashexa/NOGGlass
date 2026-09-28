@@ -202,6 +202,9 @@ name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "blake2"
@@ -312,6 +315,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -598,6 +602,12 @@ dependencies = [
  "subtle",
  "zeroize",
 ]
+
+[[package]]
+name = "either"
+version = "1.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
 name = "elliptic-curve"
@@ -1318,10 +1328,12 @@ version = "1.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "bytes",
  "hex",
  "ipnet",
  "netgauze-bgp-pkt",
  "netgauze-bgp-speaker",
+ "netgauze-bmp-pkt",
  "rand 0.8.8",
  "regex",
  "reqwest",
@@ -1332,6 +1344,8 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
  "toml",
  "tracing",
 ]
@@ -1478,6 +1492,26 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "netgauze-bmp-pkt"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21f874dfa0c7209f9768b66dee0a60b3a7c5e35ebf2315c7315d21a1dbc442ba"
+dependencies = [
+ "bitflags",
+ "bytes",
+ "chrono",
+ "either",
+ "ipnet",
+ "netgauze-bgp-pkt",
+ "netgauze-iana",
+ "netgauze-parse-utils",
+ "serde",
+ "strum_macros",
+ "thiserror 2.0.20",
+ "tokio-util",
 ]
 
 [[package]]

@@ -1,0 +1,18 @@
+# Sample inventory to verify the local BGP session against the FRR peer here.
+# A mock router satisfies the "at least one router" rule; the [bgp] section is
+# the part under test.
+[[router]]
+id = "mock"
+name = "Mock"
+vendor = "mock"
+host = "127.0.0.1"
+
+[bgp]
+enabled = true
+local_as = 65000
+router_id = "172.30.0.1"
+
+[[bgp.peer]]
+id = "lab-frr"
+host = "172.30.0.2"
+remote_as = 65001

@@ -17,13 +17,24 @@ services:
     restart: unless-stopped
     # Measured at 16 MB of RSS serving the mock in a debug build; the ceiling
     # leaves room for concurrent SSH sessions and their output buffers, which
-    # is where the memory actually goes under load.
+    # is where the memory actually goes under load. Enabling the local BGP
+    # session (#171) or the BMP station (#172) adds a RIB whose memory scales
+    # with the number of prefixes held; raise this limit for a full table.
     mem_limit: 128m
     memswap_limit: 128m
     # Only the HTTP port is published. Put a reverse proxy in front for TLS
     # (ADR-0012); NOGGlass warns at startup when it is public without one.
     ports:
       - "127.0.0.1:8080:8080"
+      # The BGP session and BMP station are off by default (safe defaults). When
+      # you turn one on, its port is the documented exception to "only the proxy
+      # is published" — publish it and firewall it to your routers:
+      #   - BMP station (#172): routers always dial in, so publish the [bmp]
+      #     listen port (11019 by convention) whenever [bmp] is enabled.
+      # - "11019:11019"
+      #   - Local BGP session (#171): NOGGlass dials the router, so no inbound
+      #     port is needed unless you configure a passive peer, which listens.
+      # - "179:179"
     volumes:
       # Named volume for container-managed configuration that survives image upgrades
       - nogglass-config:/etc/nogglass

@@ -5,6 +5,9 @@
 *.bak-*
 nogglass.toml
 !nogglass.example.toml
+# Lab inventories are sample configs for the reproducible harnesses, not real
+# deployment secrets, so they are tracked deliberately.
+!lab/*/nogglass.toml
 routers.yml
 
 # Rust build output. Without this, a `git add -A` at the workspace root

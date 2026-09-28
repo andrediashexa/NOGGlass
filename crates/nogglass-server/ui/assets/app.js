@@ -355,14 +355,22 @@ async function onSubmit(event) {
   };
   rememberInUrl(payload);
 
-  // NOGGlass's own BGP session (#171) is a source whose routes come from the
-  // local RIB, not from running a query on a router.
+  // NOGGlass's own BGP session (#171) and each monitored BMP router (#172) are
+  // sources whose routes come from a local RIB, not from running a query on a
+  // router. A BMP source names which router to answer from.
   const selected = state.routers.find((router) => router.id === payload.router);
-  const isLocalBgp = Boolean(selected && selected.local_bgp);
+  let localRibUrl = null;
+  if (selected && selected.local_bgp) {
+    localRibUrl = `/api/bgp/route?target=${encodeURIComponent(payload.target)}`;
+  } else if (selected && selected.local_bmp) {
+    localRibUrl =
+      `/api/bmp/route?router=${encodeURIComponent(payload.router)}` +
+      `&target=${encodeURIComponent(payload.target)}`;
+  }
 
   try {
-    const response = isLocalBgp
-      ? await fetch(`/api/bgp/route?target=${encodeURIComponent(payload.target)}`)
+    const response = localRibUrl
+      ? await fetch(localRibUrl)
       : await fetch("/api/query", {
           method: "POST",
           headers: { "content-type": "application/json" },

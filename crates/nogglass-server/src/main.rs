@@ -199,6 +199,35 @@ async fn run() -> Result<(), String> {
         None
     };
 
+    let _bmp_station = if inventory.bmp.enabled {
+        info!(
+            listen = ?inventory.bmp.listen,
+            routers = inventory.bmp.routers.len(),
+            "bmp: starting the BMP station"
+        );
+        let station = looking_glass_core::bmp::spawn(&inventory.bmp).await;
+        // Same operational visibility as the BGP session: report how many
+        // routers are connected and how many prefixes they have filled in.
+        let ribs = station.ribs();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                ticker.tick().await;
+                let mut prefixes = 0;
+                let keys = ribs.live_keys().await;
+                for key in &keys {
+                    if let Some(rib) = ribs.get(key).await {
+                        prefixes += rib.read().await.prefix_count();
+                    }
+                }
+                info!(routers = keys.len(), prefixes, "bmp: station RIBs");
+            }
+        });
+        Some(station)
+    } else {
+        None
+    };
+
     let transport: Arc<dyn Transport> = Arc::new(SshTransport::new(
         Duration::from_secs(15),
         Duration::from_secs(30),
@@ -303,6 +332,7 @@ async fn run() -> Result<(), String> {
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
         bgp_rib: _bgp_runtime.as_ref().map(|runtime| runtime.rib()),
+        bmp_ribs: _bmp_station.as_ref().map(|station| station.ribs()),
     })
     .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))

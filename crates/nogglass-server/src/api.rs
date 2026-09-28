@@ -45,6 +45,10 @@ pub struct AppState {
     /// The RIB of NOGGlass's own BGP session, when one is configured (#171).
     /// `None` when `[bgp]` is disabled, and then the BGP-RIB endpoint is absent.
     pub bgp_rib: Option<looking_glass_core::bgp::SharedRib>,
+    /// The per-router RIBs filled by the BMP station, when one is running
+    /// (#172). `None` when `[bmp]` is disabled, and then the BMP-RIB endpoint is
+    /// absent. Each monitored router is its own source, keyed by its id.
+    pub bmp_ribs: Option<looking_glass_core::bmp::BmpRibs>,
 }
 
 impl AppState {
@@ -121,6 +125,7 @@ pub fn routes(state: AppState) -> AxumRouter {
         )
         .route("/api/catalogue/{vendor}", get(vendor_commands))
         .route("/api/bgp/route", get(bgp_rib_route))
+        .route("/api/bmp/route", get(bmp_rib_route))
         .with_state(state)
 }
 
@@ -148,6 +153,9 @@ struct RouterListing {
     /// True for NOGGlass's own BGP session (#171): the interface reads its
     /// routes from `/api/bgp/route` rather than running a query on a router.
     local_bgp: bool,
+    /// True for a monitored BMP router (#172): the interface reads its routes
+    /// from `/api/bmp/route?router=<id>`.
+    local_bmp: bool,
 }
 
 async fn routers(State(state): State<AppState>) -> impl IntoResponse {
@@ -168,6 +176,7 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
                 router.queries.clone()
             },
             local_bgp: false,
+            local_bmp: false,
         })
         .collect();
 
@@ -185,7 +194,49 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
             },
             queries: vec![QueryType::BgpRoute],
             local_bgp: true,
+            local_bmp: false,
         });
+    }
+
+    // Each monitored BMP router is its own source answering bgp_route from its
+    // own RIB. Configured routers are always listed (so the operator can select
+    // one even while it is momentarily disconnected; the query then returns an
+    // empty result); any live source seen without an allow-list is listed too.
+    if let Some(ribs) = state.bmp_ribs.as_ref() {
+        if state.inventory.bmp.enabled {
+            let mut keys: std::collections::BTreeSet<String> = state
+                .inventory
+                .bmp
+                .routers
+                .iter()
+                .map(|router| router.id.clone())
+                .collect();
+            for key in ribs.live_keys().await {
+                keys.insert(key);
+            }
+            for key in keys {
+                let name = state
+                    .inventory
+                    .bmp
+                    .routers
+                    .iter()
+                    .find(|router| router.id == key)
+                    .and_then(|router| router.description.clone())
+                    .unwrap_or_else(|| key.clone());
+                listing.push(RouterListing {
+                    router: PublicRouter {
+                        id: key,
+                        name,
+                        vendor: "bmp".to_string(),
+                        location: None,
+                        is_mock: false,
+                    },
+                    queries: vec![QueryType::BgpRoute],
+                    local_bgp: false,
+                    local_bmp: true,
+                });
+            }
+        }
     }
 
     Json(listing)
@@ -462,7 +513,67 @@ async fn bgp_rib_route(
         });
     };
 
-    let target = parse_target(&request.target)?;
+    rib_route_response(&state, rib, "bgp-local", "local BGP RIB", &request.target).await
+}
+
+/// A prefix lookup against one monitored BMP router's RIB.
+#[derive(Debug, Deserialize)]
+pub struct BmpRouteRequest {
+    /// Which monitored router to answer from (its id, or its address when the
+    /// station runs without an allow-list).
+    pub router: String,
+    pub target: String,
+}
+
+/// Answers a route query from one monitored router's BMP RIB (#172), when the
+/// station is running. Read-only, like the BGP-session endpoint; the station
+/// only ever records what routers reported. A router that is configured but not
+/// currently connected (or an unknown id) answers an empty result rather than an
+/// error — it reports no such route right now. Returns 404 when `[bmp]` is
+/// disabled.
+async fn bmp_rib_route(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
+    Query(request): Query<BmpRouteRequest>,
+) -> Result<Json<QueryResponse>, ApiError> {
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok());
+    if let Some(refusal) = state.check_rate_limit(peer, forwarded, true) {
+        return Err(refusal);
+    }
+
+    let Some(ribs) = state.bmp_ribs.as_ref() else {
+        return Err(ApiError {
+            status: StatusCode::NOT_FOUND,
+            code: "bmp_disabled",
+            message: "NOGGlass is not running a BMP station".to_string(),
+        });
+    };
+
+    let rib = match ribs.get(&request.router).await {
+        Some(rib) => rib,
+        None => std::sync::Arc::new(tokio::sync::RwLock::new(
+            looking_glass_core::bgp::LocalRib::new(),
+        )),
+    };
+    rib_route_response(&state, &rib, &request.router, "BMP RIB", &request.target).await
+}
+
+/// The shared body of the RIB-lookup endpoints: parse the target to a prefix
+/// (or host), read the RIB, and dress it as a `bgp_route` answer with the global
+/// view attached. Exact-prefix (or host) match for now; longest-prefix match is
+/// a later refinement. `source` names the answering source; `label` names the
+/// RIB in the human-readable command line.
+async fn rib_route_response(
+    state: &AppState,
+    rib: &looking_glass_core::bgp::SharedRib,
+    source: &str,
+    label: &str,
+    raw_target: &str,
+) -> Result<Json<QueryResponse>, ApiError> {
+    let target = parse_target(raw_target)?;
     let prefix = match target {
         QueryTarget::Prefix(net) => net,
         QueryTarget::Ip(ip) => {
@@ -473,7 +584,7 @@ async fn bgp_rib_route(
             return Err(ApiError {
                 status: StatusCode::BAD_REQUEST,
                 code: "bgp_rib_needs_prefix",
-                message: "the local BGP RIB is queried by prefix or address, not by AS number"
+                message: "a local RIB is queried by prefix or address, not by AS number"
                     .to_string(),
             });
         }
@@ -481,8 +592,8 @@ async fn bgp_rib_route(
 
     let result = rib.read().await.route_result(&prefix);
     let mut response = QueryResponse {
-        router: "bgp-local".to_string(),
-        command: format!("local BGP RIB lookup for {prefix}"),
+        router: source.to_string(),
+        command: format!("{label} lookup for {prefix}"),
         duration_ms: 0,
         outcome: OutcomeBody::BgpRoute {
             result,
@@ -490,7 +601,7 @@ async fn bgp_rib_route(
             agreement: Agreement::Unknown,
         },
     };
-    add_global_view(&state, &target, &mut response).await;
+    add_global_view(state, &target, &mut response).await;
     Ok(Json(response))
 }
 
@@ -757,6 +868,7 @@ queries = ["bgp_route"]
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
+            bmp_ribs: None,
         })
     }
 
@@ -781,6 +893,32 @@ queries = ["bgp_route"]
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: Some(rib),
+            bmp_ribs: None,
+        })
+    }
+
+    /// A test app whose BMP station RIBs are pre-populated, for the
+    /// /api/bmp/route endpoint and the source listing.
+    fn app_with_bmp_ribs(config: &str, ribs: looking_glass_core::bmp::BmpRibs) -> AxumRouter {
+        let inventory = Arc::new(Inventory::from_toml(config).expect("test inventory"));
+        let executor = Arc::new(Executor::new(
+            inventory.clone(),
+            Arc::new(BUILTIN.clone()),
+            Arc::new(NoTransport),
+        ));
+        let (client_address, _) = inventory.rate_limit.to_client_address();
+        let global_view = Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1)));
+        routes(AppState {
+            executor,
+            inventory,
+            version: VersionInfo::from_build(),
+            limiter: None,
+            client_address: Arc::new(client_address),
+            global_view,
+            captcha_secret: "test_secret".to_string(),
+            used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            bgp_rib: None,
+            bmp_ribs: Some(ribs),
         })
     }
 
@@ -960,6 +1098,7 @@ host = "192.0.2.200"
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
+            bmp_ribs: None,
         };
 
         let target = parse_target("203.0.113.0/24").unwrap();
@@ -1244,5 +1383,100 @@ host = "192.0.2.200"
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
         let json = body_json(res).await;
         assert_eq!(json["code"], "bgp_disabled");
+    }
+
+    const BMP_CONFIG: &str = "\n[bmp]\nenabled = true\nlisten = [\"[::]:11019\"]\n\
+        [[bmp.router]]\nid = \"edge01\"\naddress = \"192.0.2.2\"\ndescription = \"Edge 01\"\n";
+
+    #[tokio::test]
+    async fn bmp_rib_route_answers_from_a_routers_rib() {
+        use looking_glass_core::bmp::BmpRibs;
+        use looking_glass_core::driver::BgpPath;
+
+        let ribs = BmpRibs::new();
+        let rib = ribs.on_connect("edge01").await;
+        rib.write().await.apply_update(
+            "192.0.2.1".parse().unwrap(),
+            vec![BgpPath {
+                prefix: Some("203.0.113.0/24".parse().unwrap()),
+                peer: Some("192.0.2.1".parse().unwrap()),
+                as_path: vec![65200],
+                ..Default::default()
+            }],
+            &[],
+        );
+
+        let config = format!("{INVENTORY}{BMP_CONFIG}");
+        let app = app_with_bmp_ribs(&config, ribs);
+        let req = Request::get("/api/bmp/route?router=edge01&target=203.0.113.0%2F24")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let json = body_json(res).await;
+        assert_eq!(json["kind"], "bgp_route");
+        assert_eq!(json["result"]["paths"][0]["as_path"][0], 65200);
+    }
+
+    #[tokio::test]
+    async fn a_configured_bmp_router_is_a_source_even_while_disconnected() {
+        use looking_glass_core::bmp::BmpRibs;
+        // No session has connected, so the RIBs are empty; the configured router
+        // must still be listed so the operator can select it.
+        let config = format!("{INVENTORY}{BMP_CONFIG}");
+        let app = app_with_bmp_ribs(&config, BmpRibs::new());
+        let res = app
+            .oneshot(Request::get("/api/routers").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let listing = body_json(res).await;
+        let bmp = listing
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["local_bmp"] == true)
+            .expect("the BMP router is listed");
+        assert_eq!(bmp["id"], "edge01");
+        assert_eq!(bmp["name"], "Edge 01");
+        assert_eq!(bmp["queries"], serde_json::json!(["bgp_route"]));
+    }
+
+    #[tokio::test]
+    async fn bmp_rib_route_answers_empty_for_a_disconnected_router() {
+        use looking_glass_core::bmp::BmpRibs;
+        // The router is configured but no session is feeding it: an empty answer,
+        // not an error.
+        let config = format!("{INVENTORY}{BMP_CONFIG}");
+        let app = app_with_bmp_ribs(&config, BmpRibs::new());
+        let req = Request::get("/api/bmp/route?router=edge01&target=203.0.113.0%2F24")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let json = body_json(res).await;
+        assert_eq!(json["kind"], "bgp_route");
+        assert!(json["result"]["paths"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn bmp_rib_route_is_absent_when_bmp_is_disabled() {
+        // app() runs no BMP station, so the endpoint reports it is off.
+        let app = app();
+        let req = Request::get("/api/bmp/route?router=edge01&target=203.0.113.0%2F24")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let json = body_json(res).await;
+        assert_eq!(json["code"], "bmp_disabled");
     }
 }
