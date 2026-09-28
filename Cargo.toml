@@ -31,8 +31,3 @@ ring = "0.17"
 # on amd64 and cross-compiles, and host binutils cannot read an aarch64 binary.
 # The linker always can.
 strip = "symbols"
-
-[patch.crates-io]
-# Temporary: one-line fix to a NetGauze 0.13.0 session-reset bug (#171).
-# Remove with vendor/netgauze-bgp-speaker once the fix is released upstream.
-netgauze-bgp-speaker = { path = "vendor/netgauze-bgp-speaker" }

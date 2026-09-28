@@ -173,61 +173,6 @@ async fn run() -> Result<(), String> {
         );
     }
 
-    // NOGGlass's own BGP session(s), if configured (#171, ADR-0016). Holding
-    // the runtime for the life of the process keeps the sessions up; dropping
-    // it stops them. Disabled by default, so most deployments open no socket.
-    let _bgp_runtime = if inventory.bgp.enabled {
-        info!(
-            peers = inventory.bgp.peers.len(),
-            local_as = ?inventory.bgp.local_as,
-            "bgp: starting NOGGlass's own BGP session(s)"
-        );
-        let runtime = looking_glass_core::bgp::spawn(&inventory.bgp);
-        // Operational visibility while the query path that reads this RIB is
-        // still being built: report how many prefixes the session has learned.
-        let rib = runtime.rib();
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(Duration::from_secs(30));
-            loop {
-                ticker.tick().await;
-                let prefixes = rib.read().await.prefix_count();
-                info!(prefixes, "bgp: local RIB");
-            }
-        });
-        Some(runtime)
-    } else {
-        None
-    };
-
-    let _bmp_station = if inventory.bmp.enabled {
-        info!(
-            listen = ?inventory.bmp.listen,
-            routers = inventory.bmp.routers.len(),
-            "bmp: starting the BMP station"
-        );
-        let station = looking_glass_core::bmp::spawn(&inventory.bmp).await;
-        // Same operational visibility as the BGP session: report how many
-        // routers are connected and how many prefixes they have filled in.
-        let ribs = station.ribs();
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(Duration::from_secs(30));
-            loop {
-                ticker.tick().await;
-                let mut prefixes = 0;
-                let keys = ribs.live_keys().await;
-                for key in &keys {
-                    if let Some(rib) = ribs.get(key).await {
-                        prefixes += rib.read().await.prefix_count();
-                    }
-                }
-                info!(routers = keys.len(), prefixes, "bmp: station RIBs");
-            }
-        });
-        Some(station)
-    } else {
-        None
-    };
-
     let transport: Arc<dyn Transport> = Arc::new(SshTransport::new(
         Duration::from_secs(15),
         Duration::from_secs(30),
@@ -236,7 +181,7 @@ async fn run() -> Result<(), String> {
     let mut executor = Executor::new(inventory.clone(), Arc::new(BUILTIN.clone()), transport);
 
     let rpki = inventory.rpki.to_config();
-    let rpki_enricher = if !matches!(
+    if !matches!(
         rpki.validator,
         looking_glass_core::rpki::Validator::Disabled
     ) {
@@ -251,15 +196,7 @@ async fn run() -> Result<(), String> {
                  validator_url to point at your own validator."
             );
         }
-        // One enricher shared by the SSH executor and the local-RIB endpoints, so
-        // a BGP-session or BMP-monitored route is validated just like a scraped
-        // one.
-        Some(Arc::new(looking_glass_core::rpki::Enricher::new(rpki)))
-    } else {
-        None
-    };
-    if let Some(enricher) = &rpki_enricher {
-        executor = executor.with_rpki(enricher.clone());
+        executor = executor.with_rpki(Arc::new(looking_glass_core::rpki::Enricher::new(rpki)));
     }
     let executor = Arc::new(executor);
 
@@ -339,10 +276,6 @@ async fn run() -> Result<(), String> {
         global_view,
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
-        bgp_rib: _bgp_runtime.as_ref().map(|runtime| runtime.rib()),
-        bgp_states: _bgp_runtime.as_ref().map(|runtime| runtime.states()),
-        bmp_ribs: _bmp_station.as_ref().map(|station| station.ribs()),
-        rpki: rpki_enricher,
     })
     .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))
