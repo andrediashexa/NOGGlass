@@ -7,10 +7,11 @@ model, the AS-PATH graph, tiered RPKI, the global view, rate limiting and the
 i18n UI are all in place and green in CI. What stands between here and a **1.0.0**
 tag is not more code: it is **verifying the four vendor drivers that have never
 run against a real device** (Juniper Junos, Nokia SR OS, Datacom DmOS, MikroTik
-v6 — each blocked on external access), and **two product decisions** the
-maintainers own (federation scope, [#78]; and whether the routing engine removed
-in [#194] is in or out of 1.0). 1.0.0 is a deliberate stability commitment, cut
-with `Release-As: 1.0.0`, not an automatic bump.
+v6 — each blocked on external access), and **one product decision** the
+maintainers own (federation scope, [#78]). The BGP session / BMP engine removed
+in [#194] is **not** a 1.0 blocker: it is deferred to post-1.0 (see the
+[roadmap](roadmap.md)). 1.0.0 is a deliberate stability commitment, cut with
+`Release-As: 1.0.0`, not an automatic bump.
 
 The key words "MUST", "SHOULD" and "MAY" are used as in
 [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
@@ -43,8 +44,8 @@ stable enough to depend on. Two project rules shape what that requires here:
 
 The embedded BGP session and BMP station ([#171]/[#172]) were removed in [#194];
 the agreed direction is to bring the routing engine back as a **separate
-container** ([ADR-0016] is marked reverted). Whether that lands before 1.0 or
-after is one of the open decisions below. Everything deferred past 1.0 — the
+container** ([ADR-0016] is marked reverted). This is **deferred to post-1.0**,
+not a 1.0 blocker. Everything deferred past 1.0 — the
 routing engine, a web admin interface, federation — lives on the
 [roadmap](roadmap.md).
 
@@ -60,7 +61,7 @@ flowchart TB
     end
     subgraph gate["Gate to 1.0.0"]
         verify["Verify 4 unverified drivers<br/>(external access needed)"]
-        decide["2 product decisions<br/>(#78 federation, engine scope)"]
+        decide["1 product decision<br/>(#78 federation)"]
     end
     cut["Release-As: 1.0.0"]
     done --> gate
@@ -90,9 +91,11 @@ and mark the rest clearly (the README already carries the per-vendor status).
 - **Federation scope** ([#78]): decide whether the authenticated, multi-tenant
   platform ([ADR-0011]) is in 1.0. If not, document it as post-1.0 and close the
   issue.
-- **Routing engine scope**: decide whether the BGP session / BMP station return
-  (as a separate container) before 1.0, or whether 1.0 ships as the SSH looking
-  glass and the engine is a post-1.0 feature.
+
+The **routing engine scope** is settled: the BGP session / BMP station are
+**deferred to post-1.0** and tracked on the [roadmap](roadmap.md) as the routing
+engine as a separate container. 1.0 ships as the SSH looking glass; the engine
+is a post-1.0 feature and does not gate the tag.
 
 ### 3. Release mechanics
 
