@@ -27,9 +27,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// The `[bgp]` section: whether NOGGlass runs its own session, and with whom.
 ///
-/// The derived `Default` is the disabled, empty section — a fresh install opens
-/// no BGP socket.
-#[derive(Debug, Clone, Default, Deserialize)]
+/// `Default` is the disabled, empty section — a fresh install opens no BGP
+/// socket — with the same source id/name the TOML defaults produce.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BgpSettings {
     /// Off by default. While off, no socket is opened and the rest of this
@@ -50,6 +50,36 @@ pub struct BgpSettings {
     /// The routers NOGGlass peers with.
     #[serde(default, rename = "peer")]
     pub peers: Vec<BgpPeerConfig>,
+    /// The id the local session is offered under as a query source, as it
+    /// appears in URLs and the API. MUST NOT collide with a router id.
+    #[serde(default = "default_source_id")]
+    pub source_id: String,
+    /// The name shown for the local session in the source selector. Operator
+    /// data, like a router's name, so it is not a translated UI string.
+    #[serde(default = "default_source_name")]
+    pub source_name: String,
+}
+
+fn default_source_id() -> String {
+    "bgp-local".to_string()
+}
+
+fn default_source_name() -> String {
+    "Local BGP session".to_string()
+}
+
+impl Default for BgpSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            local_as: None,
+            router_id: None,
+            listen: Vec::new(),
+            peers: Vec::new(),
+            source_id: default_source_id(),
+            source_name: default_source_name(),
+        }
+    }
 }
 
 /// One router NOGGlass peers with.
@@ -90,6 +120,9 @@ impl BgpSettings {
         }
         if self.peers.is_empty() {
             return Err("bgp.enabled is true but no [[bgp.peer]] is configured".to_string());
+        }
+        if self.source_id.trim().is_empty() {
+            return Err("bgp.source_id must not be empty".to_string());
         }
 
         let mut ids = BTreeSet::new();
@@ -168,7 +201,27 @@ mod tests {
         assert_eq!(bgp.peers.len(), 1);
         assert_eq!(bgp.peers[0].remote_as, 64496);
         assert!(!bgp.peers[0].passive);
+        // The source the local session is offered under defaults sensibly.
+        assert_eq!(bgp.source_id, "bgp-local");
+        assert_eq!(bgp.source_name, "Local BGP session");
         bgp.validate().expect("should be valid");
+    }
+
+    #[test]
+    fn an_empty_source_id_is_refused() {
+        let bgp = parse(
+            r#"
+            enabled = true
+            local_as = 64500
+            router_id = "192.0.2.1"
+            source_id = ""
+            [[peer]]
+            id = "a"
+            host = "192.0.2.2"
+            remote_as = 64496
+            "#,
+        );
+        assert!(bgp.validate().unwrap_err().contains("source_id"));
     }
 
     #[test]

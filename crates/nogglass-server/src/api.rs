@@ -145,10 +145,13 @@ struct RouterListing {
     /// Query types this router answers, so the interface can disable the rest
     /// instead of offering a query that will be refused.
     queries: Vec<QueryType>,
+    /// True for NOGGlass's own BGP session (#171): the interface reads its
+    /// routes from `/api/bgp/route` rather than running a query on a router.
+    local_bgp: bool,
 }
 
 async fn routers(State(state): State<AppState>) -> impl IntoResponse {
-    let listing: Vec<RouterListing> = state
+    let mut listing: Vec<RouterListing> = state
         .inventory
         .routers
         .iter()
@@ -164,8 +167,26 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
             } else {
                 router.queries.clone()
             },
+            local_bgp: false,
         })
         .collect();
+
+    // NOGGlass's own BGP session appears as a source that answers bgp_route
+    // only, from the local RIB. Present only when a session is actually running.
+    if state.bgp_rib.is_some() && state.inventory.bgp.enabled {
+        let bgp = &state.inventory.bgp;
+        listing.push(RouterListing {
+            router: PublicRouter {
+                id: bgp.source_id.clone(),
+                name: bgp.source_name.clone(),
+                vendor: "bgp".to_string(),
+                location: None,
+                is_mock: false,
+            },
+            queries: vec![QueryType::BgpRoute],
+            local_bgp: true,
+        });
+    }
 
     Json(listing)
 }
@@ -427,7 +448,9 @@ async fn bgp_rib_route(
     let forwarded = headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok());
-    if let Some(refusal) = state.check_rate_limit(peer, forwarded, false) {
+    // Reading the in-memory RIB touches no router, so it needs no CAPTCHA; the
+    // hard rate limit still applies. Passing `true` skips only the CAPTCHA step.
+    if let Some(refusal) = state.check_rate_limit(peer, forwarded, true) {
         return Err(refusal);
     }
 
@@ -738,9 +761,9 @@ queries = ["bgp_route"]
     }
 
     /// A test app whose local BGP RIB is pre-populated, for the /api/bgp/route
-    /// endpoint. Mirrors `app_from` but with the RIB present.
-    fn app_with_rib(rib: looking_glass_core::bgp::SharedRib) -> AxumRouter {
-        let inventory = Arc::new(Inventory::from_toml(INVENTORY).expect("test inventory"));
+    /// endpoint and the source listing. Mirrors `app_from` but with the RIB.
+    fn app_with_rib(config: &str, rib: looking_glass_core::bgp::SharedRib) -> AxumRouter {
+        let inventory = Arc::new(Inventory::from_toml(config).expect("test inventory"));
         let executor = Arc::new(Executor::new(
             inventory.clone(),
             Arc::new(BUILTIN.clone()),
@@ -1168,7 +1191,7 @@ host = "192.0.2.200"
         );
         let shared = Arc::new(tokio::sync::RwLock::new(rib));
 
-        let app = app_with_rib(shared);
+        let app = app_with_rib(INVENTORY, shared);
         let req = Request::get("/api/bgp/route?target=203.0.113.0%2F24")
             .body(Body::empty())
             .unwrap();
@@ -1180,6 +1203,31 @@ host = "192.0.2.200"
         let json = body_json(res).await;
         assert_eq!(json["kind"], "bgp_route");
         assert_eq!(json["result"]["paths"][0]["as_path"][0], 65100);
+    }
+
+    #[tokio::test]
+    async fn the_local_bgp_session_appears_as_a_source_when_enabled() {
+        use looking_glass_core::bgp::LocalRib;
+        let config = format!(
+            "{INVENTORY}\n[bgp]\nenabled = true\nlocal_as = 64500\nrouter_id = \"192.0.2.1\"\n\
+             source_name = \"Live BGP\"\n[[bgp.peer]]\nid = \"p\"\nhost = \"192.0.2.2\"\nremote_as = 64496\n"
+        );
+        let shared = Arc::new(tokio::sync::RwLock::new(LocalRib::new()));
+        let app = app_with_rib(&config, shared);
+        let res = app
+            .oneshot(Request::get("/api/routers").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let listing = body_json(res).await;
+        let local = listing
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["local_bgp"] == true)
+            .expect("the local BGP source is listed");
+        assert_eq!(local["id"], "bgp-local");
+        assert_eq!(local["name"], "Live BGP");
+        assert_eq!(local["queries"], serde_json::json!(["bgp_route"]));
     }
 
     #[tokio::test]
