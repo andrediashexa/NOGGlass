@@ -1328,6 +1328,7 @@ version = "1.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "bytes",
  "hex",
  "ipnet",
  "netgauze-bgp-pkt",
@@ -1343,6 +1344,8 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
  "toml",
  "tracing",
 ]
@@ -1498,6 +1501,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21f874dfa0c7209f9768b66dee0a60b3a7c5e35ebf2315c7315d21a1dbc442ba"
 dependencies = [
  "bitflags",
+ "bytes",
  "chrono",
  "either",
  "ipnet",
@@ -1507,6 +1511,7 @@ dependencies = [
  "serde",
  "strum_macros",
  "thiserror 2.0.20",
+ "tokio-util",
 ]
 
 [[package]]

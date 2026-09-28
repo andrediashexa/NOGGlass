@@ -8,14 +8,18 @@
 //! - [`config`] is the `[bmp]` section of the inventory.
 //! - [`mapping`] turns received BMP messages into changes on the shared RIB,
 //!   reusing the BGP mapper so a BMP-seen route reads like any other.
+//! - [`runtime`] is the listener: it accepts routers, parses their stream, and
+//!   feeds it through the mapper.
 //!
-//! The station runtime (listener, per-session parser, per-peer RIBs) lands in a
-//! later change.
+//! Per-router RIBs (isolating one router's view from another's) are a later
+//! slice; today every session fills one shared RIB, keyed by monitored peer.
 //!
 //! [ADR-0016]: ../../docs/adr/0016-one-rust-engine-for-bgp-session-and-bmp.md
 
 pub mod config;
 pub mod mapping;
+pub mod runtime;
 
 pub use config::{BmpRouterConfig, BmpSettings};
 pub use mapping::{apply_bmp_message, paths_from_route_monitoring};
+pub use runtime::{spawn, BmpStation};
