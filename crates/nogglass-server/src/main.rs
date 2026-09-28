@@ -236,7 +236,7 @@ async fn run() -> Result<(), String> {
     let mut executor = Executor::new(inventory.clone(), Arc::new(BUILTIN.clone()), transport);
 
     let rpki = inventory.rpki.to_config();
-    if !matches!(
+    let rpki_enricher = if !matches!(
         rpki.validator,
         looking_glass_core::rpki::Validator::Disabled
     ) {
@@ -251,7 +251,15 @@ async fn run() -> Result<(), String> {
                  validator_url to point at your own validator."
             );
         }
-        executor = executor.with_rpki(Arc::new(looking_glass_core::rpki::Enricher::new(rpki)));
+        // One enricher shared by the SSH executor and the local-RIB endpoints, so
+        // a BGP-session or BMP-monitored route is validated just like a scraped
+        // one.
+        Some(Arc::new(looking_glass_core::rpki::Enricher::new(rpki)))
+    } else {
+        None
+    };
+    if let Some(enricher) = &rpki_enricher {
+        executor = executor.with_rpki(enricher.clone());
     }
     let executor = Arc::new(executor);
 
@@ -333,6 +341,7 @@ async fn run() -> Result<(), String> {
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
         bgp_rib: _bgp_runtime.as_ref().map(|runtime| runtime.rib()),
         bmp_ribs: _bmp_station.as_ref().map(|station| station.ribs()),
+        rpki: rpki_enricher,
     })
     .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))

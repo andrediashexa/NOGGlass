@@ -380,4 +380,74 @@ mod tests {
         }
         assert!(cache.entries.lock().unwrap().len() <= 4);
     }
+
+    fn a_route_for(prefix: &str, origin_as: u32) -> crate::driver::BgpRouteResult {
+        use crate::driver::{BgpPath, BgpRouteResult};
+        BgpRouteResult::new(
+            vec![BgpPath {
+                prefix: Some(prefix.parse().unwrap()),
+                as_path: vec![65000, origin_as],
+                ..BgpPath::default()
+            }],
+            String::new(),
+        )
+    }
+
+    #[tokio::test]
+    async fn enrich_fills_a_path_from_the_cache_without_touching_the_network() {
+        let enricher = Enricher::new(RpkiConfig {
+            validator: Validator::RipeStat,
+            ..RpkiConfig::default()
+        });
+        // Seed the cache so the lookup is answered locally — no HTTP call.
+        enricher.cache.insert(
+            origin(),
+            RpkiValidation {
+                status: RpkiStatus::Valid,
+                source: RpkiSource::RipeStat,
+            },
+        );
+
+        let mut result = a_route_for("198.51.100.0/24", 65500);
+        enricher.enrich(&mut result).await;
+
+        assert_eq!(result.paths[0].rpki.status, RpkiStatus::Valid);
+        assert_eq!(result.paths[0].rpki.source, RpkiSource::RipeStat);
+    }
+
+    #[tokio::test]
+    async fn a_disabled_enricher_leaves_a_path_unchecked() {
+        // The default validator is Disabled; enrich must be a fail-safe no-op.
+        let enricher = Enricher::new(RpkiConfig::default());
+        let mut result = a_route_for("198.51.100.0/24", 65500);
+        enricher.enrich(&mut result).await;
+        assert_eq!(result.paths[0].rpki.status, RpkiStatus::NotChecked);
+    }
+
+    #[tokio::test]
+    async fn enrich_does_not_overwrite_a_status_the_router_reported() {
+        let enricher = Enricher::new(RpkiConfig {
+            validator: Validator::RipeStat,
+            ..RpkiConfig::default()
+        });
+        // A different cached answer that must NOT be applied, because the path
+        // already carries the router's own verdict.
+        enricher.cache.insert(
+            origin(),
+            RpkiValidation {
+                status: RpkiStatus::Invalid,
+                source: RpkiSource::RipeStat,
+            },
+        );
+
+        let mut result = a_route_for("198.51.100.0/24", 65500);
+        result.paths[0].rpki = RpkiValidation {
+            status: RpkiStatus::Valid,
+            source: RpkiSource::Router,
+        };
+        enricher.enrich(&mut result).await;
+
+        assert_eq!(result.paths[0].rpki.source, RpkiSource::Router);
+        assert_eq!(result.paths[0].rpki.status, RpkiStatus::Valid);
+    }
 }
