@@ -1,6 +1,10 @@
 # ADR-0016 — One Rust engine for the BGP session and the BMP station
 
-- **Status:** Accepted
+- **Status:** Accepted, but the embedded implementation was **reverted** on
+  2026-09-28 (#194): the BGP session and BMP station were removed pending a
+  decision to run the routing engine in a **separate container** rather than
+  embedded in the binary. The embedded approach (and its NetGauze speaker patch)
+  was the original decision below; the container-based redesign is future work.
 - **Date:** 2026-09-27
 - **Deciders:** André Dias, Marcelo Gondim
 

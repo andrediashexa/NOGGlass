@@ -515,12 +515,6 @@ pub struct Inventory {
     pub global_view: GlobalViewSettings,
     #[serde(default)]
     pub ui: UiSettings,
-    /// The BGP session NOGGlass holds itself (issue #171). Off unless enabled.
-    #[serde(default)]
-    pub bgp: crate::bgp::BgpSettings,
-    /// The BMP station NOGGlass runs (issue #172). Off unless enabled.
-    #[serde(default)]
-    pub bmp: crate::bmp::BmpSettings,
     #[serde(rename = "router", default)]
     pub routers: Vec<Router>,
 }
@@ -604,33 +598,6 @@ impl Inventory {
             return Err(InventoryError::Malformed(
                 "ui.background_opacity_percent must be between 0 and 100".to_string(),
             ));
-        }
-
-        self.bgp.validate().map_err(InventoryError::Malformed)?;
-        if self.bgp.enabled && self.routers.iter().any(|r| r.id == self.bgp.source_id) {
-            return Err(InventoryError::Malformed(format!(
-                "bgp.source_id {:?} collides with a router id; give the local BGP source a distinct id",
-                self.bgp.source_id
-            )));
-        }
-        self.bmp.validate().map_err(InventoryError::Malformed)?;
-        if self.bmp.enabled {
-            // Each monitored router is its own query source keyed by its id, so
-            // that id must not shadow a real router or the local BGP source.
-            for bmp_router in &self.bmp.routers {
-                if self.routers.iter().any(|r| r.id == bmp_router.id) {
-                    return Err(InventoryError::Malformed(format!(
-                        "bmp.router id {:?} collides with a router id; give the BMP source a distinct id",
-                        bmp_router.id
-                    )));
-                }
-                if self.bgp.enabled && self.bgp.source_id == bmp_router.id {
-                    return Err(InventoryError::Malformed(format!(
-                        "bmp.router id {:?} collides with bgp.source_id; give the two sources distinct ids",
-                        bmp_router.id
-                    )));
-                }
-            }
         }
 
         Ok(())

@@ -30,15 +30,6 @@ base64.workspace = true
 hex.workspace = true
 rand.workspace = true
 ring.workspace = true
-netgauze-bgp-pkt = "0.13"
-netgauze-bgp-speaker = "0.13"
-netgauze-bmp-pkt = { version = "0.13", features = ["codec"] }
-# codec (BmpCodec) + FramedRead let the station read length-delimited BMP
-# messages off a TcpStream; tokio-stream's StreamExt drives the frame loop.
-tokio-util = { version = "0.7", features = ["codec"] }
-tokio-stream = "0.1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
-# Encoding a BMP message to raw bytes in the station's loopback tests.
-bytes = "1"

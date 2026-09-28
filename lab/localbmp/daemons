@@ -1,6 +1,0 @@
-bgpd=yes
-zebra=yes
-vtysh_enable=yes
-# BMP in FRR is a bgpd module; load it so the [bmp targets] config applies.
-bgpd_options="  -A 127.0.0.1 -M bmp"
-zebra_options="  -A 127.0.0.1 -s 90000000"

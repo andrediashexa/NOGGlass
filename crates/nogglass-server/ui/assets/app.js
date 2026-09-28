@@ -355,32 +355,12 @@ async function onSubmit(event) {
   };
   rememberInUrl(payload);
 
-  // NOGGlass's own BGP session (#171) and each monitored BMP router (#172) are
-  // sources whose routes come from a local RIB, not from running a query on a
-  // router. A BMP source names which router to answer from.
-  const selected = state.routers.find((router) => router.id === payload.router);
-  let localRibUrl = null;
-  if (selected && selected.local_bgp) {
-    localRibUrl =
-      payload.type === "bgp_summary"
-        ? "/api/bgp/summary"
-        : `/api/bgp/route?target=${encodeURIComponent(payload.target)}`;
-  } else if (selected && selected.local_bmp) {
-    localRibUrl =
-      payload.type === "bgp_summary"
-        ? `/api/bmp/summary?router=${encodeURIComponent(payload.router)}`
-        : `/api/bmp/route?router=${encodeURIComponent(payload.router)}` +
-          `&target=${encodeURIComponent(payload.target)}`;
-  }
-
   try {
-    const response = localRibUrl
-      ? await fetch(localRibUrl)
-      : await fetch("/api/query", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+    const response = await fetch("/api/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     const body = await response.json();
     if (!response.ok) {
       if (body.code === "captcha_required") {
