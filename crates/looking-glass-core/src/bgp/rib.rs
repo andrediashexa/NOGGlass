@@ -15,7 +15,7 @@ use std::net::IpAddr;
 
 use ipnet::IpNet;
 
-use crate::driver::BgpPath;
+use crate::driver::{BgpPath, BgpRouteResult};
 
 /// The in-memory RIB: for each prefix, the path each peer advertised for it.
 ///
@@ -74,6 +74,17 @@ impl LocalRib {
             .get(prefix)
             .map(|peers| peers.values().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// The route query answer for `prefix`, as the normalised result the API
+    /// already serves for the SSH drivers — every peer's path for it.
+    ///
+    /// A route learned over BGP has no raw router text, so `raw_output` is
+    /// empty; the RIB either holds the prefix or it does not, so the answer is
+    /// always [`Completeness::Complete`](crate::driver::Completeness) — an empty
+    /// result means "no peer advertises this prefix", never "the lookup failed".
+    pub fn route_result(&self, prefix: &IpNet) -> BgpRouteResult {
+        BgpRouteResult::new(self.paths_for(prefix), String::new())
     }
 
     /// How many distinct prefixes the RIB holds.
@@ -246,5 +257,34 @@ mod tests {
             rib.is_empty(),
             "an unreadable NLRI is never stored under a guessed key"
         );
+    }
+
+    #[test]
+    fn route_result_carries_the_paths_and_is_complete() {
+        use crate::driver::Completeness;
+        let mut rib = LocalRib::new();
+        rib.apply_update(
+            peer("192.0.2.1"),
+            vec![path("198.51.100.0/24", "192.0.2.1", vec![65100])],
+            &[],
+        );
+        let result = rib.route_result(&net("198.51.100.0/24"));
+        assert_eq!(result.paths.len(), 1);
+        assert_eq!(result.completeness, Completeness::Complete);
+        assert!(
+            result.raw_output.is_empty(),
+            "a BGP-learned route has no raw router text"
+        );
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn route_result_for_an_unknown_prefix_is_empty_but_complete() {
+        use crate::driver::Completeness;
+        let rib = LocalRib::new();
+        let result = rib.route_result(&net("10.0.0.0/8"));
+        // Empty means "no peer advertises this", a real answer — not a failure.
+        assert!(result.paths.is_empty());
+        assert_eq!(result.completeness, Completeness::Complete);
     }
 }
