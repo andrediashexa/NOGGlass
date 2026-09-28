@@ -511,6 +511,9 @@ pub struct Inventory {
     pub global_view: GlobalViewSettings,
     #[serde(default)]
     pub ui: UiSettings,
+    /// The BGP session NOGGlass holds itself (issue #171). Off unless enabled.
+    #[serde(default)]
+    pub bgp: crate::bgp::BgpSettings,
     #[serde(rename = "router", default)]
     pub routers: Vec<Router>,
 }
@@ -595,6 +598,8 @@ impl Inventory {
                 "ui.background_opacity_percent must be between 0 and 100".to_string(),
             ));
         }
+
+        self.bgp.validate().map_err(InventoryError::Malformed)?;
 
         Ok(())
     }

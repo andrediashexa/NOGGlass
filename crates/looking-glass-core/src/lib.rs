@@ -1,3 +1,4 @@
+pub mod bgp;
 pub mod bgp_table;
 pub mod captcha;
 pub mod catalogue;
@@ -13,6 +14,7 @@ pub mod target;
 pub mod traceroute;
 pub mod vendors;
 
+pub use bgp::{BgpPeerConfig, BgpSettings};
 pub use captcha::{CaptchaEngine, CaptchaResponse};
 pub use catalogue::{Catalogue, CatalogueError, BUILTIN};
 pub use driver::{
