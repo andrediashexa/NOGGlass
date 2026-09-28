@@ -124,3 +124,40 @@ implementation blocks on. The decision is tracked in issue #171.
 - **Independent of BMP** (issue #172): that is an inbound, monitoring-only feed;
   this is an outbound session NOGGlass initiates or accepts as a peer. The two
   share the normalised model but neither blocks the other.
+
+## Implementation status and the NetGauze 0.13 blocker
+
+Built and unit-tested on `feat/171-bgp-session-support`: the `[bgp]` config,
+the UPDATE→`BgpPath` mapping, the in-memory `LocalRib`, the `apply_bgp_event`
+reducer, the NetGauze socket runtime (`bgp::spawn`), and the server startup
+wiring. The session **establishes** against a real FRR 9.1 peer.
+
+```mermaid
+flowchart LR
+    frr[FRR 9.1] -->|"UPDATE (NEXT_HOP present)"| spk[NetGauze speaker]
+    spk -->|decode OK| chk{speaker mandatory-attr check}
+    chk -->|"buggy early break skips NEXT_HOP"| rst[UpdateMsgErr → session reset]
+    chk -->|with one-line fix| rib[(LocalRib: 2 prefixes)]
+    classDef bad fill:#fdd; classDef good fill:#dfd;
+    class rst bad; class rib good;
+```
+
+Routes do **not** yet reach the RIB against a real peer, because of an upstream
+bug in **netgauze-bgp-speaker 0.13.0** (the accepted engine, [ADR-0016]): after
+its codec decodes an UPDATE correctly (NEXT_HOP present), a post-decode
+mandatory-attribute check in `connection.rs` breaks out of its loop as soon as
+ORIGIN and AS_PATH are seen — so with the standard attribute order (ORIGIN,
+AS_PATH, NEXT_HOP, …) it never observes NEXT_HOP, wrongly raises
+`MissingWellKnownAttribute(NEXT_HOP)`, and resets the session. This MUST be
+treated as breaking against essentially every real peer.
+
+It is a one-line fix (drop the early `break`). Verified: with that fix applied
+to a vendored NetGauze (via a temporary, un-committed `[patch]`), NOGGlass's own
+RIB went from 0 to 2 prefixes against FRR — the whole pipeline works end to end.
+The pre-authorised **Rotonda** fallback was also confirmed to ingest the same
+routes. The repro, the exact patch, and the Rotonda config live outside the
+repo with the maintainers.
+
+**Next, once the engine path is chosen and CI is available:** answer `bgp_route`
+from the `LocalRib` and decide how the local session appears as a source in the
+API/UI (a pseudo-router in the selector, or a dedicated "live BGP" view).
