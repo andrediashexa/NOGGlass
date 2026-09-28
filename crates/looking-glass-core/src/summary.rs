@@ -148,9 +148,7 @@ fn parse_peer_row(line: &str) -> Option<BgpPeerSummary> {
                         .and_then(|token| token.parse::<u32>().ok())
                         .unwrap_or(0);
                     let accepted = if first.to_ascii_lowercase().starts_with("estab") {
-                        after
-                            .get(2)
-                            .and_then(|token| token.parse::<u32>().ok())
+                        after.get(2).and_then(|token| token.parse::<u32>().ok())
                     } else {
                         None
                     };
