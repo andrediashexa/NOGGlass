@@ -211,7 +211,8 @@ impl RateLimiter {
         let now = Instant::now();
         for shard in &self.shards {
             if let Ok(mut buckets) = shard.try_lock() {
-                buckets.retain(|_, bucket| now.duration_since(bucket.last_seen) < self.idle_eviction);
+                buckets
+                    .retain(|_, bucket| now.duration_since(bucket.last_seen) < self.idle_eviction);
             }
         }
     }
@@ -354,14 +355,18 @@ mod tests {
 
         // Second query 10s later without captcha is challenged
         let ten_secs_later = now + Duration::from_secs(10);
-        assert!(limiter.check_at(key, ten_secs_later, false).is_captcha_required());
+        assert!(limiter
+            .check_at(key, ten_secs_later, false)
+            .is_captcha_required());
 
         // Second query with captcha is allowed
         assert!(limiter.check_at(key, ten_secs_later, true).is_allowed());
 
         // Query after 60s without captcha is allowed again
         let seventy_secs_later = ten_secs_later + Duration::from_secs(65);
-        assert!(limiter.check_at(key, seventy_secs_later, false).is_allowed());
+        assert!(limiter
+            .check_at(key, seventy_secs_later, false)
+            .is_allowed());
     }
 
     /// A residential IPv6 connection holds a whole /64. Counting per address
@@ -384,7 +389,11 @@ mod tests {
             .is_allowed());
         assert!(
             !limiter
-                .check_at(ClientKey::from_ip(ip("2001:db8:1:2::dead:beef")), now, false)
+                .check_at(
+                    ClientKey::from_ip(ip("2001:db8:1:2::dead:beef")),
+                    now,
+                    false
+                )
                 .is_allowed(),
             "a different address in the same /64 shares the allowance"
         );

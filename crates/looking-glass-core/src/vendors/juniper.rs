@@ -161,10 +161,7 @@ impl VendorDriver for JuniperDriver {
     /// including the RPKI validation state it reports natively.
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
         let trimmed = raw.trim();
-        if trimmed.is_empty()
-            || !trimmed.contains('{')
-            || trimmed.contains("Pattern not found")
-        {
+        if trimmed.is_empty() || !trimmed.contains('{') || trimmed.contains("Pattern not found") {
             return Ok(BgpRouteResult::new(Vec::new(), raw));
         }
 
@@ -323,15 +320,13 @@ impl VendorDriver for JuniperDriver {
                                             for c in comms {
                                                 if let Some(list) = &c.community {
                                                     for item in list {
-                                                        if let Some(comm_str) =
-                                                            item.data.as_deref()
+                                                        if let Some(comm_str) = item.data.as_deref()
                                                         {
                                                             let clean = comm_str
                                                                 .strip_prefix("large:")
                                                                 .unwrap_or(comm_str);
-                                                            communities.push(Community::parse(
-                                                                clean,
-                                                            ));
+                                                            communities
+                                                                .push(Community::parse(clean));
                                                         }
                                                     }
                                                 }
@@ -509,9 +504,14 @@ fn format_junos_cli_output(parsed: &JunosRouteInformation, fallback_raw: &str) -
                             if let Some(ap_txt) = ap_vec.first() {
                                 if let Some(data) = ap_txt.data.as_deref() {
                                     let first_line = data.lines().next().unwrap_or(data);
-                                    let cleaned = first_line.strip_prefix("AS path:").unwrap_or(first_line).trim();
+                                    let cleaned = first_line
+                                        .strip_prefix("AS path:")
+                                        .unwrap_or(first_line)
+                                        .trim();
                                     if !cleaned.is_empty() {
-                                        out.push_str(&format!("                AS path: {cleaned}\n"));
+                                        out.push_str(&format!(
+                                            "                AS path: {cleaned}\n"
+                                        ));
                                     }
                                 }
                             }
@@ -660,7 +660,9 @@ mod tests {
 
         // Formatted CLI raw_output
         assert!(
-            result.raw_output.contains("inet.0: 1 destinations, 2 routes"),
+            result
+                .raw_output
+                .contains("inet.0: 1 destinations, 2 routes"),
             "raw_output must contain human-readable Junos CLI format"
         );
         assert!(
@@ -682,7 +684,8 @@ mod tests {
         let t1: JunosText = serde_json::from_str("{}").expect("empty object");
         assert_eq!(t1.data, None);
 
-        let t2: JunosText = serde_json::from_str(r#"{"other": "value"}"#).expect("missing data field");
+        let t2: JunosText =
+            serde_json::from_str(r#"{"other": "value"}"#).expect("missing data field");
         assert_eq!(t2.data, None);
 
         let t3: JunosText = serde_json::from_str(r#"{"data": null}"#).expect("null data");
@@ -710,4 +713,3 @@ mod tests {
         assert!(not_found_result.paths.is_empty());
     }
 }
-

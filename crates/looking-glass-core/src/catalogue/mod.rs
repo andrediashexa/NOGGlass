@@ -265,26 +265,28 @@ impl Catalogue {
     /// Builds the BGP AS-Path regex lookup for one vendor.
     pub fn bgp_aspath(&self, vendor: &str, asn: u32) -> Result<String, CatalogueError> {
         let commands = self.vendor(vendor)?;
-        let template = commands
-            .bgp_route_asn
-            .as_ref()
-            .ok_or_else(|| CatalogueError::Unsupported {
-                vendor: vendor.to_string(),
-                query: "bgp_aspath".to_string(),
-            })?;
+        let template =
+            commands
+                .bgp_route_asn
+                .as_ref()
+                .ok_or_else(|| CatalogueError::Unsupported {
+                    vendor: vendor.to_string(),
+                    query: "bgp_aspath".to_string(),
+                })?;
         Ok(render(template, &[("asn", asn.to_string())]))
     }
 
     /// Builds the BGP AS-Path regex lookup for IPv6 for one vendor.
     pub fn bgp_aspath_v6(&self, vendor: &str, asn: u32) -> Result<String, CatalogueError> {
         let commands = self.vendor(vendor)?;
-        let template = commands
-            .bgp_route_asn_v6
-            .as_ref()
-            .ok_or_else(|| CatalogueError::Unsupported {
-                vendor: vendor.to_string(),
-                query: "bgp_aspath_v6".to_string(),
-            })?;
+        let template =
+            commands
+                .bgp_route_asn_v6
+                .as_ref()
+                .ok_or_else(|| CatalogueError::Unsupported {
+                    vendor: vendor.to_string(),
+                    query: "bgp_aspath_v6".to_string(),
+                })?;
         Ok(render(template, &[("asn", asn.to_string())]))
     }
 
