@@ -200,7 +200,11 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
                 location: None,
                 is_mock: false,
             },
-            queries: vec![QueryType::BgpRoute, QueryType::BgpSummary],
+            queries: vec![
+                QueryType::BgpRoute,
+                QueryType::BgpSummary,
+                QueryType::BgpAspath,
+            ],
             local_bgp: true,
             local_bmp: false,
         });
@@ -239,7 +243,7 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
                         location: None,
                         is_mock: false,
                     },
-                    queries: vec![QueryType::BgpRoute],
+                    queries: vec![QueryType::BgpRoute, QueryType::BgpAspath],
                     local_bgp: false,
                     local_bmp: true,
                 });
@@ -609,10 +613,10 @@ async fn bmp_rib_route(
     rib_route_response(&state, &rib, &request.router, "BMP RIB", &request.target).await
 }
 
-/// The shared body of the RIB-lookup endpoints: parse the target to a prefix
-/// (or host), read the RIB by longest-prefix match, and dress it as a
-/// `bgp_route` answer with the global view attached. `source` names the
-/// answering source; `label` names the RIB in the human-readable command line.
+/// The shared body of the RIB-lookup endpoints: parse the target, read the RIB —
+/// by longest-prefix match for a prefix or host, or by AS-path filter for an AS
+/// number (`bgp_aspath`) — and dress it as a `bgp_route` answer. `source` names
+/// the answering source; `label` names the RIB in the human-readable command.
 async fn rib_route_response(
     state: &AppState,
     rib: &looking_glass_core::bgp::SharedRib,
@@ -621,23 +625,24 @@ async fn rib_route_response(
     raw_target: &str,
 ) -> Result<Json<QueryResponse>, ApiError> {
     let target = parse_target(raw_target)?;
-    let prefix = match target {
-        QueryTarget::Prefix(net) => net,
+    let (mut result, command) = match target {
+        QueryTarget::Prefix(net) => (
+            rib.read().await.route_result(&net),
+            format!("{label} lookup for {net}"),
+        ),
         QueryTarget::Ip(ip) => {
             let bits = if ip.is_ipv4() { 32 } else { 128 };
-            ipnet::IpNet::new(ip, bits).expect("a host prefix length is always valid")
+            let net = ipnet::IpNet::new(ip, bits).expect("a host prefix length is always valid");
+            (
+                rib.read().await.route_result(&net),
+                format!("{label} lookup for {net}"),
+            )
         }
-        QueryTarget::Asn(_) => {
-            return Err(ApiError {
-                status: StatusCode::BAD_REQUEST,
-                code: "bgp_rib_needs_prefix",
-                message: "a local RIB is queried by prefix or address, not by AS number"
-                    .to_string(),
-            });
-        }
+        QueryTarget::Asn(asn) => (
+            rib.read().await.route_result_for_as(asn),
+            format!("{label} AS-path lookup for AS{asn}"),
+        ),
     };
-
-    let mut result = rib.read().await.route_result(&prefix);
     // Origin-validate the local-RIB paths the same way the executor does for
     // scraped routes, so every source is consistent. A no-op when RPKI is off.
     if let Some(enricher) = &state.rpki {
@@ -645,7 +650,7 @@ async fn rib_route_response(
     }
     let mut response = QueryResponse {
         router: source.to_string(),
-        command: format!("{label} lookup for {prefix}"),
+        command,
         duration_ms: 0,
         outcome: OutcomeBody::BgpRoute {
             result,
@@ -653,7 +658,12 @@ async fn rib_route_response(
             agreement: Agreement::Unknown,
         },
     };
-    add_global_view(state, &target, &mut response).await;
+    // The global view compares one prefix against the Internet, so it is
+    // meaningful for a prefix or host query, not for an AS-path query that spans
+    // many prefixes.
+    if !matches!(target, QueryTarget::Asn(_)) {
+        add_global_view(state, &target, &mut response).await;
+    }
     Ok(Json(response))
 }
 
@@ -1439,6 +1449,49 @@ host = "192.0.2.200"
     }
 
     #[tokio::test]
+    async fn bgp_route_endpoint_answers_an_as_path_query() {
+        use looking_glass_core::bgp::LocalRib;
+        use looking_glass_core::driver::BgpPath;
+
+        let mut rib = LocalRib::new();
+        rib.apply_update(
+            "192.0.2.1".parse().unwrap(),
+            vec![
+                BgpPath {
+                    prefix: Some("203.0.113.0/24".parse().unwrap()),
+                    peer: Some("192.0.2.1".parse().unwrap()),
+                    as_path: vec![65000, 65100],
+                    ..Default::default()
+                },
+                BgpPath {
+                    prefix: Some("198.51.100.0/24".parse().unwrap()),
+                    peer: Some("192.0.2.1".parse().unwrap()),
+                    as_path: vec![65000, 65999],
+                    ..Default::default()
+                },
+            ],
+            &[],
+        );
+        let shared = Arc::new(tokio::sync::RwLock::new(rib));
+
+        let app = app_with_rib(INVENTORY, shared);
+        // An AS-number target (not a prefix) filters the RIB by AS-path.
+        let req = Request::get("/api/bgp/route?target=AS65100")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let json = body_json(res).await;
+        assert_eq!(json["kind"], "bgp_route");
+        // Only the route whose path contains 65100 comes back.
+        assert_eq!(json["result"]["paths"].as_array().unwrap().len(), 1);
+        assert_eq!(json["result"]["paths"][0]["prefix"], "203.0.113.0/24");
+    }
+
+    #[tokio::test]
     async fn the_local_bgp_session_appears_as_a_source_when_enabled() {
         use looking_glass_core::bgp::LocalRib;
         let config = format!(
@@ -1462,7 +1515,7 @@ host = "192.0.2.200"
         assert_eq!(local["name"], "Live BGP");
         assert_eq!(
             local["queries"],
-            serde_json::json!(["bgp_route", "bgp_summary"])
+            serde_json::json!(["bgp_route", "bgp_summary", "bgp_aspath"])
         );
     }
 
@@ -1595,7 +1648,10 @@ host = "192.0.2.200"
             .expect("the BMP router is listed");
         assert_eq!(bmp["id"], "edge01");
         assert_eq!(bmp["name"], "Edge 01");
-        assert_eq!(bmp["queries"], serde_json::json!(["bgp_route"]));
+        assert_eq!(
+            bmp["queries"],
+            serde_json::json!(["bgp_route", "bgp_aspath"])
+        );
     }
 
     #[tokio::test]

@@ -91,6 +91,8 @@ text. An empty result means "this router reports no such prefix" (including when
 it is not currently connected), never a failed lookup. The endpoint answers
 `404 bmp_disabled` when `[bmp]` is off. Lookups are rate-limited like every other
 query. Matching is longest-prefix, so a host or more-specific query returns the covering route.
+An AS-number target answers `bgp_aspath` instead — every route the router
+monitors whose AS-path contains that AS (`GET /api/bmp/route?router=edge01&target=AS65001`).
 
 ```mermaid
 flowchart LR
