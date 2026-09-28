@@ -42,6 +42,9 @@ pub struct AppState {
     pub captcha_secret: String,
     /// Replay protection tracking recently verified CAPTCHA tokens.
     pub used_captchas: Arc<Mutex<HashSet<String>>>,
+    /// The RIB of NOGGlass's own BGP session, when one is configured (#171).
+    /// `None` when `[bgp]` is disabled, and then the BGP-RIB endpoint is absent.
+    pub bgp_rib: Option<looking_glass_core::bgp::SharedRib>,
 }
 
 impl AppState {
@@ -117,6 +120,7 @@ pub fn routes(state: AppState) -> AxumRouter {
             get(stream_query).post(stream_query_post),
         )
         .route("/api/catalogue/{vendor}", get(vendor_commands))
+        .route("/api/bgp/route", get(bgp_rib_route))
         .with_state(state)
 }
 
@@ -404,6 +408,69 @@ async fn run_query(
     Ok(Json(response))
 }
 
+/// A prefix lookup against the local BGP RIB.
+#[derive(Debug, Deserialize)]
+pub struct BgpRibRequest {
+    pub target: String,
+}
+
+/// Answers a route query from the RIB of NOGGlass's own BGP session (#171),
+/// when one is configured. Read-only: it serves what peers advertised and never
+/// touches a router. Exact-prefix (or host) match for now; longest-prefix match
+/// is a later refinement. Returns 404 when `[bgp]` is disabled.
+async fn bgp_rib_route(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
+    Query(request): Query<BgpRibRequest>,
+) -> Result<Json<QueryResponse>, ApiError> {
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok());
+    if let Some(refusal) = state.check_rate_limit(peer, forwarded, false) {
+        return Err(refusal);
+    }
+
+    let Some(rib) = state.bgp_rib.as_ref() else {
+        return Err(ApiError {
+            status: StatusCode::NOT_FOUND,
+            code: "bgp_disabled",
+            message: "NOGGlass is not running its own BGP session".to_string(),
+        });
+    };
+
+    let target = parse_target(&request.target)?;
+    let prefix = match target {
+        QueryTarget::Prefix(net) => net,
+        QueryTarget::Ip(ip) => {
+            let bits = if ip.is_ipv4() { 32 } else { 128 };
+            ipnet::IpNet::new(ip, bits).expect("a host prefix length is always valid")
+        }
+        QueryTarget::Asn(_) => {
+            return Err(ApiError {
+                status: StatusCode::BAD_REQUEST,
+                code: "bgp_rib_needs_prefix",
+                message: "the local BGP RIB is queried by prefix or address, not by AS number"
+                    .to_string(),
+            });
+        }
+    };
+
+    let result = rib.read().await.route_result(&prefix);
+    let mut response = QueryResponse {
+        router: "bgp-local".to_string(),
+        command: format!("local BGP RIB lookup for {prefix}"),
+        duration_ms: 0,
+        outcome: OutcomeBody::BgpRoute {
+            result,
+            global: None,
+            agreement: Agreement::Unknown,
+        },
+    };
+    add_global_view(&state, &target, &mut response).await;
+    Ok(Json(response))
+}
+
 /// The same query, as a stream of events via GET query string.
 async fn stream_query(
     State(state): State<AppState>,
@@ -666,6 +733,31 @@ queries = ["bgp_route"]
             global_view,
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            bgp_rib: None,
+        })
+    }
+
+    /// A test app whose local BGP RIB is pre-populated, for the /api/bgp/route
+    /// endpoint. Mirrors `app_from` but with the RIB present.
+    fn app_with_rib(rib: looking_glass_core::bgp::SharedRib) -> AxumRouter {
+        let inventory = Arc::new(Inventory::from_toml(INVENTORY).expect("test inventory"));
+        let executor = Arc::new(Executor::new(
+            inventory.clone(),
+            Arc::new(BUILTIN.clone()),
+            Arc::new(NoTransport),
+        ));
+        let (client_address, _) = inventory.rate_limit.to_client_address();
+        let global_view = Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1)));
+        routes(AppState {
+            executor,
+            inventory,
+            version: VersionInfo::from_build(),
+            limiter: None,
+            client_address: Arc::new(client_address),
+            global_view,
+            captcha_secret: "test_secret".to_string(),
+            used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            bgp_rib: Some(rib),
         })
     }
 
@@ -844,6 +936,7 @@ host = "192.0.2.200"
             global_view: Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1))),
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            bgp_rib: None,
         };
 
         let target = parse_target("203.0.113.0/24").unwrap();
@@ -1055,5 +1148,53 @@ host = "192.0.2.200"
                 .and_then(|v| v.to_str().ok()),
             Some("text/event-stream")
         );
+    }
+
+    #[tokio::test]
+    async fn bgp_rib_route_answers_from_the_local_rib() {
+        use looking_glass_core::bgp::LocalRib;
+        use looking_glass_core::driver::BgpPath;
+
+        let mut rib = LocalRib::new();
+        rib.apply_update(
+            "192.0.2.1".parse().unwrap(),
+            vec![BgpPath {
+                prefix: Some("203.0.113.0/24".parse().unwrap()),
+                peer: Some("192.0.2.1".parse().unwrap()),
+                as_path: vec![65100],
+                ..Default::default()
+            }],
+            &[],
+        );
+        let shared = Arc::new(tokio::sync::RwLock::new(rib));
+
+        let app = app_with_rib(shared);
+        let req = Request::get("/api/bgp/route?target=203.0.113.0%2F24")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let json = body_json(res).await;
+        assert_eq!(json["kind"], "bgp_route");
+        assert_eq!(json["result"]["paths"][0]["as_path"][0], 65100);
+    }
+
+    #[tokio::test]
+    async fn bgp_rib_route_is_absent_when_bgp_is_disabled() {
+        // app() has no local BGP session, so the endpoint reports it is off.
+        let app = app();
+        let req = Request::get("/api/bgp/route?target=203.0.113.0%2F24")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let json = body_json(res).await;
+        assert_eq!(json["code"], "bgp_disabled");
     }
 }

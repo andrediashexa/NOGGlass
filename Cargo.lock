@@ -1524,6 +1524,7 @@ dependencies = [
  "futures-core",
  "hex",
  "http-body-util",
+ "ipnet",
  "looking-glass-core",
  "rand 0.8.8",
  "serde",

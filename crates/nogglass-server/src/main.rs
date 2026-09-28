@@ -302,6 +302,7 @@ async fn run() -> Result<(), String> {
         global_view,
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
+        bgp_rib: _bgp_runtime.as_ref().map(|runtime| runtime.rib()),
     })
     .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))
