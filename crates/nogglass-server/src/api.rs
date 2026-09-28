@@ -562,10 +562,9 @@ async fn bmp_rib_route(
 }
 
 /// The shared body of the RIB-lookup endpoints: parse the target to a prefix
-/// (or host), read the RIB, and dress it as a `bgp_route` answer with the global
-/// view attached. Exact-prefix (or host) match for now; longest-prefix match is
-/// a later refinement. `source` names the answering source; `label` names the
-/// RIB in the human-readable command line.
+/// (or host), read the RIB by longest-prefix match, and dress it as a
+/// `bgp_route` answer with the global view attached. `source` names the
+/// answering source; `label` names the RIB in the human-readable command line.
 async fn rib_route_response(
     state: &AppState,
     rib: &looking_glass_core::bgp::SharedRib,

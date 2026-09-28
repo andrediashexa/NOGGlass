@@ -72,7 +72,7 @@ the prefix, in the normalised model ([ADR-0006](../adr/0006-structured-bgp-model
 with `raw_output` empty because a BGP-learned route has no router text. An empty
 result means "no peer advertises this prefix", never a failed lookup. The
 endpoint answers `404 bgp_disabled` when `[bgp]` is off. Lookups are rate-limited
-like every other query. Matching is exact-prefix (or host) for now.
+like every other query. Matching is longest-prefix, so a host or more-specific query returns the covering route.
 
 ```mermaid
 flowchart LR
