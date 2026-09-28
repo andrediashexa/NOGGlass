@@ -44,7 +44,9 @@ stable enough to depend on. Two project rules shape what that requires here:
 The embedded BGP session and BMP station ([#171]/[#172]) were removed in [#194];
 the agreed direction is to bring the routing engine back as a **separate
 container** ([ADR-0016] is marked reverted). Whether that lands before 1.0 or
-after is one of the open decisions below.
+after is one of the open decisions below. Everything deferred past 1.0 — the
+routing engine, a web admin interface, federation — lives on the
+[roadmap](roadmap.md).
 
 ## Details
 
