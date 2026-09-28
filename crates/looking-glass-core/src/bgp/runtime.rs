@@ -19,9 +19,14 @@ use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+use std::time::Instant;
+
+use netgauze_bgp_speaker::fsm::FsmState;
+
 use crate::bgp::config::BgpSettings;
 use crate::bgp::rib::LocalRib;
 use crate::bgp::session::apply_bgp_event;
+use crate::bgp::summary::{PeerStatus, SessionStates};
 
 /// The RIB, shared between the session tasks that fill it and the API that reads
 /// it.
@@ -31,17 +36,39 @@ pub type SharedRib = Arc<RwLock<LocalRib>>;
 ///
 /// Holding this keeps the sessions alive: dropping it drops the supervisor,
 /// which aborts every peer task. The server keeps it for the process lifetime
-/// and hands [`Self::rib`] to the API.
+/// and hands [`Self::rib`] and [`Self::states`] to the API.
 pub struct BgpRuntime {
     // Owns the peer tasks; kept only to keep them running.
     _supervisor: PeersSupervisor<IpAddr, SocketAddr, TcpStream>,
     rib: SharedRib,
+    states: SessionStates,
 }
 
 impl BgpRuntime {
     /// A shared handle to the RIB, for the API to read.
     pub fn rib(&self) -> SharedRib {
         self.rib.clone()
+    }
+
+    /// A shared handle to the per-peer session state, for the neighbour summary.
+    pub fn states(&self) -> SessionStates {
+        self.states.clone()
+    }
+}
+
+/// Records a peer's latest FSM state, stamping the establishment time the first
+/// time it reaches `Established` and clearing it whenever it leaves.
+async fn record_state(states: &SessionStates, peer: IpAddr, state: FsmState) {
+    let established = state == FsmState::Established;
+    let mut guard = states.write().await;
+    let entry = guard
+        .entry(peer)
+        .or_insert_with(|| PeerStatus::new(state.to_string()));
+    entry.state = state.to_string();
+    if established {
+        entry.established_since.get_or_insert_with(Instant::now);
+    } else {
+        entry.established_since = None;
     }
 }
 
@@ -55,6 +82,7 @@ const BGP_PORT: u16 = 179;
 /// change.
 pub fn spawn(settings: &BgpSettings) -> BgpRuntime {
     let rib: SharedRib = Arc::new(RwLock::new(LocalRib::new()));
+    let states: SessionStates = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
 
     // Validated before we get here (config::BgpSettings::validate), but stay
     // fail-safe rather than panic if called out of order: no ids, no sessions.
@@ -63,6 +91,7 @@ pub fn spawn(settings: &BgpSettings) -> BgpRuntime {
         return BgpRuntime {
             _supervisor: PeersSupervisor::new(0, std::net::Ipv4Addr::UNSPECIFIED),
             rib,
+            states,
         };
     };
 
@@ -94,11 +123,13 @@ pub fn spawn(settings: &BgpSettings) -> BgpRuntime {
                 }
                 info!(peer = %peer.id, host = %peer.host, remote_as = peer.remote_as, "bgp: session starting");
                 let rib = rib.clone();
+                let states = states.clone();
                 let peer_ip = peer.host;
                 tokio::spawn(async move {
                     while let Some(result) = received_rx.recv().await {
                         match result {
-                            Ok((_state, event)) => {
+                            Ok((state, event)) => {
+                                record_state(&states, peer_ip, state).await;
                                 if let netgauze_bgp_speaker::events::BgpEvent::UpdateMsgErr(err) =
                                     &event
                                 {
@@ -109,8 +140,10 @@ pub fn spawn(settings: &BgpSettings) -> BgpRuntime {
                             }
                             Err(err) => {
                                 // The peer task reported a terminal error; its
-                                // routes are no longer trustworthy.
+                                // routes are no longer trustworthy and the
+                                // session is no longer established.
                                 warn!(peer = %peer_ip, %err, "bgp: peer error, dropping its routes");
+                                record_state(&states, peer_ip, FsmState::Idle).await;
                                 rib.write().await.remove_peer(peer_ip);
                             }
                         }
@@ -124,6 +157,7 @@ pub fn spawn(settings: &BgpSettings) -> BgpRuntime {
     BgpRuntime {
         _supervisor: supervisor,
         rib,
+        states,
     }
 }
 

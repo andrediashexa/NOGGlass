@@ -340,6 +340,7 @@ async fn run() -> Result<(), String> {
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
         bgp_rib: _bgp_runtime.as_ref().map(|runtime| runtime.rib()),
+        bgp_states: _bgp_runtime.as_ref().map(|runtime| runtime.states()),
         bmp_ribs: _bmp_station.as_ref().map(|station| station.ribs()),
         rpki: rpki_enricher,
     })

@@ -45,6 +45,8 @@ pub struct AppState {
     /// The RIB of NOGGlass's own BGP session, when one is configured (#171).
     /// `None` when `[bgp]` is disabled, and then the BGP-RIB endpoint is absent.
     pub bgp_rib: Option<looking_glass_core::bgp::SharedRib>,
+    /// The live per-peer state of that session, for its `bgp_summary` (#186).
+    pub bgp_states: Option<looking_glass_core::bgp::SessionStates>,
     /// The per-router RIBs filled by the BMP station, when one is running
     /// (#172). `None` when `[bmp]` is disabled, and then the BMP-RIB endpoint is
     /// absent. Each monitored router is its own source, keyed by its id.
@@ -129,6 +131,7 @@ pub fn routes(state: AppState) -> AxumRouter {
         )
         .route("/api/catalogue/{vendor}", get(vendor_commands))
         .route("/api/bgp/route", get(bgp_rib_route))
+        .route("/api/bgp/summary", get(bgp_summary))
         .route("/api/bmp/route", get(bmp_rib_route))
         .with_state(state)
 }
@@ -184,8 +187,9 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
         })
         .collect();
 
-    // NOGGlass's own BGP session appears as a source that answers bgp_route
-    // only, from the local RIB. Present only when a session is actually running.
+    // NOGGlass's own BGP session appears as a source that answers, from the
+    // local RIB and session state, the same BGP queries a vendor router does.
+    // Present only when a session is actually running.
     if state.bgp_rib.is_some() && state.inventory.bgp.enabled {
         let bgp = &state.inventory.bgp;
         listing.push(RouterListing {
@@ -196,7 +200,7 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
                 location: None,
                 is_mock: false,
             },
-            queries: vec![QueryType::BgpRoute],
+            queries: vec![QueryType::BgpRoute, QueryType::BgpSummary],
             local_bgp: true,
             local_bmp: false,
         });
@@ -518,6 +522,46 @@ async fn bgp_rib_route(
     };
 
     rib_route_response(&state, rib, "bgp-local", "local BGP RIB", &request.target).await
+}
+
+/// Answers `bgp_summary` for NOGGlass's own BGP session (#186): the neighbour
+/// table built from the configured peers, the live FSM state, and the RIB's
+/// per-peer prefix counts — the same answer a vendor router gives. Returns 404
+/// when `[bgp]` is disabled.
+async fn bgp_summary(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<QueryResponse>, ApiError> {
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok());
+    // Reading in-memory state touches no router, so no CAPTCHA; the hard rate
+    // limit still applies.
+    if let Some(refusal) = state.check_rate_limit(peer, forwarded, true) {
+        return Err(refusal);
+    }
+
+    let (Some(rib), Some(states)) = (state.bgp_rib.as_ref(), state.bgp_states.as_ref()) else {
+        return Err(ApiError {
+            status: StatusCode::NOT_FOUND,
+            code: "bgp_disabled",
+            message: "NOGGlass is not running its own BGP session".to_string(),
+        });
+    };
+
+    let result = looking_glass_core::bgp::session_summary(
+        &state.inventory.bgp,
+        &*states.read().await,
+        &*rib.read().await,
+        std::time::Instant::now(),
+    );
+    Ok(Json(QueryResponse {
+        router: state.inventory.bgp.source_id.clone(),
+        command: "local BGP session summary".to_string(),
+        duration_ms: 0,
+        outcome: OutcomeBody::BgpSummary { result },
+    }))
 }
 
 /// A prefix lookup against one monitored BMP router's RIB.
@@ -876,6 +920,7 @@ queries = ["bgp_route"]
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
+            bgp_states: None,
             bmp_ribs: None,
             rpki: None,
         })
@@ -902,6 +947,38 @@ queries = ["bgp_route"]
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: Some(rib),
+            bgp_states: None,
+            bmp_ribs: None,
+            rpki: None,
+        })
+    }
+
+    /// A test app whose local BGP session has a pre-populated RIB and per-peer
+    /// state, for the /api/bgp/summary endpoint.
+    fn app_with_bgp_session(
+        config: &str,
+        rib: looking_glass_core::bgp::SharedRib,
+        states: looking_glass_core::bgp::SessionStates,
+    ) -> AxumRouter {
+        let inventory = Arc::new(Inventory::from_toml(config).expect("test inventory"));
+        let executor = Arc::new(Executor::new(
+            inventory.clone(),
+            Arc::new(BUILTIN.clone()),
+            Arc::new(NoTransport),
+        ));
+        let (client_address, _) = inventory.rate_limit.to_client_address();
+        let global_view = Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1)));
+        routes(AppState {
+            executor,
+            inventory,
+            version: VersionInfo::from_build(),
+            limiter: None,
+            client_address: Arc::new(client_address),
+            global_view,
+            captcha_secret: "test_secret".to_string(),
+            used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            bgp_rib: Some(rib),
+            bgp_states: Some(states),
             bmp_ribs: None,
             rpki: None,
         })
@@ -928,6 +1005,7 @@ queries = ["bgp_route"]
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
+            bgp_states: None,
             bmp_ribs: Some(ribs),
             rpki: None,
         })
@@ -1109,6 +1187,7 @@ host = "192.0.2.200"
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             bgp_rib: None,
+            bgp_states: None,
             bmp_ribs: None,
             rpki: None,
         };
@@ -1381,7 +1460,10 @@ host = "192.0.2.200"
             .expect("the local BGP source is listed");
         assert_eq!(local["id"], "bgp-local");
         assert_eq!(local["name"], "Live BGP");
-        assert_eq!(local["queries"], serde_json::json!(["bgp_route"]));
+        assert_eq!(
+            local["queries"],
+            serde_json::json!(["bgp_route", "bgp_summary"])
+        );
     }
 
     #[tokio::test]
@@ -1398,6 +1480,63 @@ host = "192.0.2.200"
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
         let json = body_json(res).await;
         assert_eq!(json["code"], "bgp_disabled");
+    }
+
+    const BGP_CONFIG: &str = "\n[bgp]\nenabled = true\nlocal_as = 64500\n\
+        router_id = \"192.0.2.1\"\n[[bgp.peer]]\nid = \"p\"\nhost = \"192.0.2.2\"\nremote_as = 65002\n";
+
+    #[tokio::test]
+    async fn bgp_summary_lists_the_peer_with_its_state_and_prefix_count() {
+        use looking_glass_core::bgp::{LocalRib, PeerStatus};
+        use looking_glass_core::driver::BgpPath;
+
+        let mut rib = LocalRib::new();
+        rib.apply_update(
+            "192.0.2.2".parse().unwrap(),
+            vec![BgpPath {
+                prefix: Some("203.0.113.0/24".parse().unwrap()),
+                peer: Some("192.0.2.2".parse().unwrap()),
+                ..Default::default()
+            }],
+            &[],
+        );
+        let rib = Arc::new(tokio::sync::RwLock::new(rib));
+
+        let mut state_map = std::collections::BTreeMap::new();
+        state_map.insert("192.0.2.2".parse().unwrap(), PeerStatus::new("Established"));
+        let states = Arc::new(tokio::sync::RwLock::new(state_map));
+
+        let config = format!("{INVENTORY}{BGP_CONFIG}");
+        let app = app_with_bgp_session(&config, rib, states);
+        let req = Request::get("/api/bgp/summary")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let json = body_json(res).await;
+        assert_eq!(json["kind"], "bgp_summary");
+        assert_eq!(json["result"]["local_as"], 64500);
+        assert_eq!(json["result"]["peers"][0]["peer_ip"], "192.0.2.2");
+        assert_eq!(json["result"]["peers"][0]["peer_as"], 65002);
+        assert_eq!(json["result"]["peers"][0]["state"], "Established");
+        assert_eq!(json["result"]["peers"][0]["prefixes_received"], 1);
+    }
+
+    #[tokio::test]
+    async fn bgp_summary_is_absent_when_bgp_is_disabled() {
+        let app = app();
+        let req = Request::get("/api/bgp/summary")
+            .body(Body::empty())
+            .unwrap();
+        let res = app
+            .oneshot(from_peer(req, "203.0.113.9:5000"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(body_json(res).await["code"], "bgp_disabled");
     }
 
     const BMP_CONFIG: &str = "\n[bmp]\nenabled = true\nlisten = [\"[::]:11019\"]\n\

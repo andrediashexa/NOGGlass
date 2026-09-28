@@ -74,6 +74,18 @@ result means "no peer advertises this prefix", never a failed lookup. The
 endpoint answers `404 bgp_disabled` when `[bgp]` is off. Lookups are rate-limited
 like every other query. Matching is longest-prefix, so a host or more-specific query returns the covering route.
 
+The session also answers `bgp_summary`, the neighbour table a vendor router
+gives:
+
+```
+GET /api/bgp/summary
+```
+
+It lists every configured peer with its remote AS, its live session state
+(`Idle` … `Established`), the uptime once established, and how many prefixes it
+has advertised — built from the configuration, the session state, and the RIB.
+Same `404 bgp_disabled` when `[bgp]` is off.
+
 ```mermaid
 flowchart LR
     router[Your router] -->|BGP/179| eng[NetGauze session]
