@@ -60,11 +60,13 @@ write-back path.
 
 ### Routing engine as a separate container
 
-The embedded BGP session and BMP station were removed in [#194]. The agreed
-direction is to bring the routing engine back as a **separate container** rather
-than inside the web process, so a heavy, long-lived RIB never shares a fate with
-the request path. Whether this is our own engine or an existing one (e.g.
-Rotonda) is still open and belongs in a fresh ADR.
+The embedded BGP session and BMP station were removed in [#194]. Bringing them
+back is **explicitly deferred to post-1.0** and does not gate the 1.0.0 tag (see
+[1.0.0 readiness](release-1.0-readiness.md)). The agreed direction is to return
+the routing engine as a **separate container** rather than inside the web
+process, so a heavy, long-lived RIB never shares a fate with the request path.
+Whether this is our own engine or an existing one (e.g. Rotonda) is still open
+and belongs in a fresh ADR.
 
 ### Federated, multi-tenant platform ([#78])
 
