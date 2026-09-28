@@ -144,6 +144,11 @@ Restart the container to apply changes:
 docker compose restart nogglass
 ```
 
+Prefer YAML? NOGGlass reads either format — name the file `nogglass.yaml`
+(or `.yml`) and it is parsed as YAML, `.toml` as TOML. The two are equivalent;
+see [`nogglass.example.yaml`](nogglass.example.yaml) for the same configuration
+in YAML.
+
 For bare-metal and Systemd deployments, refer to [`INSTALL.md`](INSTALL.md) and [`docs/operations/deployment.md`](docs/operations/deployment.md).
 
 ---
