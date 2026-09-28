@@ -614,6 +614,20 @@ impl Inventory {
             )));
         }
         self.bmp.validate().map_err(InventoryError::Malformed)?;
+        if self.bmp.enabled {
+            if self.routers.iter().any(|r| r.id == self.bmp.source_id) {
+                return Err(InventoryError::Malformed(format!(
+                    "bmp.source_id {:?} collides with a router id; give the BMP source a distinct id",
+                    self.bmp.source_id
+                )));
+            }
+            if self.bgp.enabled && self.bgp.source_id == self.bmp.source_id {
+                return Err(InventoryError::Malformed(format!(
+                    "bmp.source_id {:?} collides with bgp.source_id; give the two local sources distinct ids",
+                    self.bmp.source_id
+                )));
+            }
+        }
 
         Ok(())
     }
