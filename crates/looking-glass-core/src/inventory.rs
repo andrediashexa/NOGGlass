@@ -88,15 +88,13 @@ impl std::error::Error for InventoryError {}
 ///
 /// Both variants name an environment variable rather than carrying a secret,
 /// so the inventory file is safe to keep in version control.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Credentials {
     /// Password read from this environment variable.
     PasswordEnv(String),
     /// Private key read from this file, with an optional passphrase variable.
     KeyFile {
         path: String,
-        #[serde(default)]
         passphrase_env: Option<String>,
     },
     /// The mock router: no session is opened, so nothing authenticates.
@@ -106,6 +104,83 @@ pub enum Credentials {
 impl Default for Credentials {
     fn default() -> Self {
         Self::None
+    }
+}
+
+/// Deserialized by hand rather than as an externally tagged enum: serde_norway
+/// (YAML) insists on a `!password_env` tag for that representation, which is
+/// unnatural to write, whereas TOML wants a `{ password_env = ... }` table. A
+/// single-key map (`password_env`, `key_file`) — or the bare string `"none"` —
+/// deserializes the same way from both formats, so an inventory reads naturally
+/// whether it is written in TOML or YAML.
+impl<'de> Deserialize<'de> for Credentials {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct KeyFileRepr {
+            path: String,
+            #[serde(default)]
+            passphrase_env: Option<String>,
+        }
+
+        const VARIANTS: &[&str] = &["password_env", "key_file", "none"];
+
+        struct CredentialsVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for CredentialsVisitor {
+            type Value = Credentials;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(
+                    "\"none\", a { password_env = ... } table, or a \
+                     { key_file = { path = ... } } table",
+                )
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Credentials, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "none" => Ok(Credentials::None),
+                    other => Err(E::unknown_variant(other, VARIANTS)),
+                }
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Credentials, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let key: String = map
+                    .next_key()?
+                    .ok_or_else(|| serde::de::Error::custom("credentials table is empty"))?;
+                let credentials = match key.as_str() {
+                    "password_env" => Credentials::PasswordEnv(map.next_value()?),
+                    "key_file" => {
+                        let repr: KeyFileRepr = map.next_value()?;
+                        Credentials::KeyFile {
+                            path: repr.path,
+                            passphrase_env: repr.passphrase_env,
+                        }
+                    }
+                    "none" => {
+                        let _: serde::de::IgnoredAny = map.next_value()?;
+                        Credentials::None
+                    }
+                    other => return Err(serde::de::Error::unknown_variant(other, VARIANTS)),
+                };
+                if map.next_key::<String>()?.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "credentials must name exactly one of: password_env, key_file, none",
+                    ));
+                }
+                Ok(credentials)
+            }
+        }
+
+        deserializer.deserialize_any(CredentialsVisitor)
     }
 }
 
@@ -521,19 +596,42 @@ pub struct Inventory {
 
 impl Inventory {
     /// Reads and validates an inventory file.
+    ///
+    /// The format follows the file extension: `.yaml` or `.yml` is parsed as
+    /// YAML, everything else (including an extension-less path) as TOML, so
+    /// existing `nogglass.toml` deployments keep working unchanged.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, InventoryError> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path).map_err(|e| InventoryError::Unreadable {
             path: path.display().to_string(),
             reason: e.to_string(),
         })?;
-        Self::from_toml(&source)
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("yaml") | Some("yml") => Self::from_yaml(&source),
+            _ => Self::from_toml(&source),
+        }
     }
 
-    /// Parses and validates an inventory, without touching the environment.
+    /// Parses and validates an inventory from TOML, without touching the
+    /// environment.
     pub fn from_toml(source: &str) -> Result<Self, InventoryError> {
         let inventory: Self =
             toml::from_str(source).map_err(|e| InventoryError::Malformed(e.to_string()))?;
+        inventory.validate(&crate::catalogue::BUILTIN)?;
+        Ok(inventory)
+    }
+
+    /// Parses and validates an inventory from YAML, without touching the
+    /// environment. YAML is only an alternative surface syntax: it deserializes
+    /// into the same model and runs the same validation as [`Self::from_toml`].
+    pub fn from_yaml(source: &str) -> Result<Self, InventoryError> {
+        let inventory: Self =
+            serde_norway::from_str(source).map_err(|e| InventoryError::Malformed(e.to_string()))?;
         inventory.validate(&crate::catalogue::BUILTIN)?;
         Ok(inventory)
     }
@@ -847,6 +945,29 @@ host = "192.0.2.1"
     }
 
     #[test]
+    fn the_shipped_yaml_example_is_a_valid_inventory() {
+        let example = include_str!("../../../nogglass.example.yaml");
+        let inventory = Inventory::from_yaml(example).expect("the YAML example must load");
+        assert!(inventory.routers.len() >= 3);
+        assert!(
+            inventory.routers.iter().any(|r| r.is_mock()),
+            "the example should show the mock router"
+        );
+        // The key_file example must round-trip through the custom deserializer.
+        assert!(inventory.routers.iter().any(|r| matches!(
+            &r.credentials,
+            Credentials::KeyFile {
+                passphrase_env: Some(_),
+                ..
+            }
+        )));
+        assert!(
+            !example.to_lowercase().contains("password: "),
+            "the example must never contain a literal secret"
+        );
+    }
+
+    #[test]
     fn missing_secrets_are_named() {
         let inventory = Inventory::from_toml(SAMPLE).unwrap();
 
@@ -938,5 +1059,62 @@ host = "192.0.2.1"
         let bad_logo = format!("{SAMPLE}\n[ui]\nlogo_height_px = 0\n");
         let err = Inventory::from_toml(&bad_logo).unwrap_err();
         assert!(matches!(err, InventoryError::Malformed(_)));
+    }
+
+    // The YAML equivalent of `SAMPLE`: same routers, same fields. The `[[router]]`
+    // array of tables becomes a `router:` sequence; everything else maps 1:1.
+    const SAMPLE_YAML: &str = r#"
+limits:
+  timeout_secs: 20
+
+router:
+  - id: edge-01
+    name: Edge 01 - Sao Paulo
+    vendor: huawei_vrp
+    host: 192.0.2.10
+    username: lookingglass
+    location: Sao Paulo
+    credentials:
+      password_env: NOGGLASS_EDGE01_PASSWORD
+    queries: [ping, traceroute, bgp_route]
+  - id: demo
+    name: Demo router (fabricated data)
+    vendor: mock
+    host: 127.0.0.1
+"#;
+
+    #[test]
+    fn yaml_and_toml_produce_the_same_inventory() {
+        let from_toml = Inventory::from_toml(SAMPLE).expect("TOML sample loads");
+        let from_yaml = Inventory::from_yaml(SAMPLE_YAML).expect("YAML sample loads");
+
+        assert_eq!(from_toml.limits.timeout_secs, from_yaml.limits.timeout_secs);
+        assert_eq!(from_toml.routers.len(), from_yaml.routers.len());
+        for (t, y) in from_toml.routers.iter().zip(from_yaml.routers.iter()) {
+            assert_eq!(t.id, y.id);
+            assert_eq!(t.name, y.name);
+            assert_eq!(t.vendor, y.vendor);
+            assert_eq!(t.host, y.host);
+            assert_eq!(t.username, y.username);
+            assert_eq!(t.location, y.location);
+            assert_eq!(t.queries, y.queries);
+        }
+    }
+
+    #[test]
+    fn malformed_yaml_fails_closed() {
+        // Valid YAML scalar, but not an inventory (no routers) — must be rejected.
+        let not_an_inventory = "just a string\n";
+        assert!(matches!(
+            Inventory::from_yaml(not_an_inventory),
+            Err(InventoryError::Malformed(_))
+        ));
+
+        // Broken YAML syntax (bad indentation) — must also fail closed.
+        let broken = "router:\n- id: x\n   name: bad indent\n";
+        assert!(matches!(
+            Inventory::from_yaml(broken),
+            Err(InventoryError::Malformed(_))
+        ));
     }
 }

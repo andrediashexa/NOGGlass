@@ -1,5 +1,7 @@
 # NOGGlass configuration.
 #
+# NOGGlass accepts either TOML or YAML; the format is chosen by the file
+# extension (.toml here, or .yaml / .yml — see nogglass.example.yaml).
 # Copy this file to /etc/nogglass/nogglass.toml and edit it. NOGGlass validates
 # it at startup and refuses to run if it does not understand it: a Looking Glass
 # that starts with a broken inventory would answer visitors with surprises.
