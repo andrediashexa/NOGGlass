@@ -112,7 +112,10 @@ pub fn routes(state: AppState) -> AxumRouter {
         .route("/api/captcha", get(generate_captcha))
         .route("/api/routers", get(routers))
         .route("/api/query", post(run_query))
-        .route("/api/query/stream", get(stream_query).post(stream_query_post))
+        .route(
+            "/api/query/stream",
+            get(stream_query).post(stream_query_post),
+        )
         .route("/api/catalogue/{vendor}", get(vendor_commands))
         .with_state(state)
 }
@@ -455,7 +458,8 @@ async fn handle_stream_query(
             }
         };
 
-        if let Some(refusal) = state.check_rate_limit(peer, forwarded.as_deref(), captcha_verified) {
+        if let Some(refusal) = state.check_rate_limit(peer, forwarded.as_deref(), captcha_verified)
+        {
             let _ = sender
                 .send(
                     Event::default()

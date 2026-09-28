@@ -368,13 +368,10 @@ impl Transport for SshTransport {
                 DriverError::ConnectionFailed(e.to_string())
             })?;
 
-        let mut channel = session
-            .channel_open_session()
-            .await
-            .map_err(|e| {
-                tracing::error!(router = %router.id, error = %e, "SSH channel_open_session failed");
-                DriverError::ConnectionFailed(e.to_string())
-            })?;
+        let mut channel = session.channel_open_session().await.map_err(|e| {
+            tracing::error!(router = %router.id, error = %e, "SSH channel_open_session failed");
+            DriverError::ConnectionFailed(e.to_string())
+        })?;
 
         // One exec request, no terminal, read until the channel closes.
         //
@@ -784,5 +781,3 @@ mod host_key_tests {
         );
     }
 }
-
-

@@ -133,10 +133,7 @@ impl Default for UiState {
 fn detect_mime(path: &str, data: &[u8]) -> HeaderValue {
     let trimmed = data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data);
     let lower = path.to_ascii_lowercase();
-    if trimmed.starts_with(b"<svg")
-        || trimmed.starts_with(b"<?xml")
-        || lower.ends_with(".svg")
-    {
+    if trimmed.starts_with(b"<svg") || trimmed.starts_with(b"<?xml") || lower.ends_with(".svg") {
         HeaderValue::from_static("image/svg+xml")
     } else if trimmed.starts_with(b"\xff\xd8\xff")
         || lower.ends_with(".jpg")
@@ -337,9 +334,7 @@ fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
             (header::CONTENT_TYPE, HeaderValue::from_static(content_type)),
             (
                 header::CACHE_CONTROL,
-                HeaderValue::from_static(
-                    "no-cache, must-revalidate, max-age=0, s-maxage=0",
-                ),
+                HeaderValue::from_static("no-cache, must-revalidate, max-age=0, s-maxage=0"),
             ),
         ],
         body,

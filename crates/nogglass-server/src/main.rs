@@ -262,10 +262,10 @@ async fn run() -> Result<(), String> {
         }
     };
 
-    let ui_state = Arc::new(
-        ui::UiState::from_settings(&inventory.ui)
-            .map_err(|e| format!("{e}\nNOGGlass will not start with an invalid UI configuration."))?,
-    );
+    let ui_state =
+        Arc::new(ui::UiState::from_settings(&inventory.ui).map_err(|e| {
+            format!("{e}\nNOGGlass will not start with an invalid UI configuration.")
+        })?);
 
     let app = api::routes(AppState {
         executor,
@@ -338,7 +338,8 @@ mod tests {
 
     #[test]
     fn load_env_file_reads_key_value_pairs_and_strips_quotes() {
-        let env_file_path = std::env::temp_dir().join(format!("nogglass_test_{}.env", rand::random::<u64>()));
+        let env_file_path =
+            std::env::temp_dir().join(format!("nogglass_test_{}.env", rand::random::<u64>()));
         std::fs::write(
             &env_file_path,
             "# Comment line\n\
@@ -356,11 +357,19 @@ mod tests {
         load_env_file();
 
         assert_eq!(std::env::var("TEST_NOGGLASS_KEY_ONE").unwrap(), "val1");
-        assert_eq!(std::env::var("TEST_NOGGLASS_KEY_TWO").unwrap(), "quoted_val");
-        assert_eq!(std::env::var("TEST_NOGGLASS_KEY_THREE").unwrap(), "single_quoted");
-        assert_eq!(std::env::var("TEST_NOGGLASS_KEY_FOUR").unwrap(), "spaced_val");
+        assert_eq!(
+            std::env::var("TEST_NOGGLASS_KEY_TWO").unwrap(),
+            "quoted_val"
+        );
+        assert_eq!(
+            std::env::var("TEST_NOGGLASS_KEY_THREE").unwrap(),
+            "single_quoted"
+        );
+        assert_eq!(
+            std::env::var("TEST_NOGGLASS_KEY_FOUR").unwrap(),
+            "spaced_val"
+        );
 
         let _ = std::fs::remove_file(&env_file_path);
     }
 }
-

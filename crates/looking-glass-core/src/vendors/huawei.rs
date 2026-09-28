@@ -451,7 +451,11 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
         } else if let Some(rest) = line.strip_prefix("Large-Community:") {
             in_community = false;
             append_communities(rest, path);
-        } else if in_community && (line.starts_with('<') || line.starts_with("...") || (line.contains(':') && !line.contains(' '))) {
+        } else if in_community
+            && (line.starts_with('<')
+                || line.starts_with("...")
+                || (line.contains(':') && !line.contains(' ')))
+        {
             append_communities(line, path);
         } else if let Some(rest) = line.strip_prefix("AS-path") {
             in_community = false;
@@ -459,7 +463,8 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
                 Ok(()) => {}
                 Err(()) => partial_path = true,
             }
-        } else if let Some(rest) = line.strip_prefix("RPKI validation state:")
+        } else if let Some(rest) = line
+            .strip_prefix("RPKI validation state:")
             .or_else(|| line.strip_prefix("RPKI state:"))
             .or_else(|| line.strip_prefix("Validation:"))
         {
@@ -906,11 +911,17 @@ mod tests {
         assert_eq!(result.completeness, Completeness::Complete);
         assert_eq!(result.paths.len(), 4);
         assert_eq!(result.paths[0].rpki.status, RpkiStatus::Valid);
-        assert_eq!(result.paths[0].rpki.source, crate::driver::RpkiSource::Router);
+        assert_eq!(
+            result.paths[0].rpki.source,
+            crate::driver::RpkiSource::Router
+        );
         assert_eq!(result.paths[1].rpki.status, RpkiStatus::NotFound);
         assert_eq!(result.paths[2].rpki.status, RpkiStatus::Invalid);
         assert_eq!(result.paths[3].rpki.status, RpkiStatus::NotFound);
-        assert_eq!(result.paths[3].prefix.unwrap().to_string(), "198.51.102.0/24");
+        assert_eq!(
+            result.paths[3].prefix.unwrap().to_string(),
+            "198.51.102.0/24"
+        );
     }
 
     /// Output captured without its header still parses, and anything the
@@ -1093,7 +1104,9 @@ mod real_ne40e_tests {
  *x   V 192.0.2.0/24       10.200.144.157                 10         100        0      65001 65011i
  *    V                    10.63.2.129                               100        0      65005 65011?
 "#;
-        let result = HuaweiVrpDriver.parse_bgp_route(raw).expect("valid bgp output");
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(raw)
+            .expect("valid bgp output");
         assert_eq!(result.completeness, Completeness::Complete);
         assert_eq!(result.paths.len(), 8);
         assert_eq!(result.paths[0].rpki.status, RpkiStatus::Valid);
@@ -1129,12 +1142,20 @@ mod real_ne40e_tests {
  AS-path 64497 64498, origin igp, MED 100, pref-val 0, valid, external, pre 255, not preferred for AS-Path
  Not advertised to any peer yet
 "#;
-        let result = HuaweiVrpDriver.parse_bgp_route(raw).expect("detail with rpki");
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(raw)
+            .expect("detail with rpki");
         assert_eq!(result.paths.len(), 2);
         assert_eq!(result.paths[0].rpki.status, RpkiStatus::Valid);
-        assert_eq!(result.paths[0].rpki.source, crate::driver::RpkiSource::Router);
+        assert_eq!(
+            result.paths[0].rpki.source,
+            crate::driver::RpkiSource::Router
+        );
         assert_eq!(result.paths[1].rpki.status, RpkiStatus::Valid);
-        assert_eq!(result.paths[1].rpki.source, crate::driver::RpkiSource::Router);
+        assert_eq!(
+            result.paths[1].rpki.source,
+            crate::driver::RpkiSource::Router
+        );
     }
 
     /// Captured from the NE40E in `lab/`. The statistics arrive on three
@@ -1223,16 +1244,24 @@ BGP Local router ID is 172.20.20.255
         Label    : 
         Path/Ogn : 269311 264446i
 ";
-        let result = HuaweiVrpDriver.parse_bgp_route(raw).expect("parsed ipv6 table");
+        let result = HuaweiVrpDriver
+            .parse_bgp_route(raw)
+            .expect("parsed ipv6 table");
         assert_eq!(result.paths.len(), 3);
 
         // Primeiro caminho
-        assert_eq!(result.paths[0].prefix.unwrap().to_string(), "2804:1b18:110::/48");
-        assert_eq!(result.paths[0].next_hop.unwrap().to_string(), "2001:12f8:0:2::54:131");
+        assert_eq!(
+            result.paths[0].prefix.unwrap().to_string(),
+            "2804:1b18:110::/48"
+        );
+        assert_eq!(
+            result.paths[0].next_hop.unwrap().to_string(),
+            "2001:12f8:0:2::54:131"
+        );
         assert_eq!(result.paths[0].local_pref, Some(200));
         assert_eq!(result.paths[0].med, None);
         assert_eq!(result.paths[0].weight, Some(0));
-        assert_eq!(result.paths[0].is_best, false);
+        assert!(!result.paths[0].is_best);
         assert_eq!(result.paths[0].is_valid, Some(true));
         assert_eq!(result.paths[0].rpki.status, RpkiStatus::NotFound);
         assert_eq!(result.paths[0].as_path.len(), 11);
@@ -1241,12 +1270,18 @@ BGP Local router ID is 172.20.20.255
         assert_eq!(result.paths[0].origin, Some(Origin::Igp));
 
         // Segundo caminho (mesmo prefixo)
-        assert_eq!(result.paths[1].prefix.unwrap().to_string(), "2804:1b18:110::/48");
-        assert_eq!(result.paths[1].is_best, false);
+        assert_eq!(
+            result.paths[1].prefix.unwrap().to_string(),
+            "2804:1b18:110::/48"
+        );
+        assert!(!result.paths[1].is_best);
 
         // Terceiro caminho (novo prefixo, best path, RPKI Valid)
-        assert_eq!(result.paths[2].prefix.unwrap().to_string(), "2804:1ebc:fffe::/48");
-        assert_eq!(result.paths[2].is_best, true);
+        assert_eq!(
+            result.paths[2].prefix.unwrap().to_string(),
+            "2804:1ebc:fffe::/48"
+        );
+        assert!(result.paths[2].is_best);
         assert_eq!(result.paths[2].rpki.status, RpkiStatus::Valid);
         assert_eq!(result.paths[2].as_path, vec![269311, 264446]);
     }

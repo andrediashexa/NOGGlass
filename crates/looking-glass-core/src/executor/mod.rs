@@ -274,7 +274,8 @@ impl Executor {
             }
             (QueryType::BgpRoute, QueryTarget::Asn(_)) => {
                 return Err(ExecutionError::Unsupported(
-                    "bgp_route accepts an IP address or CIDR prefix; use bgp_aspath for AS numbers".to_string(),
+                    "bgp_route accepts an IP address or CIDR prefix; use bgp_aspath for AS numbers"
+                        .to_string(),
                 ));
             }
             (QueryType::BgpRoute, _) => self.catalogue.bgp_route(&router.vendor, target)?,
