@@ -52,9 +52,11 @@ The constraints that bound the choice:
   justify a second process.
 - The operator's stated preference is a **Rust** engine.
 
-The full option matrix lives in the design documents
-([BGP](../design/bgp-session-support.md), [BMP](../design/bmp-support.md)); it is
-summarised here because it is the input to this decision.
+The full option matrix lives in the design documents that arrive with each
+feature (issues [#171](https://github.com/andrediashexa/NOGGlass/issues/171) for
+the BGP session and [#172](https://github.com/andrediashexa/NOGGlass/issues/172)
+for the BMP station); it is summarised here because it is the input to this
+decision.
 
 ```mermaid
 flowchart TB
