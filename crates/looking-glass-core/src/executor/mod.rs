@@ -196,7 +196,7 @@ impl Executor {
         &self,
         router_id: &str,
         query: QueryType,
-        target: &QueryTarget,
+        target: Option<&QueryTarget>,
     ) -> Result<Execution, ExecutionError> {
         let router = self
             .inventory
@@ -255,9 +255,16 @@ impl Executor {
         &self,
         router: &Router,
         query: QueryType,
-        target: &QueryTarget,
+        target: Option<&QueryTarget>,
         limits: &QueryLimits,
     ) -> Result<String, ExecutionError> {
+        // bgp_summary describes every session and takes no target; the rest
+        // need one, and its absence is a caller bug rather than visitor input.
+        if query == QueryType::BgpSummary {
+            return Ok(self.catalogue.bgp_summary(&router.vendor)?);
+        }
+        let target = target
+            .ok_or_else(|| ExecutionError::Unsupported(format!("{query:?} requires a target")))?;
         let command = match (query, target) {
             (QueryType::Ping, QueryTarget::Ip(ip)) => {
                 self.catalogue.ping(&router.vendor, *ip, limits)?
@@ -295,7 +302,7 @@ impl Executor {
                     "bgp_aspath_v6 requires an AS number (e.g. AS65000 or 65000)".to_string(),
                 ));
             }
-            (QueryType::BgpSummary, _) => self.catalogue.bgp_summary(&router.vendor)?,
+            (QueryType::BgpSummary, _) => unreachable!("bgp_summary handled above"),
         };
         Ok(command)
     }
@@ -304,7 +311,7 @@ impl Executor {
         &self,
         router: &Router,
         query: QueryType,
-        target: &QueryTarget,
+        target: Option<&QueryTarget>,
         command: &str,
         limits: &QueryLimits,
     ) -> Result<QueryOutcome, ExecutionError> {
@@ -345,7 +352,7 @@ impl Executor {
                 Ok(mut result) => {
                     // The driver reads hops; only the executor knows what was
                     // asked about, so it fills the target in.
-                    if let QueryTarget::Ip(ip) = target {
+                    if let Some(QueryTarget::Ip(ip)) = target {
                         result.target = ip.to_string();
                     }
                     QueryOutcome::Traceroute(result)
@@ -385,10 +392,16 @@ impl Executor {
     fn mock_outcome(
         &self,
         query: QueryType,
-        target: &QueryTarget,
+        target: Option<&QueryTarget>,
         limits: &QueryLimits,
     ) -> Result<QueryOutcome, ExecutionError> {
         let mock = MockDriver;
+        // bgp_summary takes no target; the rest do.
+        if query == QueryType::BgpSummary {
+            return Ok(QueryOutcome::BgpSummary(mock_summary()));
+        }
+        let target = target
+            .ok_or_else(|| ExecutionError::Unsupported(format!("{query:?} requires a target")))?;
         Ok(match (query, target) {
             (QueryType::Ping, QueryTarget::Ip(ip)) => {
                 QueryOutcome::Ping(mock.ping(*ip, limits.ping_count))
@@ -401,23 +414,23 @@ impl Executor {
                     "ping and traceroute need a single address".to_string(),
                 ))
             }
-            (
-                QueryType::BgpRoute | QueryType::BgpAspath | QueryType::BgpAspathV6,
-                _,
-            ) => {
+            (QueryType::BgpRoute | QueryType::BgpAspath | QueryType::BgpAspathV6, _) => {
                 QueryOutcome::BgpRoute(mock.bgp_route(target))
             }
-            (QueryType::BgpSummary, _) => QueryOutcome::BgpSummary(
-                crate::summary::parse(
-                    "Mock router — fabricated data\n\
-                     BGP router identifier 192.0.2.1, local AS number 65001\n\
-                     192.0.2.254     4        65100   12345   12300       42    0    0 05:12:33      850000\n\
-                     192.0.2.253     4        65200    4321    4300       42    0    0 02:01:10          12\n\
-                     192.0.2.252     4        65300       0       0        0    0    0 never    Idle\n",
-                ),
-            ),
+            (QueryType::BgpSummary, _) => unreachable!("bgp_summary handled above"),
         })
     }
+}
+
+/// The mock router's fabricated BGP session table, shared by the summary path.
+fn mock_summary() -> crate::driver::BgpSummaryResult {
+    crate::summary::parse(
+        "Mock router — fabricated data\n\
+         BGP router identifier 192.0.2.1, local AS number 65001\n\
+         192.0.2.254     4        65100   12345   12300       42    0    0 05:12:33      850000\n\
+         192.0.2.253     4        65200    4321    4300       42    0    0 02:01:10          12\n\
+         192.0.2.252     4        65300       0       0        0    0    0 never    Idle\n",
+    )
 }
 
 /// The parser for a vendor.
@@ -545,7 +558,7 @@ host = "127.0.0.1"
             .execute(
                 "edge-01",
                 QueryType::BgpRoute,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await
             .expect("query should succeed");
@@ -572,7 +585,7 @@ host = "127.0.0.1"
             .execute(
                 "demo",
                 QueryType::BgpRoute,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await
             .expect("the mock answers from fixtures");
@@ -592,7 +605,7 @@ host = "127.0.0.1"
             .execute(
                 "edge-01",
                 QueryType::Traceroute,
-                &parse_target("198.51.100.1").unwrap(),
+                Some(&parse_target("198.51.100.1").unwrap()),
             )
             .await
             .unwrap_err();
@@ -606,7 +619,7 @@ host = "127.0.0.1"
             .execute(
                 "edge-01",
                 QueryType::BgpRoute,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await
             .unwrap_err();
@@ -622,7 +635,7 @@ host = "127.0.0.1"
             .execute(
                 "edge-01",
                 QueryType::BgpRoute,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await
             .unwrap_err();
@@ -642,7 +655,7 @@ host = "127.0.0.1"
                     .execute(
                         "edge-01",
                         QueryType::BgpRoute,
-                        &parse_target("198.51.100.0/24").unwrap(),
+                        Some(&parse_target("198.51.100.0/24").unwrap()),
                     )
                     .await
             })
@@ -655,7 +668,7 @@ host = "127.0.0.1"
             .execute(
                 "edge-01",
                 QueryType::BgpRoute,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await;
 
@@ -680,7 +693,7 @@ host = "127.0.0.1"
             .execute(
                 "edge-01",
                 QueryType::BgpRoute,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await
             .unwrap();
@@ -701,7 +714,7 @@ host = "127.0.0.1"
             .execute(
                 "not-a-router",
                 QueryType::BgpRoute,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await
             .unwrap_err();
@@ -715,7 +728,7 @@ host = "127.0.0.1"
             .execute(
                 "edge-01",
                 QueryType::Ping,
-                &parse_target("198.51.100.0/24").unwrap(),
+                Some(&parse_target("198.51.100.0/24").unwrap()),
             )
             .await
             .unwrap_err();

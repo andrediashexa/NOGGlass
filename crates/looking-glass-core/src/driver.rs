@@ -43,6 +43,15 @@ pub enum QueryType {
     BgpSummary,
 }
 
+impl QueryType {
+    /// Whether this query is about a specific target (an address, a prefix or
+    /// an AS number). `bgp_summary` describes the router's sessions as a whole
+    /// and takes no target; every other query needs one.
+    pub fn requires_target(self) -> bool {
+        !matches!(self, QueryType::BgpSummary)
+    }
+}
+
 /// What a visitor asked about.
 ///
 /// Build one with [`crate::target::parse_target`] — it is the only validated
