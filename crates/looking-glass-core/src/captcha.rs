@@ -183,10 +183,8 @@ mod tests {
         assert_eq!(code.len(), 5);
 
         // Verify that captcha_id does NOT contain the code or base64 of the code
-        let encoded_code = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &code,
-        );
+        let encoded_code =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &code);
         assert!(!res.captcha_id.contains(&code));
         assert!(!res.captcha_id.contains(&encoded_code));
 
@@ -195,10 +193,20 @@ mod tests {
 
         // Valid code
         assert!(CaptchaEngine::verify(&res.captcha_id, &code, secret, 300));
-        assert!(CaptchaEngine::verify(&res.captcha_id, &code.to_lowercase(), secret, 300));
+        assert!(CaptchaEngine::verify(
+            &res.captcha_id,
+            &code.to_lowercase(),
+            secret,
+            300
+        ));
 
         // Invalid code
-        assert!(!CaptchaEngine::verify(&res.captcha_id, "WRONG", secret, 300));
+        assert!(!CaptchaEngine::verify(
+            &res.captcha_id,
+            "WRONG",
+            secret,
+            300
+        ));
 
         // Tampered signature
         let tampered_id = format!("{}:{}:fake_sig", parts[0], parts[1]);
@@ -208,7 +216,8 @@ mod tests {
         let past_timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
-            .unwrap_or(0) - 301;
+            .unwrap_or(0)
+            - 301;
         let past_sig = CaptchaEngine::sign_payload(&code, parts[0], past_timestamp, secret);
         let expired_id = format!("{}:{}:{}", parts[0], past_timestamp, past_sig);
         assert!(!CaptchaEngine::verify(&expired_id, &code, secret, 300));
