@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.8.0](https://github.com/andrediashexa/NOGGlass/compare/v0.7.0...v0.8.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **bgp,bmp:** remove the embedded BGP session and BMP station ([#195](https://github.com/andrediashexa/NOGGlass/issues/195))
+
+### Features
+
+* **bgp:** answer bgp_aspath from the local RIB (BGP session and BMP) ([#189](https://github.com/andrediashexa/NOGGlass/issues/189)) ([7900308](https://github.com/andrediashexa/NOGGlass/commit/7900308356043893b005190f5d4190f951e5cd31))
+* **bgp:** answer bgp_summary for NOGGlass's own BGP session ([#187](https://github.com/andrediashexa/NOGGlass/issues/187)) ([2139b41](https://github.com/andrediashexa/NOGGlass/commit/2139b410a66fe8d4632f07c257bd5067fd8e2a8d))
+* **bgp:** answer local-RIB queries by longest-prefix match ([#183](https://github.com/andrediashexa/NOGGlass/issues/183)) ([57a56af](https://github.com/andrediashexa/NOGGlass/commit/57a56af4a828d312ab4c37ae87773ee8e9ac2dd1))
+* **bgp:** map IPv6 unicast routes (MP_REACH/MP_UNREACH NLRI) ([#180](https://github.com/andrediashexa/NOGGlass/issues/180)) ([ad904f4](https://github.com/andrediashexa/NOGGlass/commit/ad904f41c72030f3947091b2f0cdd54d46690cea))
+* **bgp:** read extended communities in the path model ([#193](https://github.com/andrediashexa/NOGGlass/issues/193)) ([052d836](https://github.com/andrediashexa/NOGGlass/commit/052d836dcd407088b2092b8039370335b18d04d6)), closes [#192](https://github.com/andrediashexa/NOGGlass/issues/192)
+* **bgp:** RPKI-validate routes served from the local RIB ([#185](https://github.com/andrediashexa/NOGGlass/issues/185)) ([59f7b36](https://github.com/andrediashexa/NOGGlass/commit/59f7b3646679582d5ed211c1685c75fde2c81a4b))
+* **bmp:** answer bgp_summary for a monitored router ([#191](https://github.com/andrediashexa/NOGGlass/issues/191)) ([1468307](https://github.com/andrediashexa/NOGGlass/commit/1468307178db229e1009d2f8ac60dcf9fcdb63fa)), closes [#190](https://github.com/andrediashexa/NOGGlass/issues/190)
+* **infra:** accept YAML config files in addition to TOML ([#203](https://github.com/andrediashexa/NOGGlass/issues/203)) ([f8e4faa](https://github.com/andrediashexa/NOGGlass/commit/f8e4faa641d22a6ed3738035a02d4611cea7c87a)), closes [#202](https://github.com/andrediashexa/NOGGlass/issues/202)
+
+
+### Documentation
+
+* add a 1.0.0 readiness checklist ([#199](https://github.com/andrediashexa/NOGGlass/issues/199)) ([09d9030](https://github.com/andrediashexa/NOGGlass/commit/09d9030fce8791f8beb0aa02e482454a06d53689)), closes [#198](https://github.com/andrediashexa/NOGGlass/issues/198)
+* add a project roadmap ([#206](https://github.com/andrediashexa/NOGGlass/issues/206)) ([dbdf6a3](https://github.com/andrediashexa/NOGGlass/commit/dbdf6a368265344220fb8f84252205efc5689261)), closes [#205](https://github.com/andrediashexa/NOGGlass/issues/205)
+* **adr:** propose the web admin interface architecture (ADR-0017) ([#208](https://github.com/andrediashexa/NOGGlass/issues/208)) ([e46837e](https://github.com/andrediashexa/NOGGlass/commit/e46837e817254096e14ecb8c42320187f537e159))
+* **readme:** show per-vendor verification status ([#197](https://github.com/andrediashexa/NOGGlass/issues/197)) ([fe73bd9](https://github.com/andrediashexa/NOGGlass/commit/fe73bd98b7db71e8f439e47cf064ddc4e4fad42e)), closes [#196](https://github.com/andrediashexa/NOGGlass/issues/196)
+
+
+### Tests
+
+* **frr:** verify the FRR driver against a real FRR 9.1.0 ([#201](https://github.com/andrediashexa/NOGGlass/issues/201)) ([5283fa6](https://github.com/andrediashexa/NOGGlass/commit/5283fa65bbcf8c2b161c9d3cd4baba649d955d84)), closes [#200](https://github.com/andrediashexa/NOGGlass/issues/200)
+
+
+### Chores
+
+* **bgp,bmp:** remove the embedded BGP session and BMP station ([#195](https://github.com/andrediashexa/NOGGlass/issues/195)) ([0483444](https://github.com/andrediashexa/NOGGlass/commit/04834448c3735dad92fd2370b4705c2bf8367a47)), closes [#194](https://github.com/andrediashexa/NOGGlass/issues/194)
+
 ## [0.7.0](https://github.com/andrediashexa/NOGGlass/compare/v0.6.5...v0.7.0) (2026-09-28)
 
 
