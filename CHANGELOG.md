@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.7.0](https://github.com/andrediashexa/NOGGlass/compare/v0.6.5...v0.7.0) (2026-09-28)
+
+
+### Features
+
+* add bgp_aspath_v6 query and suppress graph/table when buffer is truncated ([e60ee81](https://github.com/andrediashexa/NOGGlass/commit/e60ee81f3ffa7a159d9416dc04fff4b71466e824))
+* add optional bgp_aspath query, anchor AS-path regex to peer start, and ensure first-hop graph diversity ([5230d5e](https://github.com/andrediashexa/NOGGlass/commit/5230d5e0ffee6c84cc8c5637d9ba62763a07416a))
+* address security and architecture audit findings ([baf3cee](https://github.com/andrediashexa/NOGGlass/commit/baf3ceec353a0cc52259536c67147659d681583b))
+* **bgp:** NOGGlass's own BGP session as a query source ([#177](https://github.com/andrediashexa/NOGGlass/issues/177)) ([e797613](https://github.com/andrediashexa/NOGGlass/commit/e797613674cad20ca39e4f6953499f415d369d0c))
+* **bmp:** a BMP station serving each monitored router's routes ([#178](https://github.com/andrediashexa/NOGGlass/issues/178)) ([45a7947](https://github.com/andrediashexa/NOGGlass/commit/45a794760a50b3270f4280d9efc998c212b84999))
+* **config:** support nogglass.env natively in binary and standardize docker compose ([c959d06](https://github.com/andrediashexa/NOGGlass/commit/c959d06699d914e775f15e3131120151bf63963e))
+* **driver:** add arista_eos and frr drivers with terminal length 0 ([8371688](https://github.com/andrediashexa/NOGGlass/commit/8371688ae36c8fdf06059f9cc9f38a08d222acc5))
+* **governance:** switch to GPLv3, add project stack, governance docs and update UI footer link ([38045b3](https://github.com/andrediashexa/NOGGlass/commit/38045b3700c9acd31dc1984a0d4c7157aa17db04))
+* **junos:** synthesize clean CLI text from JSON and hide display json in command header ([4628d54](https://github.com/andrediashexa/NOGGlass/commit/4628d5475df0f76554cb9209c00bad888e06bb15))
+* **ssh:** add legacy sha1 kex algorithms as fallback-only ([8f33ae7](https://github.com/andrediashexa/NOGGlass/commit/8f33ae7ecfe5317fcdfe00f090fe6916b329eb44))
+* **ui:** add show_best_path, show_paths and show_raw_output visibility settings ([ddb78ff](https://github.com/andrediashexa/NOGGlass/commit/ddb78ffa387ac21a93df6eb2728f542a40f01f9c))
+* **ui:** add visual customization, light theme and bump version to 1.0.0 ([9f4498e](https://github.com/andrediashexa/NOGGlass/commit/9f4498eec8dd38e37add40d0dc71da51a8964b36))
+* **ui:** highlight active BGP route in raw output and polish light mode diagram ([187e8fc](https://github.com/andrediashexa/NOGGlass/commit/187e8fcd8c17baeec767140b3d82c7b41cddd4e1))
+
+
+### Bug Fixes
+
+* **huawei:** ignore wrapped status legend lines and extend flag characters ([#168](https://github.com/andrediashexa/NOGGlass/issues/168)) ([cd277d4](https://github.com/andrediashexa/NOGGlass/commit/cd277d4b33bb8f3bf50f293f1f867db424aca494))
+* **huawei:** parse multi-line IPv6 BGP routing table blocks ([ea32889](https://github.com/andrediashexa/NOGGlass/commit/ea32889ccbddb0dd741fdec31713a9e298ecaf87))
+* **junos:** handle empty route responses and improve aspath-regex matching ([bcd9af1](https://github.com/andrediashexa/NOGGlass/commit/bcd9af132ffd40077db4a1afabbb36b285f38ffe))
+* **junos:** handle inactive route empty tags, prefix length, and multiline as-path ([34d6452](https://github.com/andrediashexa/NOGGlass/commit/34d6452663b8efcf527fb92ebd424cc1d1c0b913))
+* **junos:** prevent strip_echo from dropping JSON closing brace and handle unparseable output gracefully ([3891677](https://github.com/andrediashexa/NOGGlass/commit/38916776e08702f21e584cd0d4d826a1cdd213f5))
+* **ratelimit:** set default_captcha_secs to 60 and document in example config ([#169](https://github.com/andrediashexa/NOGGlass/issues/169)) ([4271624](https://github.com/andrediashexa/NOGGlass/commit/4271624afc539d89631fedff12437055e9bceef0))
+* **rpki:** prevent caching transient lookup failures and support Huawei detail RPKI ([d96bdc4](https://github.com/andrediashexa/NOGGlass/commit/d96bdc4e3cc926495c60238a6ed17c38ed06badb))
+* **ssh:** enforce 2MB safety buffer limit to protect against OOM killer on massive BGP dumps ([b536bb6](https://github.com/andrediashexa/NOGGlass/commit/b536bb6c598d84175a749bbe162a0c984b7b9e26))
+* **ssh:** increase greeting timeout and recover from delayed paging responses ([6504544](https://github.com/andrediashexa/NOGGlass/commit/65045446419f038b17eafa4e1b4387cd9baef416))
+* **ssh:** resolve host key cross-contamination and add diagnostic logging ([ce58851](https://github.com/andrediashexa/NOGGlass/commit/ce5885184253c23d0c6bc5f6db88425614f6f729))
+* **ui:** completely suppress raw output and global view when buffer is truncated ([39bc29a](https://github.com/andrediashexa/NOGGlass/commit/39bc29a5ac0c54c06c2b402a58aaba687c06f63b))
+* **ui:** respect show_best_path and deduplicate topological AS paths ([4aaafcf](https://github.com/andrediashexa/NOGGlass/commit/4aaafcf9cdc0e311afec8aeaac8ef0fad9212dba))
+* **ui:** use topological DAG ranking from router for AS-path graph layout ([3115933](https://github.com/andrediashexa/NOGGlass/commit/3115933a7beff6ddab98e70d0596a3bc8b3f03fd))
+
+
+### Documentation
+
+* add read-only router account provisioning section to INSTALL.md ([9048a1e](https://github.com/andrediashexa/NOGGlass/commit/9048a1ed565d9788c3eaa78dd566fdedf67dac0c))
+* **adr:** propose one Rust engine for the BGP session and BMP station ([#173](https://github.com/andrediashexa/NOGGlass/issues/173)) ([1f97768](https://github.com/andrediashexa/NOGGlass/commit/1f977686597c8a4132b78f57c31b08154cfdb272))
+* **adr:** record authenticated collaborative multi-tenant architecture ([#30](https://github.com/andrediashexa/NOGGlass/issues/30)) ([c41b13a](https://github.com/andrediashexa/NOGGlass/commit/c41b13ab10b7243f848cf6c4ae2d4e6c378e01f4))
+* **config:** translate UI visibility comments to English in example toml ([3dab403](https://github.com/andrediashexa/NOGGlass/commit/3dab403ebd8ac29925af18cb1e9d9ab88015bb21))
+* **infra:** add standalone INSTALL.md at root ([#159](https://github.com/andrediashexa/NOGGlass/issues/159)) ([4583b7e](https://github.com/andrediashexa/NOGGlass/commit/4583b7e10ec39fcde27110423027567fc973fe62))
+* **infra:** document upgrade procedure with docker compose in INSTAL… ([#160](https://github.com/andrediashexa/NOGGlass/issues/160)) ([774f2ac](https://github.com/andrediashexa/NOGGlass/commit/774f2ac8f9641e4c0fa42aefa693465dfa18771e))
+* **install:** isolate docker compose in named volume and add /healthz alias ([4f635bf](https://github.com/andrediashexa/NOGGlass/commit/4f635bfbb92a2265eee53f10548befa8896f8b96))
+* **install:** update rpki default timeout to 3000ms in examples and adr ([e143930](https://github.com/andrediashexa/NOGGlass/commit/e1439303342e2f1106bc114a7a8b604b2f36205d))
+* **operations:** expand deployment with compilation and systemd instructions ([#158](https://github.com/andrediashexa/NOGGlass/issues/158)) ([c878f5f](https://github.com/andrediashexa/NOGGlass/commit/c878f5fe812d22b2aa826ff0d333561f4af808f1))
+
+
+### Tests
+
+* **huawei:** sanitize test prefixes to RFC 5737 and private ASNs ([#170](https://github.com/andrediashexa/NOGGlass/issues/170)) ([ec7fc9e](https://github.com/andrediashexa/NOGGlass/commit/ec7fc9ee81d61a718163b54e989fd0f31dd379cf))
+
+
+### CI
+
+* **release:** add automated static linux amd64 binary build and packaging ([36a1c57](https://github.com/andrediashexa/NOGGlass/commit/36a1c57fa8997b9d8470faab5169762183a15157))
+
+
+### Style
+
+* restore workspace rustfmt and fix bool asserts ([#175](https://github.com/andrediashexa/NOGGlass/issues/175)) ([71c882f](https://github.com/andrediashexa/NOGGlass/commit/71c882f9b44df26cb8713fa50d3329c635b1e410))
+* **ui:** fix notice and error text contrast in light mode ([0899c93](https://github.com/andrediashexa/NOGGlass/commit/0899c935171fc3d777bf0e8ba9dd8fa59a137337))
+* **ui:** force high-contrast notice colors and cache-busting in light mode ([0c9a9db](https://github.com/andrediashexa/NOGGlass/commit/0c9a9db4630820f78b5f6e2f0f77b112e60aff1d))
+
 ## [0.6.5](https://github.com/andrediashexa/looking-glass/compare/v0.6.4...v0.6.5) (2026-09-23)
 
 
