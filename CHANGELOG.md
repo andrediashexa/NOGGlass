@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.1](https://github.com/andrediashexa/NOGGlass/compare/v0.8.0...v0.8.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **api:** let bgp_summary run without a target ([#212](https://github.com/andrediashexa/NOGGlass/issues/212)) ([822db29](https://github.com/andrediashexa/NOGGlass/commit/822db2907f9f14537c6c03e3ebbde82ed09c7662)), closes [#211](https://github.com/andrediashexa/NOGGlass/issues/211)
+
+
+### Documentation
+
+* defer the BGP session and BMP engine to post-1.0 ([#216](https://github.com/andrediashexa/NOGGlass/issues/216)) ([5ab6b66](https://github.com/andrediashexa/NOGGlass/commit/5ab6b66dba604a50b70fe7cb6ef6ef30e588b7fd)), closes [#214](https://github.com/andrediashexa/NOGGlass/issues/214)
+
 ## [0.8.0](https://github.com/andrediashexa/NOGGlass/compare/v0.7.0...v0.8.0) (2026-09-28)
 
 
