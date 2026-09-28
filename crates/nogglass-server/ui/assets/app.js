@@ -361,7 +361,10 @@ async function onSubmit(event) {
   const selected = state.routers.find((router) => router.id === payload.router);
   let localRibUrl = null;
   if (selected && selected.local_bgp) {
-    localRibUrl = `/api/bgp/route?target=${encodeURIComponent(payload.target)}`;
+    localRibUrl =
+      payload.type === "bgp_summary"
+        ? "/api/bgp/summary"
+        : `/api/bgp/route?target=${encodeURIComponent(payload.target)}`;
   } else if (selected && selected.local_bmp) {
     localRibUrl =
       `/api/bmp/route?router=${encodeURIComponent(payload.router)}` +

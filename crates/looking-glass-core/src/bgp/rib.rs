@@ -115,6 +115,15 @@ impl LocalRib {
         self.by_prefix.len()
     }
 
+    /// How many prefixes a given peer advertises — the "prefixes received" a
+    /// neighbour summary shows for that session.
+    pub fn prefix_count_for_peer(&self, peer: IpAddr) -> usize {
+        self.by_prefix
+            .values()
+            .filter(|peers| peers.contains_key(&peer))
+            .count()
+    }
+
     /// Whether the RIB holds nothing.
     pub fn is_empty(&self) -> bool {
         self.by_prefix.is_empty()
@@ -328,6 +337,27 @@ mod tests {
     fn matched(rib: &LocalRib, query: &str) -> Option<String> {
         let result = rib.route_result(&net(query));
         result.paths.first().map(|p| p.prefix.unwrap().to_string())
+    }
+
+    #[test]
+    fn prefix_count_per_peer_counts_only_that_peers_prefixes() {
+        let mut rib = LocalRib::new();
+        rib.apply_update(
+            peer("192.0.2.1"),
+            vec![
+                path("203.0.113.0/24", "192.0.2.1", vec![65100]),
+                path("198.51.100.0/24", "192.0.2.1", vec![65100]),
+            ],
+            &[],
+        );
+        rib.apply_update(
+            peer("192.0.2.2"),
+            vec![path("203.0.113.0/24", "192.0.2.2", vec![65200])],
+            &[],
+        );
+        assert_eq!(rib.prefix_count_for_peer(peer("192.0.2.1")), 2);
+        assert_eq!(rib.prefix_count_for_peer(peer("192.0.2.2")), 1);
+        assert_eq!(rib.prefix_count_for_peer(peer("192.0.2.9")), 0);
     }
 
     #[test]
