@@ -7,8 +7,8 @@
 //! the other. So a route seen over BMP reads exactly like a route seen over a
 //! BGP session or scraped over SSH.
 //!
-//! Observe-only: this only ever records what a router reported. IPv4 unicast
-//! only for now, matching the BGP mapper; other families arrive with it.
+//! Observe-only: this only ever records what a router reported. IPv4 and IPv6
+//! unicast, matching the BGP mapper (#179); other families arrive with it.
 
 use std::net::IpAddr;
 

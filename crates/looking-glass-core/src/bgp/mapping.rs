@@ -9,7 +9,9 @@
 use std::net::IpAddr;
 
 use ipnet::IpNet;
-use netgauze_bgp_pkt::path_attribute::{AsPath, Origin as WireOrigin, PathAttributeValue};
+use netgauze_bgp_pkt::path_attribute::{
+    AsPath, MpReach, MpUnreach, Origin as WireOrigin, PathAttributeValue,
+};
 use netgauze_bgp_pkt::update::BgpUpdateMessage;
 
 use crate::driver::{BgpPath, Community, Origin};
@@ -108,63 +110,137 @@ fn read_shared(update: &BgpUpdateMessage) -> SharedAttrs {
     shared
 }
 
-/// Builds one [`BgpPath`] per advertised prefix in `update`.
+/// Assembles one [`BgpPath`] from a prefix, its next-hop, and the shared
+/// attributes, so the IPv4 and IPv6 paths of one UPDATE read identically.
+fn make_path(
+    prefix: IpNet,
+    next_hop: Option<IpAddr>,
+    peer: Option<IpAddr>,
+    shared: &SharedAttrs,
+) -> BgpPath {
+    BgpPath {
+        prefix: Some(prefix),
+        next_hop,
+        peer,
+        as_path: shared.as_path.clone(),
+        local_pref: shared.local_pref,
+        med: shared.med,
+        origin: shared.origin,
+        communities: shared.communities.clone(),
+        ..BgpPath::default()
+    }
+}
+
+/// A next-hop, dropping the unspecified address (0.0.0.0 / ::) that marks a
+/// locally-originated route rather than a reachable hop.
+fn reachable_next_hop(ip: IpAddr) -> Option<IpAddr> {
+    (!ip.is_unspecified()).then_some(ip)
+}
+
+/// Builds one [`BgpPath`] per advertised prefix in `update`, across IPv4 unicast
+/// (classic NLRI) and IPv6 unicast (MP_REACH_NLRI, RFC 4760).
 ///
 /// `is_best` is `false`: best-path selection belongs to the RIB, not to a single
 /// received UPDATE. `is_valid`/`rpki` stay at their defaults because BGP does
 /// not carry RPKI. `peer` is whatever the caller knows about the session.
 ///
-/// IPv4 unicast only for now. MP_REACH (IPv6 and other families) arrives in a
-/// later change, so an UPDATE carrying only MP_REACH yields no paths here rather
-/// than a wrong one.
+/// The path attributes (AS_PATH, ORIGIN, MED, LOCAL_PREF, communities) are
+/// shared across both families; the next-hop differs by family — IPv4 carries it
+/// in the NEXT_HOP attribute, IPv6 inside MP_REACH. MP families other than IPv6
+/// unicast yield no paths here rather than a wrong one (fail closed).
 pub fn paths_from_update(update: &BgpUpdateMessage, peer: Option<IpAddr>) -> Vec<BgpPath> {
-    if update.nlri().is_empty() {
-        return Vec::new();
+    let shared = read_shared(update);
+    let mut paths = Vec::new();
+
+    // IPv4 unicast: classic NLRI with the NEXT_HOP attribute read into `shared`.
+    for address in update.nlri() {
+        paths.push(make_path(
+            IpNet::V4(address.network().address()),
+            shared.next_hop,
+            peer,
+            &shared,
+        ));
     }
 
-    let shared = read_shared(update);
+    // IPv6 unicast: MP_REACH_NLRI bundles the NLRI with their own next-hop.
+    for attribute in update.path_attributes() {
+        if let PathAttributeValue::MpReach(MpReach::Ipv6Unicast {
+            next_hop_global,
+            nlri,
+            ..
+        }) = attribute.value()
+        {
+            let next_hop = reachable_next_hop(IpAddr::V6(*next_hop_global));
+            for address in nlri.iter() {
+                paths.push(make_path(
+                    IpNet::V6(address.network().address()),
+                    next_hop,
+                    peer,
+                    &shared,
+                ));
+            }
+        }
+    }
 
-    update
-        .nlri()
-        .iter()
-        .map(|address| BgpPath {
-            prefix: Some(IpNet::V4(address.network().address())),
-            next_hop: shared.next_hop,
-            peer,
-            as_path: shared.as_path.clone(),
-            local_pref: shared.local_pref,
-            med: shared.med,
-            origin: shared.origin,
-            communities: shared.communities.clone(),
-            ..BgpPath::default()
-        })
-        .collect()
+    paths
 }
 
-/// The prefixes an UPDATE withdraws, for the RIB to drop.
-///
-/// IPv4 unicast only, matching [`paths_from_update`]; MP_UNREACH (other
-/// families) is a later slice.
+/// The prefixes an UPDATE withdraws, for the RIB to drop, across IPv4 unicast
+/// (classic withdrawals) and IPv6 unicast (MP_UNREACH_NLRI).
 pub fn withdrawn_from_update(update: &BgpUpdateMessage) -> Vec<IpNet> {
-    update
+    let mut withdrawn: Vec<IpNet> = update
         .withdraw_routes()
         .iter()
         .map(|address| IpNet::V4(address.network().address()))
-        .collect()
+        .collect();
+
+    for attribute in update.path_attributes() {
+        if let PathAttributeValue::MpUnreach(MpUnreach::Ipv6Unicast { nlri }) = attribute.value() {
+            withdrawn.extend(
+                nlri.iter()
+                    .map(|address| IpNet::V6(address.network().address())),
+            );
+        }
+    }
+
+    withdrawn
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::driver::CommunityKind;
-    use ipnet::Ipv4Net;
+    use ipnet::{Ipv4Net, Ipv6Net};
     use netgauze_bgp_pkt::community::{Community as WireCommunity, LargeCommunity};
-    use netgauze_bgp_pkt::nlri::{Ipv4Unicast, Ipv4UnicastAddress};
+    use netgauze_bgp_pkt::nlri::{
+        Ipv4Unicast, Ipv4UnicastAddress, Ipv6Unicast, Ipv6UnicastAddress,
+    };
     use netgauze_bgp_pkt::path_attribute::{
         As4PathSegment, AsPath, AsPathSegmentType, Communities, LargeCommunities, LocalPreference,
-        MultiExitDiscriminator, NextHop, PathAttribute, PathAttributeValue,
+        MpReach, MpUnreach, MultiExitDiscriminator, NextHop, PathAttribute, PathAttributeValue,
     };
     use std::net::Ipv4Addr;
+
+    fn nlri6(prefix: &str) -> Ipv6UnicastAddress {
+        let net: Ipv6Net = prefix.parse().expect("prefix");
+        Ipv6UnicastAddress::new(None, Ipv6Unicast::from_net(net).expect("unicast"))
+    }
+
+    /// An MP_REACH_NLRI for IPv6 unicast: NLRI bundled with their next-hop.
+    fn mp_reach6(next_hop: &str, prefixes: &[&str]) -> PathAttributeValue {
+        PathAttributeValue::MpReach(MpReach::Ipv6Unicast {
+            next_hop_global: next_hop.parse().expect("v6 next-hop"),
+            next_hop_local: None,
+            nlri: prefixes.iter().map(|p| nlri6(p)).collect(),
+        })
+    }
+
+    /// An MP_UNREACH_NLRI withdrawing IPv6 unicast prefixes.
+    fn mp_unreach6(prefixes: &[&str]) -> PathAttributeValue {
+        PathAttributeValue::MpUnreach(MpUnreach::Ipv6Unicast {
+            nlri: prefixes.iter().map(|p| nlri6(p)).collect(),
+        })
+    }
 
     /// Wraps a value with the flags its own type says are valid, so a test does
     /// not have to know each attribute's optional/transitive bits.
@@ -322,6 +398,124 @@ mod tests {
         let shown: Vec<String> = withdrawn.iter().map(|n| n.to_string()).collect();
         assert_eq!(shown, vec!["198.51.100.0/24", "203.0.113.0/24"]);
         // A withdraw-only UPDATE advertises nothing.
+        assert!(paths_from_update(&update, None).is_empty());
+    }
+
+    #[test]
+    fn an_ipv6_update_becomes_a_path_with_the_mp_reach_next_hop() {
+        let update = BgpUpdateMessage::new(
+            vec![],
+            vec![
+                attr(PathAttributeValue::Origin(WireOrigin::IGP)),
+                attr(as_seq(vec![65100, 65500])),
+                attr(mp_reach6("2001:db8::1", &["2001:db8:100::/48"])),
+            ],
+            vec![],
+        );
+        let paths = paths_from_update(&update, None);
+        assert_eq!(paths.len(), 1);
+        let path = &paths[0];
+        assert_eq!(path.prefix.unwrap().to_string(), "2001:db8:100::/48");
+        assert_eq!(path.next_hop, Some("2001:db8::1".parse().unwrap()));
+        // The shared attributes apply to the v6 path just like a v4 one.
+        assert_eq!(path.as_path, vec![65100, 65500]);
+        assert_eq!(path.origin, Some(Origin::Igp));
+    }
+
+    #[test]
+    fn one_mp_reach_carrying_several_prefixes_yields_a_path_each() {
+        let update = BgpUpdateMessage::new(
+            vec![],
+            vec![attr(mp_reach6(
+                "2001:db8::1",
+                &["2001:db8:1::/48", "2001:db8:2::/48"],
+            ))],
+            vec![],
+        );
+        let shown: Vec<String> = paths_from_update(&update, None)
+            .iter()
+            .map(|p| p.prefix.unwrap().to_string())
+            .collect();
+        assert_eq!(shown, vec!["2001:db8:1::/48", "2001:db8:2::/48"]);
+    }
+
+    #[test]
+    fn a_dual_stack_update_yields_both_families() {
+        let update = BgpUpdateMessage::new(
+            vec![],
+            vec![
+                attr(as_seq(vec![65100])),
+                attr(PathAttributeValue::NextHop(NextHop::new(Ipv4Addr::new(
+                    192, 0, 2, 254,
+                )))),
+                attr(mp_reach6("2001:db8::1", &["2001:db8:100::/48"])),
+            ],
+            vec![nlri("203.0.113.0/24")],
+        );
+        let paths = paths_from_update(&update, None);
+        assert_eq!(paths.len(), 2);
+        let v4 = paths
+            .iter()
+            .find(|p| p.prefix.unwrap().addr().is_ipv4())
+            .unwrap();
+        let v6 = paths
+            .iter()
+            .find(|p| p.prefix.unwrap().addr().is_ipv6())
+            .unwrap();
+        assert_eq!(v4.next_hop, Some("192.0.2.254".parse().unwrap()));
+        assert_eq!(v6.next_hop, Some("2001:db8::1".parse().unwrap()));
+        // Both carry the one shared AS path.
+        assert_eq!(v4.as_path, vec![65100]);
+        assert_eq!(v6.as_path, vec![65100]);
+    }
+
+    #[test]
+    fn an_unspecified_ipv6_next_hop_is_absent_not_the_all_zeros_address() {
+        let update = BgpUpdateMessage::new(
+            vec![],
+            vec![attr(mp_reach6("::", &["2001:db8:100::/48"]))],
+            vec![],
+        );
+        let path = &paths_from_update(&update, None)[0];
+        assert_eq!(path.next_hop, None);
+    }
+
+    #[test]
+    fn mp_unreach_ipv6_withdrawals_are_read_out() {
+        let update = BgpUpdateMessage::new(
+            vec![nlri("198.51.100.0/24")],
+            vec![attr(mp_unreach6(&["2001:db8:1::/48", "2001:db8:2::/48"]))],
+            vec![],
+        );
+        let shown: Vec<String> = withdrawn_from_update(&update)
+            .iter()
+            .map(|n| n.to_string())
+            .collect();
+        // IPv4 classic withdrawals and IPv6 MP_UNREACH withdrawals together.
+        assert_eq!(
+            shown,
+            vec!["198.51.100.0/24", "2001:db8:1::/48", "2001:db8:2::/48"]
+        );
+    }
+
+    #[test]
+    fn a_non_ipv6_unicast_mp_family_yields_no_paths() {
+        // MP_REACH for IPv4 multicast (a family we do not serve) must not be
+        // mistaken for a route: fail closed, not a wrong guess.
+        use netgauze_bgp_pkt::nlri::{Ipv4Multicast, Ipv4MulticastAddress};
+        let net: Ipv4Net = "233.252.0.0/24".parse().unwrap();
+        let update = BgpUpdateMessage::new(
+            vec![],
+            vec![attr(PathAttributeValue::MpReach(MpReach::Ipv4Multicast {
+                next_hop: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 254)),
+                next_hop_local: None,
+                nlri: vec![Ipv4MulticastAddress::new_no_path_id(
+                    Ipv4Multicast::from_net(net).unwrap(),
+                )]
+                .into(),
+            }))],
+            vec![],
+        );
         assert!(paths_from_update(&update, None).is_empty());
     }
 }
