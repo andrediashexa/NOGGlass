@@ -94,6 +94,16 @@ fn read_shared(update: &BgpUpdateMessage) -> SharedAttrs {
                     )));
                 }
             }
+            // Extended communities (RFC 4360): route-target, route-origin, … .
+            // NetGauze renders each canonically (`rt:65000:100`, `ro:…`); the
+            // model classifies those as `Extended` by their shape.
+            PathAttributeValue::ExtendedCommunities(communities) => {
+                for community in communities.communities() {
+                    shared
+                        .communities
+                        .push(Community::parse(&community.to_string()));
+                }
+            }
             _ => {}
         }
     }
@@ -211,7 +221,10 @@ mod tests {
     use super::*;
     use crate::driver::CommunityKind;
     use ipnet::{Ipv4Net, Ipv6Net};
-    use netgauze_bgp_pkt::community::{Community as WireCommunity, LargeCommunity};
+    use netgauze_bgp_pkt::community::{
+        Community as WireCommunity, ExtendedCommunity, LargeCommunity,
+        TransitiveTwoOctetExtendedCommunity,
+    };
     use netgauze_bgp_pkt::nlri::{
         Ipv4Unicast, Ipv4UnicastAddress, Ipv6Unicast, Ipv6UnicastAddress,
     };
@@ -347,6 +360,41 @@ mod tests {
         assert_eq!(raws, vec!["65001:100", "65001:1:2"]);
         assert_eq!(path.communities[0].kind, CommunityKind::Standard);
         assert_eq!(path.communities[1].kind, CommunityKind::Large);
+    }
+
+    #[test]
+    fn extended_communities_are_read_as_route_targets_and_origins() {
+        use netgauze_bgp_pkt::path_attribute::ExtendedCommunities;
+        let update = BgpUpdateMessage::new(
+            vec![],
+            vec![
+                attr(as_seq(vec![65100])),
+                attr(PathAttributeValue::ExtendedCommunities(
+                    ExtendedCommunities::new(vec![
+                        ExtendedCommunity::TransitiveTwoOctet(
+                            TransitiveTwoOctetExtendedCommunity::RouteTarget {
+                                global_admin: 65000,
+                                local_admin: 100,
+                            },
+                        ),
+                        ExtendedCommunity::TransitiveTwoOctet(
+                            TransitiveTwoOctetExtendedCommunity::RouteOrigin {
+                                global_admin: 65000,
+                                local_admin: 7,
+                            },
+                        ),
+                    ]),
+                )),
+            ],
+            vec![nlri("203.0.113.0/24")],
+        );
+        let path = &paths_from_update(&update, None)[0];
+        let raws: Vec<&str> = path.communities.iter().map(|c| c.raw.as_str()).collect();
+        assert_eq!(raws, vec!["rt:65000:100", "ro:65000:7"]);
+        assert!(path
+            .communities
+            .iter()
+            .all(|c| c.kind == CommunityKind::Extended));
     }
 
     #[test]
