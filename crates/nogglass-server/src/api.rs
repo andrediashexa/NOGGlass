@@ -747,7 +747,7 @@ queries = ["bgp_route"]
             .unwrap();
         let body = body_json(response).await;
         // An unstamped build falls back to the Cargo package version.
-        assert_eq!(body["version"], "1.0.0");
+        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
     }
 
     /// The router list is public, so it must not describe the management plane.
