@@ -50,6 +50,8 @@ pub enum InventoryError {
     },
     /// A real router needs a way to authenticate; the mock does not.
     NoCredentials(String),
+    /// The inventory could not be serialized back to configuration text.
+    Serialize(String),
 }
 
 impl fmt::Display for InventoryError {
@@ -78,8 +80,26 @@ impl fmt::Display for InventoryError {
                 f,
                 "router {router:?} has no password or key configured, and is not the mock"
             ),
+            Self::Serialize(why) => write!(f, "cannot serialize the inventory: {why}"),
         }
     }
+}
+
+/// Serializes a router inventory back to the `routers.conf` TOML the admin
+/// interface (issue #204) writes to disk.
+///
+/// Only the environment-variable *names* the routers already carry are emitted
+/// (`password_env`, `passphrase_env`) — never a secret value, so the output is
+/// as safe to write and version-control as the file it came from. This is the
+/// serialization foundation; the authenticated write-back path is separate.
+pub fn routers_to_conf(routers: &[Router]) -> Result<String, InventoryError> {
+    #[derive(Serialize)]
+    struct RoutersFileOut<'a> {
+        #[serde(rename = "router")]
+        routers: &'a [Router],
+    }
+    toml::to_string_pretty(&RoutersFileOut { routers })
+        .map_err(|e| InventoryError::Serialize(e.to_string()))
 }
 
 impl std::error::Error for InventoryError {}
@@ -88,7 +108,7 @@ impl std::error::Error for InventoryError {}
 ///
 /// Both variants name an environment variable rather than carrying a secret,
 /// so the inventory file is safe to keep in version control.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Credentials {
     /// Password read from this environment variable.
@@ -96,7 +116,7 @@ pub enum Credentials {
     /// Private key read from this file, with an optional passphrase variable.
     KeyFile {
         path: String,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         passphrase_env: Option<String>,
     },
     /// The mock router: no session is opened, so nothing authenticates.
@@ -110,7 +130,7 @@ impl Default for Credentials {
 }
 
 /// One router an operator exposes.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Router {
     /// Stable identifier used in URLs and API calls.
     pub id: String,
@@ -122,22 +142,22 @@ pub struct Router {
     pub host: String,
     #[serde(default = "default_port")]
     pub port: u16,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(default)]
     pub credentials: Credentials,
     /// Grouping shown in the selector, typically a POP or a city.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
     /// Queries this router answers. Empty means every query its vendor supports.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queries: Vec<QueryType>,
     /// Per-router overrides of the global limits.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_concurrent: Option<usize>,
     /// Expected OpenSSH host public key (e.g. "ssh-ed25519 AAAA...").
     /// Pinned to prevent Man-in-the-Middle attacks on the management network.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_key: Option<String>,
     /// Explicitly allow unverified host keys (AcceptAny) for lab or dev environments.
     /// Defaults to false. If false and host_key is None, connection attempts are rejected.
@@ -1068,5 +1088,64 @@ host = "192.0.2.1"
         assert!(!inventory.ui.show_best_path);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn routers_round_trip_through_conf_without_leaking_secrets() {
+        // The admin interface (#204) will write the inventory back to
+        // routers.conf. Parsing it, serializing it, and parsing again must
+        // yield the same routers — and never emit a secret value.
+        let source = r#"
+[[router]]
+id = "edge-01"
+name = "Edge 01"
+vendor = "huawei_vrp"
+host = "192.0.2.10"
+username = "nogglass"
+location = "Sao Paulo"
+credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
+queries = ["ping", "bgp_route"]
+host_key = "ssh-ed25519 AAAAExample"
+allow_insecure_host_key = false
+
+[[router]]
+id = "border-02"
+name = "Border 02"
+vendor = "juniper_junos"
+host = "192.0.2.11"
+credentials = { key_file = { path = "/etc/nogglass/keys/b02", passphrase_env = "NOGGLASS_B02_PASSPHRASE" } }
+
+[[router]]
+id = "demo"
+name = "Demo"
+vendor = "mock"
+host = "127.0.0.1"
+"#;
+        let parsed: RoutersFile = toml::from_str(source).unwrap();
+        let serialized = routers_to_conf(&parsed.routers).expect("routers serialize");
+        let reparsed: RoutersFile = toml::from_str(&serialized).expect("output reparses");
+
+        assert_eq!(parsed.routers.len(), reparsed.routers.len());
+        for (before, after) in parsed.routers.iter().zip(&reparsed.routers) {
+            assert_eq!(before.id, after.id);
+            assert_eq!(before.name, after.name);
+            assert_eq!(before.vendor, after.vendor);
+            assert_eq!(before.host, after.host);
+            assert_eq!(before.port, after.port);
+            assert_eq!(before.username, after.username);
+            assert_eq!(before.location, after.location);
+            assert_eq!(before.credentials, after.credentials);
+            assert_eq!(before.queries, after.queries);
+            assert_eq!(before.host_key, after.host_key);
+            assert_eq!(
+                before.allow_insecure_host_key,
+                after.allow_insecure_host_key
+            );
+        }
+
+        // The env-var names survive; no literal secret is ever written.
+        assert!(serialized.contains("NOGGLASS_EDGE01_PASSWORD"));
+        assert!(serialized.contains("NOGGLASS_B02_PASSPHRASE"));
+        assert!(!serialized.to_lowercase().contains("password ="));
     }
 }
