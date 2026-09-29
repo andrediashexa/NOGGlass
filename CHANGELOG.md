@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.9.0](https://github.com/andrediashexa/NOGGlass/compare/v0.8.1...v0.9.0) (2026-09-29)
+
+
+### Features
+
+* **ui,drivers:** add theme assets, modular config, juniper cli formatting, and sanitized showcase screens ([bd3be50](https://github.com/andrediashexa/NOGGlass/commit/bd3be505cb866345ecc31321227efa2ddde9c23e))
+
+
+### Documentation
+
+* record the federation 1.0-scope decision (recommend post-1.0) ([#217](https://github.com/andrediashexa/NOGGlass/issues/217)) ([e93219c](https://github.com/andrediashexa/NOGGlass/commit/e93219caf2daa969bc5993707968533d1ed34d3b)), closes [#78](https://github.com/andrediashexa/NOGGlass/issues/78)
+
+
+### Tests
+
+* **api:** cover the SSE streaming query endpoint ([#222](https://github.com/andrediashexa/NOGGlass/issues/222)) ([5ce8388](https://github.com/andrediashexa/NOGGlass/commit/5ce83883fd58dc487aedce4698d37a5c1812b8f8)), closes [#221](https://github.com/andrediashexa/NOGGlass/issues/221)
+* **lab:** call bgp_summary with no target in verify.sh ([#219](https://github.com/andrediashexa/NOGGlass/issues/219)) ([bb5bd36](https://github.com/andrediashexa/NOGGlass/commit/bb5bd3695c4fffe6568c9859f38b355a4bb724e8)), closes [#218](https://github.com/andrediashexa/NOGGlass/issues/218)
+
+
+### Style
+
+* format code according to rustfmt guidelines ([5f9db1a](https://github.com/andrediashexa/NOGGlass/commit/5f9db1a2480659fc12596293149b46642948d8a6))
+
 ## [0.8.1](https://github.com/andrediashexa/NOGGlass/compare/v0.8.0...v0.8.1) (2026-09-28)
 
 
