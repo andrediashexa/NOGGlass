@@ -2,6 +2,33 @@
 
 ## [1.1.0](https://github.com/andrediashexa/NOGGlass/compare/v1.0.0...v1.1.0) (2026-09-29)
 
+
+### Features
+
+* **core:** support per-router source ipv4 and ipv6 for ping and traceroute ([7a38214](https://github.com/andrediashexa/NOGGlass/commit/7a3821489a1b3954fb7ead03834084d2dedd6101))
+* **web:** display route age in bgp paths table ([9ffa894](https://github.com/andrediashexa/NOGGlass/commit/9ffa8943225b38ad06faf148d375fc665a90f76a))
+
+
+### Documentation
+
+* add the community announcement text ([#230](https://github.com/andrediashexa/NOGGlass/issues/230)) ([1ec11c6](https://github.com/andrediashexa/NOGGlass/commit/1ec11c617fcf2f26a64cfa3004fa7e5c08502dfd)), closes [#229](https://github.com/andrediashexa/NOGGlass/issues/229)
+* credit Marcelo Gondim as the project's originator ([#227](https://github.com/andrediashexa/NOGGlass/issues/227)) ([cf2d45a](https://github.com/andrediashexa/NOGGlass/commit/cf2d45a704d2a0dc81d9dee5702f9230bb6747a5)), closes [#226](https://github.com/andrediashexa/NOGGlass/issues/226)
+* document route age, custom source ip and ssh port in changelog for v1.1.0 ([9806d44](https://github.com/andrediashexa/NOGGlass/commit/9806d4495f9731468cd2b16f781c5010abaee44f))
+* **infra:** document and test custom ssh port per router with default 22 ([01b21b0](https://github.com/andrediashexa/NOGGlass/commit/01b21b057deca0c5aff3b8b185934f64b299fbd0))
+* update the community announcement for the 1.0.0 launch ([#233](https://github.com/andrediashexa/NOGGlass/issues/233)) ([8997594](https://github.com/andrediashexa/NOGGlass/commit/899759445534fd398c72a32b6aa47e5f185a6557)), closes [#232](https://github.com/andrediashexa/NOGGlass/issues/232)
+
+
+### Style
+
+* format inventory and executor according to cargo fmt ([7898168](https://github.com/andrediashexa/NOGGlass/commit/789816893e615d5dd72ae97a16692f40cef6deec))
+
+
+### Chores
+
+* bump workspace version to 1.1.0 ([c09a90d](https://github.com/andrediashexa/NOGGlass/commit/c09a90dc8522feb3192e2dde1795484efb9e6527))
+
+## [1.1.0](https://github.com/andrediashexa/NOGGlass/compare/v1.0.0...v1.1.0) (2026-09-29)
+
 ### Features
 
 * **web:** display BGP route installation age/duration in BGP paths table across all supported vendors
