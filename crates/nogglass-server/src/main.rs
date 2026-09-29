@@ -115,15 +115,30 @@ async fn run() -> Result<(), String> {
         "starting NOGGlass"
     );
 
-    let config_path = std::env::var("NOGGLASS_CONFIG").unwrap_or_else(|_| {
-        if std::path::Path::new(DEFAULT_CONFIG).exists() {
-            DEFAULT_CONFIG.to_string()
-        } else if std::path::Path::new(LEGACY_CONFIG).exists() {
-            LEGACY_CONFIG.to_string()
-        } else {
-            DEFAULT_CONFIG.to_string()
+    let config_path = match std::env::var("NOGGLASS_CONFIG") {
+        Ok(path) => {
+            // When NOGGLASS_CONFIG points to the standard default path (/etc/nogglass/nogglass.conf)
+            // but it does not exist, fall back to LEGACY_CONFIG (/etc/nogglass/nogglass.toml)
+            // if present. This ensures Docker containers with mounted legacy configs start cleanly.
+            if path == DEFAULT_CONFIG
+                && !std::path::Path::new(&path).exists()
+                && std::path::Path::new(LEGACY_CONFIG).exists()
+            {
+                LEGACY_CONFIG.to_string()
+            } else {
+                path
+            }
         }
-    });
+        Err(_) => {
+            if std::path::Path::new(DEFAULT_CONFIG).exists() {
+                DEFAULT_CONFIG.to_string()
+            } else if std::path::Path::new(LEGACY_CONFIG).exists() {
+                LEGACY_CONFIG.to_string()
+            } else {
+                DEFAULT_CONFIG.to_string()
+            }
+        }
+    };
     let inventory = Inventory::load(&config_path)
         .map_err(|e| format!("{e}\nNOGGlass will not start with an inventory it cannot use."))?;
 
