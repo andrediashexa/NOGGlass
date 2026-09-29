@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/andrediashexa/NOGGlass/compare/v1.0.0...v1.0.1) (2026-09-29)
+
+
+### Documentation
+
+* credit Marcelo Gondim as the project's originator ([#227](https://github.com/andrediashexa/NOGGlass/issues/227)) ([cf2d45a](https://github.com/andrediashexa/NOGGlass/commit/cf2d45a704d2a0dc81d9dee5702f9230bb6747a5)), closes [#226](https://github.com/andrediashexa/NOGGlass/issues/226)
+
 ## [1.0.0](https://github.com/andrediashexa/NOGGlass/compare/v0.9.3...v1.0.0) (2026-09-29)
 
 ### Features
