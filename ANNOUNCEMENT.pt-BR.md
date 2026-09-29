@@ -8,7 +8,9 @@
 
 ## Versão completa
 
-## 🔭 NOGGlass — um Looking Glass multi-vendor, de verdade, livre e para a comunidade
+## 🔭 NOGGlass 1.0.0 chegou — um Looking Glass multi-vendor, de verdade, livre e para a comunidade
+
+**O NOGGlass acaba de chegar ao 1.0.0 — a primeira versão estável, pronta pra produção.** 🎉
 
 Todo operador de rede já passou por isso: precisar olhar uma rota, um AS-PATH ou uma sessão BGP num roteador e esbarrar num Looking Glass que só atende **um** fabricante, roda em script PHP/Perl abandonado, ou despeja 300 linhas de CLI cru pra você garimpar na mão.
 
@@ -28,9 +30,9 @@ O objetivo é simples: **um Looking Glass de qualidade, livre e sem custo** para
 
 🎙️ **Pra entender o "porquê"** de um Looking Glass importar pro seu provedor, dá uma olhada na palestra que apresentei no **GTER 52**: [*"Desvendando o Looking Glass e sua Importância para os Provedores"*](https://www.youtube.com/live/QFQ4zk86B44?t=1593).
 
-**E é aqui que entra você:** o projeto está a caminho da versão 1.0 e a nossa régua é dura — um driver só é "verificado" quando rodou contra um **equipamento real** (não contra um PDF). Já validamos vários end-to-end (Huawei VRP, Cisco IOS-XE/IOS-XR, MikroTik v7, BIRD, FRR); outros ainda precisam de gente com o equipamento pra confirmar.
+**E é aqui que entra você:** a nossa régua é dura — um driver só é "verificado" quando rodou contra um **equipamento real** (não contra um PDF). No 1.0.0 já validamos end-to-end: **Huawei VRP, Cisco IOS-XE/IOS-XR, MikroTik v7, BIRD, FRR e Juniper Junos**. Ainda faltam alguns por falta de acesso a hardware/licença.
 
-👉 **Use. Teste no seu AS. Aponte pro seu vendor. Abra issues. Mande PRs.** Se você roda Juniper, Nokia, Datacom ou MikroTik v6, sua ajuda pra verificar esses drivers vale ouro.
+👉 **Use. Teste no seu AS. Aponte pro seu vendor. Abra issues. Mande PRs.** Se você roda **Nokia SR OS, Datacom DmOS ou MikroTik v6**, sua ajuda pra verificar esses drivers vale ouro.
 
 **Repositório:** https://github.com/andrediashexa/NOGGlass
 
@@ -42,7 +44,7 @@ Bora construir juntos o Looking Glass que a comunidade merece. 🚀
 
 ## Versão curta (grupos / X / Telegram)
 
-🔭 **NOGGlass** — Looking Glass multi-vendor, read-only e **livre (GPLv3)**.
+🔭 **NOGGlass 1.0.0 chegou!** Looking Glass multi-vendor, read-only e **livre (GPLv3)**. Primeira versão estável, pronta pra produção. 🎉
 
 **Idealizado pelo Marcelo Gondim** ([@gondimcodes](https://github.com/gondimcodes)), que me convidou (André Dias) pra desenvolver junto, com um objetivo: dar à comunidade um Looking Glass de qualidade e sem custo.
 
