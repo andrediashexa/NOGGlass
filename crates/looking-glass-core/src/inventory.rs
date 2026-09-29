@@ -52,6 +52,11 @@ pub enum InventoryError {
     NoCredentials(String),
     /// The inventory could not be serialized back to configuration text.
     Serialize(String),
+    /// A configuration file could not be written.
+    Unwritable {
+        path: String,
+        reason: String,
+    },
 }
 
 impl fmt::Display for InventoryError {
@@ -81,6 +86,7 @@ impl fmt::Display for InventoryError {
                 "router {router:?} has no password or key configured, and is not the mock"
             ),
             Self::Serialize(why) => write!(f, "cannot serialize the inventory: {why}"),
+            Self::Unwritable { path, reason } => write!(f, "cannot write {path}: {reason}"),
         }
     }
 }
@@ -100,6 +106,61 @@ pub fn routers_to_conf(routers: &[Router]) -> Result<String, InventoryError> {
     }
     toml::to_string_pretty(&RoutersFileOut { routers })
         .map_err(|e| InventoryError::Serialize(e.to_string()))
+}
+
+/// Writes `contents` to `path` atomically.
+///
+/// A sibling temp file is written and `fsync`'d, the previous file (if any) is
+/// kept as `<path>.bak`, then the temp file is renamed over the target. Because
+/// the rename is atomic on the same filesystem, a crash mid-write can never
+/// leave a half-written or empty configuration in place — the file is either the
+/// old one or the new one, never a fragment. This is the safe-write half of the
+/// config write-back foundation (issue #204); it is deliberately not wired to
+/// any route or authentication yet.
+pub fn write_atomically(path: &Path, contents: &str) -> Result<(), InventoryError> {
+    use std::io::Write;
+
+    let unwritable = |reason: String| InventoryError::Unwritable {
+        path: path.display().to_string(),
+        reason,
+    };
+
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
+    let tmp = {
+        let mut name = std::ffi::OsString::from(".");
+        name.push(
+            path.file_name()
+                .ok_or_else(|| unwritable("not a file path".into()))?,
+        );
+        name.push(format!(".tmp.{}", std::process::id()));
+        match dir {
+            Some(d) => d.join(name),
+            None => PathBuf::from(name),
+        }
+    };
+
+    // Write the new contents and flush them all the way to disk before the swap.
+    let mut file = std::fs::File::create(&tmp).map_err(|e| unwritable(e.to_string()))?;
+    file.write_all(contents.as_bytes())
+        .map_err(|e| unwritable(e.to_string()))?;
+    file.sync_all().map_err(|e| unwritable(e.to_string()))?;
+    drop(file);
+
+    // Keep the previous version as <path>.bak, so a bad edit is recoverable.
+    if path.exists() {
+        let mut bak = path.as_os_str().to_owned();
+        bak.push(".bak");
+        if let Err(e) = std::fs::rename(path, PathBuf::from(bak)) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(unwritable(format!("keeping a .bak failed: {e}")));
+        }
+    }
+
+    // The atomic step: rename the temp file over the target.
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        unwritable(e.to_string())
+    })
 }
 
 impl std::error::Error for InventoryError {}
@@ -1147,5 +1208,37 @@ host = "127.0.0.1"
         assert!(serialized.contains("NOGGLASS_EDGE01_PASSWORD"));
         assert!(serialized.contains("NOGGLASS_B02_PASSPHRASE"));
         assert!(!serialized.to_lowercase().contains("password ="));
+    }
+
+    #[test]
+    fn write_atomically_swaps_the_file_and_keeps_a_backup() {
+        let dir = std::env::temp_dir().join(format!(
+            "nogglass-atomic-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("routers.conf");
+
+        // First write creates the file, no backup yet.
+        write_atomically(&target, "first").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "first");
+        let bak = dir.join("routers.conf.bak");
+        assert!(!bak.exists(), "no backup on the first write");
+
+        // Second write swaps the contents and keeps the previous as .bak.
+        write_atomically(&target, "second").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "second");
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), "first");
+
+        // No temp file is left behind.
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty(), "temp file cleaned up");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
