@@ -163,6 +163,28 @@ pub fn write_atomically(path: &Path, contents: &str) -> Result<(), InventoryErro
     })
 }
 
+/// Where the companion `routers.conf` lives, given the main config path.
+///
+/// Mirrors what [`Inventory::load`] reads from, so a write lands on the file a
+/// reload will pick up: `NOGGLASS_ROUTERS_CONFIG` if set, else `routers.conf`
+/// beside the main config, else an existing `routers.toml`, else `routers.conf`
+/// (created on a fresh write). The admin write-back (#204) writes here.
+pub fn routers_conf_path(main_config: &Path) -> PathBuf {
+    if let Ok(explicit) = std::env::var("NOGGLASS_ROUTERS_CONFIG") {
+        return PathBuf::from(explicit);
+    }
+    let base = main_config.parent().unwrap_or_else(|| Path::new("."));
+    let conf = base.join("routers.conf");
+    let toml = base.join("routers.toml");
+    if conf.exists() {
+        conf
+    } else if toml.exists() {
+        toml
+    } else {
+        conf
+    }
+}
+
 impl std::error::Error for InventoryError {}
 
 /// How NOGGlass authenticates to a router.

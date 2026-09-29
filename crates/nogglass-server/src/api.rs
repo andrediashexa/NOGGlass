@@ -46,6 +46,9 @@ pub struct AppState {
     /// admin interface entirely: its routes answer 404, as if they did not
     /// exist. Set from `NOGGLASS_ADMIN_TOKEN` — opt-in, off by default.
     pub admin_token: Option<String>,
+    /// Where the admin write-back saves `routers.conf`. `None` when it could not
+    /// be resolved, which makes the save endpoint answer 503 rather than guess.
+    pub routers_conf_path: Option<std::path::PathBuf>,
 }
 
 impl AppState {
@@ -143,7 +146,10 @@ pub fn routes(state: AppState) -> AxumRouter {
             get(stream_query).post(stream_query_post),
         )
         .route("/api/catalogue/{vendor}", get(vendor_commands))
-        .route("/api/admin/routers", get(admin_routers))
+        .route(
+            "/api/admin/routers",
+            get(admin_routers).post(admin_save_routers),
+        )
         .with_state(state)
 }
 
@@ -208,6 +214,26 @@ fn tokens_match(provided: &str, expected: &str) -> bool {
     diff == 0
 }
 
+/// Checks the owner token for an admin request. Returns `Some(response)` with
+/// what to send back when access is refused — 404 when the admin API is disabled
+/// (so it reveals nothing), 401 when the token is missing or wrong — or `None`
+/// when the caller is the authenticated owner.
+fn admin_auth(state: &AppState, headers: &axum::http::HeaderMap) -> Option<Response> {
+    let expected = match state.admin_token.as_deref() {
+        Some(token) => token,
+        // Admin API disabled — reveal nothing, not even that the route exists.
+        None => return Some(StatusCode::NOT_FOUND.into_response()),
+    };
+    let presented = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    match presented {
+        Some(token) if tokens_match(token, expected) => None,
+        _ => Some((StatusCode::UNAUTHORIZED, "admin authentication required").into_response()),
+    }
+}
+
 /// The admin counterpart to `/api/routers` (issue #204). For the authenticated
 /// owner it returns the full inventory — host, port, username and the credential
 /// *variable names* — which the public listing deliberately hides. It never
@@ -217,20 +243,69 @@ fn tokens_match(provided: &str, expected: &str) -> bool {
 /// route answers 404, so an instance that did not opt in reveals nothing — not
 /// even that the endpoint exists.
 async fn admin_routers(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
-    let Some(expected) = state.admin_token.as_deref() else {
-        return StatusCode::NOT_FOUND.into_response();
+    if let Some(response) = admin_auth(&state, &headers) {
+        return response;
+    }
+    Json(state.inventory.routers.clone()).into_response()
+}
+
+/// Saves an edited router inventory to `routers.conf` (issue #204).
+///
+/// The submitted routers are validated (fail-closed — a router the vendor cannot
+/// answer, a duplicate id, an unknown vendor is rejected before anything is
+/// written), serialized, and written atomically. Only credential *variable
+/// names* are ever persisted; a secret value cannot be submitted, because the
+/// model has no field for one.
+///
+/// **Conservative increment:** the file is saved and takes effect on the next
+/// restart — there is no hot-reload yet, so the running query path is untouched.
+async fn admin_save_routers(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: Result<
+        Json<Vec<looking_glass_core::inventory::Router>>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Response {
+    if let Some(response) = admin_auth(&state, &headers) {
+        return response;
+    }
+
+    let routers = match body {
+        Ok(Json(routers)) => routers,
+        Err(rejection) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("invalid request body: {rejection}"),
+            )
+                .into_response();
+        }
     };
 
-    let presented = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
+    let Some(path) = state.routers_conf_path.as_deref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the admin write path could not be resolved on this instance",
+        )
+            .into_response();
+    };
 
-    match presented {
-        Some(token) if tokens_match(token, expected) => {
-            Json(state.inventory.routers.clone()).into_response()
+    // Validate the whole candidate inventory before writing anything.
+    let mut candidate = (*state.inventory).clone();
+    candidate.routers = routers;
+    if let Err(error) = candidate.validate(&looking_glass_core::catalogue::BUILTIN) {
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+    }
+
+    let contents = match looking_glass_core::inventory::routers_to_conf(&candidate.routers) {
+        Ok(contents) => contents,
+        Err(error) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response()
         }
-        _ => (StatusCode::UNAUTHORIZED, "admin authentication required").into_response(),
+    };
+    match looking_glass_core::inventory::write_atomically(path, &contents) {
+        Ok(()) => (StatusCode::OK, "saved; restart to apply").into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
     }
 }
 
@@ -753,11 +828,16 @@ queries = ["bgp_route"]
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             admin_token: None,
+            routers_conf_path: None,
         })
     }
 
     /// The same app, but with the admin API enabled behind `token`.
-    fn app_with_admin(config: &str, token: &str) -> AxumRouter {
+    fn app_with_admin(
+        config: &str,
+        token: &str,
+        routers_conf_path: Option<std::path::PathBuf>,
+    ) -> AxumRouter {
         let inventory = Arc::new(Inventory::from_toml(config).expect("test inventory"));
         let executor = Arc::new(Executor::new(
             inventory.clone(),
@@ -784,6 +864,7 @@ queries = ["bgp_route"]
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             admin_token: Some(token.to_string()),
+            routers_conf_path,
         })
     }
 
@@ -861,7 +942,7 @@ queries = ["bgp_route"]
 
     #[tokio::test]
     async fn the_admin_api_rejects_a_missing_or_wrong_token() {
-        let app = || app_with_admin(INVENTORY, "s3cr3t-owner-token");
+        let app = || app_with_admin(INVENTORY, "s3cr3t-owner-token", None);
 
         let no_token = app()
             .oneshot(
@@ -890,7 +971,7 @@ queries = ["bgp_route"]
         // Unlike the public listing, the authenticated owner sees the management
         // plane: host, username and the credential *variable name* — but never a
         // secret value, because the inventory holds none.
-        let response = app_with_admin(INVENTORY, "s3cr3t-owner-token")
+        let response = app_with_admin(INVENTORY, "s3cr3t-owner-token", None)
             .oneshot(
                 Request::get("/api/admin/routers")
                     .header("authorization", "Bearer s3cr3t-owner-token")
@@ -907,6 +988,88 @@ queries = ["bgp_route"]
             body.contains("NOGGLASS_EDGE01_PASSWORD"),
             "owner sees the credential variable name"
         );
+    }
+
+    fn post_routers(body: &str) -> Request<Body> {
+        Request::post("/api/admin/routers")
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer s3cr3t-owner-token")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn saving_is_hidden_when_admin_is_disabled_and_needs_the_token() {
+        // Disabled → 404, same as the read side.
+        let disabled = app()
+            .oneshot(post_routers(
+                r#"[{"id":"x","name":"X","vendor":"mock","host":"127.0.0.1"}]"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
+
+        // Enabled but no token → 401.
+        let no_token = app_with_admin(INVENTORY, "s3cr3t-owner-token", None)
+            .oneshot(
+                Request::post("/api/admin/routers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"[{"id":"x","name":"X","vendor":"mock","host":"127.0.0.1"}]"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(no_token.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn saving_an_invalid_inventory_is_refused_before_it_is_written() {
+        let dir = std::env::temp_dir().join(format!("nogglass-save-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("routers.conf");
+
+        // Unknown vendor — validation must reject it, and nothing is written.
+        let response = app_with_admin(INVENTORY, "s3cr3t-owner-token", Some(path.clone()))
+            .oneshot(post_routers(
+                r#"[{"id":"x","name":"X","vendor":"not_a_vendor","host":"127.0.0.1"}]"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(!path.exists(), "an invalid inventory is never written");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn saving_a_valid_inventory_writes_routers_conf() {
+        let dir = std::env::temp_dir().join(format!("nogglass-save-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("routers.conf");
+
+        let response = app_with_admin(INVENTORY, "s3cr3t-owner-token", Some(path.clone()))
+            .oneshot(post_routers(
+                r#"[
+                    {"id":"demo","name":"Demo","vendor":"mock","host":"127.0.0.1"},
+                    {"id":"edge","name":"Edge","vendor":"huawei_vrp","host":"192.0.2.9",
+                     "username":"nog","credentials":{"password_env":"NOG_PW"}}
+                ]"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("[[router]]"));
+        assert!(written.contains("edge"));
+        assert!(written.contains("NOG_PW"));
+        // The saved file reparses into the same routers.
+        let reparsed = Inventory::from_toml(&written).unwrap();
+        assert_eq!(reparsed.routers.len(), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
@@ -1122,6 +1285,7 @@ host = "192.0.2.200"
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
             admin_token: None,
+            routers_conf_path: None,
         };
 
         let target = parse_target("203.0.113.0/24").unwrap();

@@ -319,6 +319,10 @@ async fn run() -> Result<(), String> {
     if admin_token.is_some() {
         tracing::info!("admin API enabled (NOGGLASS_ADMIN_TOKEN set)");
     }
+    // Where the admin write-back saves routers.conf — the same file a reload reads.
+    let routers_conf_path = Some(looking_glass_core::inventory::routers_conf_path(
+        std::path::Path::new(&config_path),
+    ));
 
     let app = api::routes(AppState {
         executor,
@@ -330,6 +334,7 @@ async fn run() -> Result<(), String> {
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
         admin_token,
+        routers_conf_path,
     })
     .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))
