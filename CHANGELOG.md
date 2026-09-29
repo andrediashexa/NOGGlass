@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/andrediashexa/NOGGlass/compare/v0.9.2...v0.9.3) (2026-09-29)
+
+
+### Chores
+
+* **infra:** eliminate obsolete nogglass.example.toml in favor of modular conf templates ([e59a5e1](https://github.com/andrediashexa/NOGGlass/commit/e59a5e1b71bf96c9f27a88de2e7fd20187045392))
+
 ## [0.9.2](https://github.com/andrediashexa/NOGGlass/compare/v0.9.1...v0.9.2) (2026-09-29)
 
 
