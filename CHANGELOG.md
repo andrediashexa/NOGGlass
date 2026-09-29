@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/andrediashexa/NOGGlass/compare/v0.9.1...v0.9.2) (2026-09-29)
+
+
+### Chores
+
+* restore nogglass.example.toml for backward-compatible release packaging ([76e87e7](https://github.com/andrediashexa/NOGGlass/commit/76e87e79d27fee63e4132d8b6623e09fdf82c288))
+
 ## [0.9.1](https://github.com/andrediashexa/NOGGlass/compare/v0.9.0...v0.9.1) (2026-09-29)
 
 
