@@ -823,6 +823,55 @@ queries = ["bgp_route"]
     }
 
     #[tokio::test]
+    async fn the_stream_endpoint_answers_and_bgp_summary_needs_no_target() {
+        // /api/query/stream shares handle_stream_query, which — like the plain
+        // query — must run bgp_summary with no target. Exercise the SSE path end
+        // to end and confirm the events arrive.
+        let request = from_peer(
+            Request::post("/api/query/stream")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"demo","type":"bgp_summary","target":""}"#,
+                ))
+                .unwrap(),
+            "198.51.100.92:5000",
+        );
+
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // The stream ends once the worker sends its events and drops the sender,
+        // so collecting terminates; the timeout only guards against a regression
+        // that leaves it open.
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            response.into_body().collect(),
+        )
+        .await
+        .expect("the stream terminates")
+        .unwrap()
+        .to_bytes();
+        let body = String::from_utf8_lossy(&bytes);
+
+        assert!(
+            body.contains("accepted"),
+            "stream announces acceptance: {body}"
+        );
+        assert!(
+            body.contains("result"),
+            "stream carries a result event: {body}"
+        );
+        assert!(
+            body.contains("bgp_summary"),
+            "the result is a summary: {body}"
+        );
+        assert!(
+            !body.contains("target_empty"),
+            "bgp_summary needs no target on the stream path: {body}"
+        );
+    }
+
+    #[tokio::test]
     async fn an_unknown_router_is_a_404() {
         let request = from_peer(
             Request::post("/api/query")
