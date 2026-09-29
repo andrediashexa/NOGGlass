@@ -8,8 +8,8 @@
 
 services:
   nogglass:
-    # Uses locally built image or registry image
-    image: nogglass:latest
+    # Uses published image from GHCR or builds locally
+    image: ghcr.io/andrediashexa/nogglass:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -45,10 +45,10 @@ services:
     networks:
       - default
 
-  # The manual, beside the tool.
-  # If you do not have the docs image locally, run `docker compose up -d nogglass`
-  # to launch only the looking glass service.
+  # Optional documentation site. To launch: docker compose --profile docs up -d
   docs:
+    profiles:
+      - docs
     image: ghcr.io/andrediashexa/nogglass-docs:latest
     # build:
     #   context: .
