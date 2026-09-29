@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.0.0](https://github.com/andrediashexa/NOGGlass/compare/v0.9.3...v1.0.0) (2026-09-29)
+
+### Features
+
+* **drivers:** complete Juniper JunOS end-to-end integration with native CLI reconstruction for routes, BGP summary and AS-Path queries
+* **config:** support modular configuration files (`nogglass.conf`, `routers.conf`, `ui.conf`) with automatic companion discovery
+* **ui:** deliver high-contrast NOC Dark and Light themes with dedicated brand assets and wallpapers
+* **topology:** render AS-Path graph via Bellman-Ford DAG relaxation with theme-adaptive styling and best-path priority
+* **packaging:** publish static standalone Linux amd64 binaries (Zig & Musl) for native bare-metal deployment with Systemd
+
+### Bug Fixes
+
+* **compose:** use official GHCR image namespaces and isolate documentation service under profile
+* **server:** provide dynamic fallback from `nogglass.conf` to `nogglass.toml` in container environments
+* **security:** enforce strict SSH host key verification (Anti-MitM policy) with explicit transport diagnostics
+
+### Chores
+
+* **infra:** eliminate obsolete `nogglass.example.toml` in favor of official modular `.conf` templates
+* **docs:** publish sanitized interface showcase screens adhering strictly to RFC 1918 and RFC 6996
+
 ## [0.9.3](https://github.com/andrediashexa/NOGGlass/compare/v0.9.2...v0.9.3) (2026-09-29)
 
 
