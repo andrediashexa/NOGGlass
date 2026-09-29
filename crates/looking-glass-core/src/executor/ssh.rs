@@ -594,7 +594,11 @@ async fn read_until_prompt(
                 // The prompt only counts at the end of what we have read; a
                 // prompt-shaped string inside the output is not the end.
                 if let Some(last) = output.lines().last() {
-                    if prompt.is_match(last.trim_end()) {
+                    let trimmed = last.trim_end();
+                    if prompt
+                        .find_iter(trimmed)
+                        .any(|mat| mat.end() == trimmed.len())
+                    {
                         break;
                     }
                 }
@@ -681,6 +685,47 @@ rviews@route-server.ip.att.net> ";
             "show route aspath-regex \".* 273556 .*\" detail | display json",
         );
         assert_eq!(cleaned, "{\n    \"route-information\": []\n}");
+    }
+
+    #[test]
+    fn junos_ping6_arrow_line_does_not_falsely_terminate_or_get_stripped() {
+        let prompt = Regex::new(r"[\w\.\-]+[>#]").unwrap();
+        let ping6_line = "PING6(56=40+8+8 bytes) 2001:db8::1 --> 2001:db8::2";
+        let is_prompt = prompt
+            .find_iter(ping6_line.trim_end())
+            .any(|mat| mat.end() == ping6_line.trim_end().len());
+        assert!(!is_prompt, "PING6 arrow line must NOT match as a prompt");
+
+        let actual_prompt = "rviews@route-server.ip.att.net> ";
+        let is_actual_prompt = prompt
+            .find_iter(actual_prompt.trim_end())
+            .any(|mat| mat.end() == actual_prompt.trim_end().len());
+        assert!(is_actual_prompt, "Actual Junos prompt MUST match");
+
+        let raw = "\
+ping 2001:db8::2 count 2 no-resolve
+PING6(56=40+8+8 bytes) 2001:db8::1 --> 2001:db8::2
+16 bytes from 2001:db8::2, icmp_seq=0 hlim=117 time=3.953 ms
+16 bytes from 2001:db8::2, icmp_seq=1 hlim=117 time=3.903 ms
+
+--- 2001:db8::2 ping6 statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max/std-dev = 3.903/3.928/3.953/0.025 ms
+rviews@route-server.ip.att.net> ";
+
+        let cleaned = strip_echo(raw, "ping 2001:db8::2 count 2 no-resolve");
+        assert!(
+            cleaned.contains("PING6(56=40+8+8 bytes) 2001:db8::1 --> 2001:db8::2"),
+            "got cleaned:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("2 packets transmitted, 2 packets received, 0% packet loss"),
+            "got cleaned:\n{cleaned}"
+        );
+        assert!(
+            !cleaned.contains("rviews@route-server.ip.att.net"),
+            "prompt must be stripped:\n{cleaned}"
+        );
     }
 
     /// Default policy enforces pinned keys or explicit allow_insecure_host_key opt-in.

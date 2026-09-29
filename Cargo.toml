@@ -5,7 +5,7 @@ resolver = "2"
 members = ["crates/looking-glass-core", "crates/nogglass-server"]
 
 [workspace.package]
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 # LazyLock (core) requires 1.80; CI pins the exact toolchain.
 rust-version = "1.80"

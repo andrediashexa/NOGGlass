@@ -556,6 +556,62 @@ mod tests {
     }
 
     #[test]
+    fn renders_juniper_junos_commands_correctly() {
+        let catalogue = &*BUILTIN;
+        let limits = QueryLimits::default();
+
+        assert_eq!(
+            catalogue
+                .ping(
+                    "juniper_junos",
+                    "198.51.100.1".parse().unwrap(),
+                    &limits,
+                    None
+                )
+                .unwrap(),
+            "ping 198.51.100.1 count 5 no-resolve"
+        );
+        assert_eq!(
+            catalogue
+                .ping(
+                    "juniper_junos",
+                    "2001:db8::2".parse().unwrap(),
+                    &limits,
+                    None
+                )
+                .unwrap(),
+            "ping inet6 2001:db8::2 count 5 no-resolve"
+        );
+        assert_eq!(
+            catalogue
+                .ping(
+                    "juniper_junos",
+                    "2001:db8::2".parse().unwrap(),
+                    &limits,
+                    Some("2001:db8::1".parse().unwrap())
+                )
+                .unwrap(),
+            "ping inet6 2001:db8::2 source 2001:db8::1 count 5 no-resolve"
+        );
+        assert_eq!(
+            catalogue
+                .traceroute("juniper_junos", "2001:db8::2".parse().unwrap(), None)
+                .unwrap(),
+            "traceroute inet6 2001:db8::2 no-resolve"
+        );
+        assert_eq!(
+            catalogue
+                .traceroute(
+                    "juniper_junos",
+                    "2001:db8::2".parse().unwrap(),
+                    Some("2001:db8::1".parse().unwrap())
+                )
+                .unwrap(),
+            "traceroute inet6 2001:db8::2 source 2001:db8::1 no-resolve"
+        );
+    }
+
+    #[test]
     fn every_template_renders_without_leftover_placeholders() {
         let catalogue = &*BUILTIN;
         let limits = QueryLimits::default();

@@ -1316,4 +1316,24 @@ mod tests {
             "must not expose machine JSON"
         );
     }
+
+    #[test]
+    fn parses_junos_ipv6_ping() {
+        let raw = "\
+PING6(56=40+8+8 bytes) 2001:db8::1 --> 2001:db8::2
+16 bytes from 2001:db8::2, icmp_seq=0 hlim=117 time=3.953 ms
+16 bytes from 2001:db8::2, icmp_seq=1 hlim=117 time=3.903 ms
+
+--- 2001:db8::2 ping6 statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max/std-dev = 3.903/3.928/3.953/0.025 ms";
+
+        let result = JuniperDriver.parse_ping(raw).expect("must parse ping6");
+        assert_eq!(result.packets_sent, 2);
+        assert_eq!(result.packets_received, 2);
+        assert_eq!(result.packet_loss_percent, 0.0);
+        assert_eq!(result.min_rtt_ms, Some(3.903));
+        assert_eq!(result.avg_rtt_ms, Some(3.928));
+        assert_eq!(result.max_rtt_ms, Some(3.953));
+    }
 }
