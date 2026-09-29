@@ -2,6 +2,13 @@
 
 ## [1.1.1](https://github.com/andrediashexa/NOGGlass/compare/v1.1.0...v1.1.1) (2026-09-29)
 
+
+### Bug Fixes
+
+* **ssh:** require prompt match at line termination and release v1.1.1 ([9bba940](https://github.com/andrediashexa/NOGGlass/commit/9bba940077aa9b4141ca7aad1e788a22ee42378f))
+
+## [1.1.1](https://github.com/andrediashexa/NOGGlass/compare/v1.1.0...v1.1.1) (2026-09-29)
+
 ### Bug Fixes
 
 * **ssh:** require router prompt regex to terminate at the end of the line, preventing inline arrows such as BSD/Junos `PING6` (`-->`) from prematurely cutting off command output
