@@ -55,7 +55,9 @@ echo "Checking $ROUTER through $API"
 # --- Sessions ---------------------------------------------------------------
 echo
 echo "bgp_summary"
-summary="$(query bgp_summary "$TARGET_V4")"
+# No target: bgp_summary describes every session and takes none, which is what
+# the interface sends. Passing a target here once masked that path (#211/#212).
+summary="$(query bgp_summary "")"
 
 read -r sessions zero_as established down <<<"$(
   printf '%s' "$summary" | python3 -c '
