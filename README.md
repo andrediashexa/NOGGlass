@@ -180,9 +180,9 @@ Comprehensive project documentation is maintained in English under [`docs/`](doc
 
 ## Authors and Maintainers
 
-NOGGlass is designed and maintained by:
+NOGGlass was **idealized and created by Marcelo Gondim da Cunha**, who invited **André Dias** to develop it with him. It is designed and maintained by both:
 
-- **Marcelo Gondim da Cunha** ([@gondimcodes](https://github.com/gondimcodes)) — Systems & Network Architect, Core Developer ([gondim@ispfocus.net.br](mailto:gondim@ispfocus.net.br))
+- **Marcelo Gondim da Cunha** ([@gondimcodes](https://github.com/gondimcodes)) — Originator & Idealizer, Systems & Network Architect, Core Developer ([gondim@ispfocus.net.br](mailto:gondim@ispfocus.net.br))
 - **André Dias** ([@andrediashexa](https://github.com/andrediashexa)) — Software Engineer, Core Developer ([andreluizroddias@gmail.com](mailto:andreluizroddias@gmail.com))
 
 ---
