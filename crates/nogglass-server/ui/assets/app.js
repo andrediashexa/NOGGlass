@@ -50,8 +50,7 @@ function applyTranslations() {
   for (const node of document.querySelectorAll("[data-i18n]")) {
     node.textContent = t(node.dataset.i18n);
   }
-  const target = document.getElementById("target");
-  target.placeholder = t("form.target.placeholder");
+  updatePlaceholder();
   document.title = `${t("app.name")} — ${t("app.tagline")}`;
   for (const link of document.querySelectorAll("[data-locale-link]")) {
     link.setAttribute(
@@ -128,12 +127,16 @@ function updatePlaceholder() {
   const queryType = document.getElementById("query-type")?.value;
   const target = document.getElementById("target");
   if (!target) return;
-  if (queryType === "bgp_aspath" || queryType === "bgp_aspath_v6") {
+  const isSummary = queryType === "bgp_summary";
+  target.required = !isSummary;
+  target.disabled = isSummary;
+  if (isSummary) {
+    target.value = "";
+    target.placeholder = t("form.target.not_required");
+  } else if (queryType === "bgp_aspath" || queryType === "bgp_aspath_v6") {
     target.placeholder = "AS65500 ou 65500";
   } else if (queryType === "bgp_route") {
     target.placeholder = "198.51.100.0/24 ou 2001:db8::1";
-  } else if (queryType === "bgp_summary") {
-    target.placeholder = "";
   } else {
     target.placeholder = t("form.target.placeholder");
   }
@@ -196,7 +199,9 @@ function onClear(event) {
   const targetInput = document.getElementById("target");
   if (targetInput) {
     targetInput.value = "";
-    targetInput.focus();
+    if (!targetInput.disabled) {
+      targetInput.focus();
+    }
   }
   const errorBox = document.getElementById("error");
   if (errorBox) {
@@ -244,8 +249,9 @@ function rememberInUrl(payload) {
  */
 function applyQueryFromUrl() {
   const params = new URLSearchParams(window.location.search);
-  const target = params.get("target");
-  if (!target) return false;
+  const type = params.get("type");
+  const target = params.get("target") || "";
+  if (!target && type !== "bgp_summary") return false;
 
   const routerField = document.getElementById("router");
   const wanted = params.get("router");
@@ -255,9 +261,9 @@ function applyQueryFromUrl() {
   }
 
   const queryField = document.getElementById("query-type");
-  const type = params.get("type");
   if (type && [...queryField.options].some((option) => option.value === type)) {
     queryField.value = type;
+    updatePlaceholder();
   }
 
   document.getElementById("target").value = target;

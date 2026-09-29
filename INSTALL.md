@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-NOGGlass can be compiled natively with Cargo (`cargo build --release`), built as a minimal Alpine container via Docker (`docker build -t nogglass .`), or deployed directly using Docker Compose (`docker compose up -d`). Runtime configuration is loaded from a TOML file (`nogglass.toml`) with sensitive credentials passed exclusively through environment variables. For the full production deployment guide, see [`docs/operations/deployment.md`](docs/operations/deployment.md).
+NOGGlass can be compiled natively with Cargo (`cargo build --release`), built as a minimal Alpine container via Docker (`docker build -t nogglass .`), or deployed directly using Docker Compose (`docker compose up -d`). Runtime configuration is loaded modularly from `/etc/nogglass/nogglass.conf` alongside companion files `routers.conf` and `ui.conf`, with sensitive credentials passed exclusively through environment variables. For the full production deployment guide, see [`docs/operations/deployment.md`](docs/operations/deployment.md).
 
 ## Overview
 
@@ -16,7 +16,7 @@ flowchart TD
     end
 
     subgraph Runtime [Execution & Configuration]
-        cfg[Config: nogglass.toml] --> proc[NOGGlass Process]
+        cfg["Config: nogglass.conf<br/>routers.conf · ui.conf"] --> proc[NOGGlass Process]
         env[Env Secrets: NOGGLASS_*_PASSWORD] --> proc
         bin --> proc
         img -->|docker compose| proc
@@ -100,11 +100,14 @@ docker build -t nogglass:latest .
 
 The final container image is approximately 25–30 MB, runs under non-root user `nogglass` (UID 10001), and has zero compilation toolchains in the runtime layer.
 
----
+---## 3. Configuration Guide
 
-## 3. Configuration Guide
+NOGGlass loads its operational policies, router topology, and visual identity from modular configuration files under `/etc/nogglass/`. The configuration is split into three focused files:
+- **`nogglass.conf`**: Daemon limits, RPKI tier fallback, rate limiting, and global view. (Template: [`nogglass.example.conf`](./nogglass.example.conf))
+- **`routers.conf`**: Inventory of edge routers, credentials references, and allowed queries. (Template: [`routers.example.conf`](./routers.example.conf))
+- **`ui.conf`**: Theme (dark/light), custom branding logo, wallpaper, and panel visibility. (Template: [`ui.example.conf`](./ui.example.conf))
 
-NOGGlass loads its topology and operational limits from a TOML configuration file. A template is provided in [`nogglass.example.toml`](./nogglass.example.toml).
+NOGGlass automatically discovers companion files `routers.conf` and `ui.conf` residing in the same directory as `nogglass.conf`. Legacy single-file setups (`nogglass.toml`) remain fully supported for backward compatibility.
 
 ### 3.1. Filesystem Configuration Layout
 
@@ -120,35 +123,44 @@ sudo useradd -r -s /bin/false nogglass 2>/dev/null || true
 # 2. Create application directories
 sudo mkdir -p /etc/nogglass /var/log/nogglass
 
-# 3. Copy template, existing visual assets, and restrict permissions
-sudo cp nogglass.example.toml /etc/nogglass/nogglass.toml
-sudo cp crates/nogglass-server/ui/assets/logo_nogglass.png /etc/nogglass/logo_nogglass.png
-sudo cp crates/nogglass-server/ui/assets/nogglass.png /etc/nogglass/nogglass.png
+# 3. Copy modular configuration templates, visual assets, and restrict permissions
+sudo cp nogglass.example.conf /etc/nogglass/nogglass.conf
+sudo cp routers.example.conf /etc/nogglass/routers.conf
+sudo cp ui.example.conf /etc/nogglass/ui.conf
+sudo cp crates/nogglass-server/ui/assets/logo_nogglass_dark.png /etc/nogglass/logo_nogglass_dark.png
+sudo cp crates/nogglass-server/ui/assets/logo_nogglass_light.png /etc/nogglass/logo_nogglass_light.png
+sudo cp crates/nogglass-server/ui/assets/nogglass_dark.png /etc/nogglass/nogglass_dark.png
+sudo cp crates/nogglass-server/ui/assets/nogglass_light.png /etc/nogglass/nogglass_light.png
 sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
 sudo chmod 750 /etc/nogglass /var/log/nogglass
-sudo chmod 640 /etc/nogglass/nogglass.toml /etc/nogglass/logo_nogglass.png /etc/nogglass/nogglass.png
+sudo chmod 640 /etc/nogglass/*.conf /etc/nogglass/*.png
 ```
 
 #### Setup for Container Installation (Docker / Method 2)
-When running via Docker Compose, no system user on the host is needed. Configuration (`nogglass.toml`), credentials (`nogglass.env`), and visual assets are stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and container rebuilds:
+When running via Docker Compose, no system user on the host is needed. Configuration files (`nogglass.conf`, `routers.conf`, `ui.conf`), credentials (`nogglass.env`), and visual assets are stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and container rebuilds:
 
 ```bash
 # 1. Start the container to initialize the named volume
 docker compose up -d nogglass
 
-# 2. Copy configuration template, environment file, and visual assets into the volume
-docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
+# 2. Copy modular templates, environment file, and visual assets into the volume
+docker cp nogglass.example.conf nogglass:/etc/nogglass/nogglass.conf
+docker cp routers.example.conf nogglass:/etc/nogglass/routers.conf
+docker cp ui.example.conf nogglass:/etc/nogglass/ui.conf
 docker cp deploy/systemd/nogglass.env.example nogglass:/etc/nogglass/nogglass.env
-docker cp crates/nogglass-server/ui/assets/logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
-docker cp crates/nogglass-server/ui/assets/nogglass.png nogglass:/etc/nogglass/nogglass.png
+docker cp crates/nogglass-server/ui/assets/logo_nogglass_dark.png nogglass:/etc/nogglass/logo_nogglass_dark.png
+docker cp crates/nogglass-server/ui/assets/logo_nogglass_light.png nogglass:/etc/nogglass/logo_nogglass_light.png
+docker cp crates/nogglass-server/ui/assets/nogglass_dark.png nogglass:/etc/nogglass/nogglass_dark.png
+docker cp crates/nogglass-server/ui/assets/nogglass_light.png nogglass:/etc/nogglass/nogglass_light.png
 
 # 3. Restart the container to apply configuration
 docker compose restart nogglass
 ```
 
 
-### 3.2. Configuration File Anatomy (`nogglass.toml`)
+### 3.2. Configuration Files Anatomy
 
+#### Primary Daemon Policies (`nogglass.conf`)
 ```toml
 [limits]
 timeout_secs = 30
@@ -157,6 +169,28 @@ ping_count = 5
 max_concurrent_per_router = 2
 max_concurrent_total = 16
 
+[rpki]
+enable_fallback = false
+# validator_url = "http://routinator.internal:8323"
+timeout_ms = 3000
+cache_ttl_secs = 3600
+cache_max_capacity = 50000
+
+[rate_limit]
+enabled = true
+max_requests = 20
+window_secs = 60
+burst = 5
+require_captcha_within_secs = 60
+trusted_proxies = ["127.0.0.1", "::1"]
+
+[global_view]
+enabled = false
+timeout_ms = 1500
+```
+
+#### Router Inventory (`routers.conf`)
+```toml
 # Example Huawei VRP Router
 [[router]]
 id = "edge-01"
@@ -185,27 +219,20 @@ name = "Mock Router (Fixtures)"
 vendor = "mock"
 host = "127.0.0.1"
 location = "Lab Demo"
+```
 
-[rpki]
-enable_fallback = false
-# validator_url = "http://routinator.internal:8323"
-timeout_ms = 3000
-cache_ttl_secs = 3600
-cache_max_capacity = 50000
-
-[ratelimit]
-enabled = true
-requests_per_minute = 10
-burst = 5
-trusted_proxies = ["127.0.0.1", "::1"]
-
+#### User Interface & Appearance (`ui.conf`)
+```toml
 [ui]
 theme = "dark" # or "light"
-logo_path = "/etc/nogglass/logo_nogglass.png"
+logo_path = "/etc/nogglass/logo_nogglass_dark.png"
 logo_height_px = 76
-background_path = "/etc/nogglass/nogglass.png"
+background_path = "/etc/nogglass/nogglass_dark.png"
 background_blur_px = 1
 background_opacity_percent = 35
+show_best_path = true
+show_paths = true
+show_raw_output = true
 ```
 
 ### 3.3. Supported Vendor Identifiers
@@ -240,18 +267,22 @@ background_opacity_percent = 35
    ```bash
    sudo useradd -r -s /bin/false nogglass 2>/dev/null || true
    sudo mkdir -p /etc/nogglass /var/log/nogglass
-   sudo cp nogglass.example.toml /etc/nogglass/nogglass.toml
-   sudo cp crates/nogglass-server/ui/assets/logo_nogglass.png /etc/nogglass/logo_nogglass.png
-   sudo cp crates/nogglass-server/ui/assets/nogglass.png /etc/nogglass/nogglass.png
+   sudo cp nogglass.example.conf /etc/nogglass/nogglass.conf
+   sudo cp routers.example.conf /etc/nogglass/routers.conf
+   sudo cp ui.example.conf /etc/nogglass/ui.conf
+   sudo cp crates/nogglass-server/ui/assets/logo_nogglass_dark.png /etc/nogglass/logo_nogglass_dark.png
+   sudo cp crates/nogglass-server/ui/assets/logo_nogglass_light.png /etc/nogglass/logo_nogglass_light.png
+   sudo cp crates/nogglass-server/ui/assets/nogglass_dark.png /etc/nogglass/nogglass_dark.png
+   sudo cp crates/nogglass-server/ui/assets/nogglass_light.png /etc/nogglass/nogglass_light.png
    sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
    sudo chmod 750 /etc/nogglass /var/log/nogglass
-   sudo chmod 640 /etc/nogglass/nogglass.toml /etc/nogglass/logo_nogglass.png /etc/nogglass/nogglass.png
+   sudo chmod 640 /etc/nogglass/*.conf /etc/nogglass/*.png
    ```
 
 3. Create the environment file `/etc/nogglass/nogglass.env` (permissions `0600`):
    ```bash
    sudo bash -c 'cat <<EOF > /etc/nogglass/nogglass.env
-   NOGGLASS_CONFIG=/etc/nogglass/nogglass.toml
+   NOGGLASS_CONFIG=/etc/nogglass/nogglass.conf
    # Use 0.0.0.0:8080 for public access or 127.0.0.1:8080 when behind a local reverse proxy
    NOGGLASS_HTTP_ADDR=0.0.0.0:8080
    NOGGLASS_EDGE01_PASSWORD="REPLACE_WITH_ROUTER_PASSWORD"
@@ -336,10 +367,14 @@ Running with Docker Compose stores all configuration, credentials, and visual as
    docker compose up -d nogglass
 
    # 2. Populate the named volume (/etc/nogglass) inside the container
-   docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
+   docker cp nogglass.example.conf nogglass:/etc/nogglass/nogglass.conf
+   docker cp routers.example.conf nogglass:/etc/nogglass/routers.conf
+   docker cp ui.example.conf nogglass:/etc/nogglass/ui.conf
    docker cp nogglass.env nogglass:/etc/nogglass/nogglass.env
-   docker cp crates/nogglass-server/ui/assets/logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
-   docker cp crates/nogglass-server/ui/assets/nogglass.png nogglass:/etc/nogglass/nogglass.png
+   docker cp crates/nogglass-server/ui/assets/logo_nogglass_dark.png nogglass:/etc/nogglass/logo_nogglass_dark.png
+   docker cp crates/nogglass-server/ui/assets/logo_nogglass_light.png nogglass:/etc/nogglass/logo_nogglass_light.png
+   docker cp crates/nogglass-server/ui/assets/nogglass_dark.png nogglass:/etc/nogglass/nogglass_dark.png
+   docker cp crates/nogglass-server/ui/assets/nogglass_light.png nogglass:/etc/nogglass/nogglass_light.png
 
    # 3. Recreate the container to reload configuration and credentials
    docker compose up -d --force-recreate nogglass
@@ -347,7 +382,7 @@ Running with Docker Compose stores all configuration, credentials, and visual as
    ```
 
    > [!TIP]
-   > Because `/etc/nogglass` is a Docker named volume, you can edit `nogglass.toml` or `nogglass.env` locally and push updates with `docker cp`, or edit them directly on the Linux host filesystem at `/var/lib/docker/volumes/nogglass-config/_data/`.
+   > Because `/etc/nogglass` is a Docker named volume, you can edit `nogglass.conf`, `routers.conf`, `ui.conf`, or `nogglass.env` locally and push updates with `docker cp`, or edit them directly on the Linux host filesystem at `/var/lib/docker/volumes/nogglass-config/_data/`.
 
 
 ---

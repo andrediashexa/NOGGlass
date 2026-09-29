@@ -105,6 +105,28 @@ impl VersionInfo {
 }
 
 pub fn routes(state: AppState) -> AxumRouter {
+    let used_captchas_bg = state.used_captchas.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            if let Ok(mut used) = used_captchas_bg.lock() {
+                used.retain(|token| {
+                    token
+                        .split(':')
+                        .nth(1)
+                        .and_then(|t| t.parse::<i64>().ok())
+                        .map(|ts| now - ts < 300)
+                        .unwrap_or(false)
+                });
+            }
+        }
+    });
+
     AxumRouter::new()
         .route("/api/health", get(health))
         .route("/healthz", get(health))
@@ -333,7 +355,7 @@ fn verify_request_captcha(
                 300,
             ) {
                 // Prune expired entries if the cache grows large
-                if used.len() >= 10_000 {
+                if used.len() >= 1_000 {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs() as i64)
@@ -392,7 +414,7 @@ async fn run_query(
             tracing::warn!(
                 router = %request.router,
                 target = %request.target,
-                error = %err,
+                error = ?err,
                 "query execution failed"
             );
             return Err(err.into());

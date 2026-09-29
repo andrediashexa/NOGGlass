@@ -36,6 +36,10 @@ AS number is from a documentation range and safe to publish.
 | `09-ipv6-sem-roa.png` | IPv6 with no ROA — the third RPKI state |
 | `10-english.png` | The same screen in English |
 | `11-espanol.png` | The same screen in Spanish |
+| `nogglass1.png` | High-res initial query screen in Clean Light Mode (sanitized RFC 1918 / RFC 6996) |
+| `nogglass2.png` | High-res BGP route query with Bellman-Ford DAG graph in Clean Light Mode |
+| `nogglass3.png` | High-res initial query screen in Dark NOC Mode (sanitized RFC 1918 / RFC 6996) |
+| `nogglass4.png` | High-res BGP route query with Bellman-Ford DAG graph in Dark NOC Mode |
 
 ## Re-capturing
 

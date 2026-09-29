@@ -8,6 +8,7 @@
 //! Locale routing follows ADR-0004: `/pt`, `/en` and `/es`, with a request that
 //! carries no locale redirected by `Accept-Language`.
 
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -38,9 +39,9 @@ pub struct UiState {
     pub show_best_path: bool,
     pub show_paths: bool,
     pub show_raw_output: bool,
-    pub logo_bytes: Arc<Vec<u8>>,
+    pub logo_bytes: Bytes,
     pub logo_content_type: HeaderValue,
-    pub bg_bytes: Arc<Vec<u8>>,
+    pub bg_bytes: Bytes,
     pub bg_content_type: HeaderValue,
 }
 
@@ -56,7 +57,7 @@ impl UiState {
                         mime = ?mime.to_str().unwrap_or(""),
                         "loaded custom logo"
                     );
-                    (Arc::new(data), mime)
+                    (Bytes::from(data), mime)
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     tracing::info!(
@@ -64,7 +65,7 @@ impl UiState {
                         "custom logo file not found; falling back to built-in logo"
                     );
                     (
-                        Arc::new(LOGO_NOGGLASS_PNG.to_vec()),
+                        Bytes::from_static(LOGO_NOGGLASS_PNG),
                         HeaderValue::from_static("image/png"),
                     )
                 }
@@ -72,7 +73,7 @@ impl UiState {
             }
         } else {
             (
-                Arc::new(LOGO_NOGGLASS_PNG.to_vec()),
+                Bytes::from_static(LOGO_NOGGLASS_PNG),
                 HeaderValue::from_static("image/png"),
             )
         };
@@ -87,7 +88,7 @@ impl UiState {
                         mime = ?mime.to_str().unwrap_or(""),
                         "loaded custom background"
                     );
-                    (Arc::new(data), mime)
+                    (Bytes::from(data), mime)
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     tracing::info!(
@@ -95,7 +96,7 @@ impl UiState {
                         "custom background file not found; falling back to built-in wallpaper"
                     );
                     (
-                        Arc::new(NOGGLASS_PNG.to_vec()),
+                        Bytes::from_static(NOGGLASS_PNG),
                         HeaderValue::from_static("image/png"),
                     )
                 }
@@ -103,7 +104,7 @@ impl UiState {
             }
         } else {
             (
-                Arc::new(NOGGLASS_PNG.to_vec()),
+                Bytes::from_static(NOGGLASS_PNG),
                 HeaderValue::from_static("image/png"),
             )
         };
@@ -295,7 +296,7 @@ async fn bg_png(State(ui): State<Arc<UiState>>) -> impl IntoResponse {
                 ),
             ),
         ],
-        (*ui.bg_bytes).clone(),
+        ui.bg_bytes.clone(),
     )
 }
 
@@ -310,7 +311,7 @@ async fn logo_png(State(ui): State<Arc<UiState>>) -> impl IntoResponse {
                 ),
             ),
         ],
-        (*ui.logo_bytes).clone(),
+        ui.logo_bytes.clone(),
     )
 }
 
@@ -416,8 +417,8 @@ mod tests {
         assert_eq!(state.background_opacity_percent, 35);
         assert_eq!(state.logo_content_type, "image/png");
         assert_eq!(state.bg_content_type, "image/png");
-        assert_eq!(state.logo_bytes.as_slice(), LOGO_NOGGLASS_PNG);
-        assert_eq!(state.bg_bytes.as_slice(), NOGGLASS_PNG);
+        assert_eq!(state.logo_bytes.as_ref(), LOGO_NOGGLASS_PNG);
+        assert_eq!(state.bg_bytes.as_ref(), NOGGLASS_PNG);
     }
 
     #[test]
@@ -428,8 +429,8 @@ mod tests {
             ..Default::default()
         };
         let state = UiState::from_settings(&settings).unwrap();
-        assert_eq!(state.logo_bytes.as_slice(), LOGO_NOGGLASS_PNG);
-        assert_eq!(state.bg_bytes.as_slice(), NOGGLASS_PNG);
+        assert_eq!(state.logo_bytes.as_ref(), LOGO_NOGGLASS_PNG);
+        assert_eq!(state.bg_bytes.as_ref(), NOGGLASS_PNG);
     }
 
     #[test]
@@ -444,7 +445,7 @@ mod tests {
         };
         let state = UiState::from_settings(&settings).unwrap();
         assert_eq!(state.logo_content_type, "image/svg+xml");
-        assert_eq!(state.logo_bytes.as_slice(), b"<svg>custom logo</svg>");
+        assert_eq!(state.logo_bytes.as_ref(), b"<svg>custom logo</svg>");
 
         let _ = std::fs::remove_file(&custom_logo);
     }

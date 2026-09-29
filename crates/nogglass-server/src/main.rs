@@ -21,7 +21,8 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 /// Where the inventory lives unless the operator says otherwise.
-const DEFAULT_CONFIG: &str = "/etc/nogglass/nogglass.toml";
+const DEFAULT_CONFIG: &str = "/etc/nogglass/nogglass.conf";
+const LEGACY_CONFIG: &str = "/etc/nogglass/nogglass.toml";
 
 /// Unprivileged by default (ADR-0012): binding 80 or 443 needs a capability or
 /// a proxy, and the deployment guide covers both.
@@ -114,8 +115,15 @@ async fn run() -> Result<(), String> {
         "starting NOGGlass"
     );
 
-    let config_path =
-        std::env::var("NOGGLASS_CONFIG").unwrap_or_else(|_| DEFAULT_CONFIG.to_string());
+    let config_path = std::env::var("NOGGLASS_CONFIG").unwrap_or_else(|_| {
+        if std::path::Path::new(DEFAULT_CONFIG).exists() {
+            DEFAULT_CONFIG.to_string()
+        } else if std::path::Path::new(LEGACY_CONFIG).exists() {
+            LEGACY_CONFIG.to_string()
+        } else {
+            DEFAULT_CONFIG.to_string()
+        }
+    });
     let inventory = Inventory::load(&config_path)
         .map_err(|e| format!("{e}\nNOGGlass will not start with an inventory it cannot use."))?;
 
@@ -160,23 +168,32 @@ async fn run() -> Result<(), String> {
         .filter(|r| r.host_key.is_some())
         .count();
     let total_count = inventory.routers.len();
+    let unpinned_without_opt_in: Vec<_> = inventory
+        .routers
+        .iter()
+        .filter(|r| !r.is_mock() && r.host_key.is_none() && !r.allow_insecure_host_key)
+        .map(|r| r.id.as_str())
+        .collect();
+
     if pinned_count == total_count && total_count > 0 {
         info!("All {total_count} routers have pinned SSH host keys");
     } else if pinned_count > 0 {
-        info!(
-            "{pinned_count} of {total_count} routers have pinned SSH host keys; unpinned routers connect with AcceptAny"
-        );
-    } else {
+        info!("{pinned_count} of {total_count} routers have pinned SSH host keys");
+    }
+
+    if !unpinned_without_opt_in.is_empty() {
         warn!(
-            "running with SSH HostKeyPolicy::AcceptAny — no router host keys configured in nogglass.toml. \
-             In production, set 'host_key' for routers to prevent Man-in-the-Middle attacks."
+            "Routers [{}] do not have pinned SSH host keys or allow_insecure_host_key = true. \
+             Connections to these routers will be rejected to prevent Man-in-the-Middle attacks. \
+             Configure 'host_key' or set 'allow_insecure_host_key = true' in routers.conf.",
+            unpinned_without_opt_in.join(", ")
         );
     }
 
     let transport: Arc<dyn Transport> = Arc::new(SshTransport::new(
         Duration::from_secs(15),
         Duration::from_secs(30),
-        HostKeyPolicy::AcceptAny,
+        HostKeyPolicy::EnforcePinned,
     ));
     let mut executor = Executor::new(inventory.clone(), Arc::new(BUILTIN.clone()), transport);
 
@@ -248,8 +265,21 @@ async fn run() -> Result<(), String> {
     ));
 
     let captcha_secret = match std::env::var("NOGGLASS_CAPTCHA_SECRET") {
-        Ok(s) => s,
-        Err(_) => {
+        Ok(s) if !s.trim().is_empty() => s,
+        _ => {
+            let is_prod = std::env::var("NOGGLASS_ENV").as_deref() == Ok("production")
+                || std::env::var("ENVIRONMENT").as_deref() == Ok("production")
+                || std::env::var("NOGGLASS_REQUIRE_CAPTCHA_SECRET")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+
+            if is_prod {
+                return Err(
+                    "NOGGLASS_CAPTCHA_SECRET is required in production deployments to support multiple replicas and persistent restarts. Set NOGGLASS_CAPTCHA_SECRET in the environment."
+                        .into(),
+                );
+            }
+
             warn!(
                 "NOGGLASS_CAPTCHA_SECRET not set; generated ephemeral in-memory secret. \
                  CAPTCHA tokens will not persist across restarts or multiple replicas. \

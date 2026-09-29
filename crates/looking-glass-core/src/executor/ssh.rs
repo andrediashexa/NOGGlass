@@ -28,13 +28,15 @@ use std::time::Duration;
 /// Trust on first use is not offered. A Looking Glass connects to routers the
 /// operator listed, repeatedly and unattended, so accepting an unknown key
 /// would hand a man in the middle every query and every credential.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum HostKeyPolicy {
+    /// Reject unpinned connections unless the router explicitly opts into allow_insecure_host_key.
+    #[default]
+    EnforcePinned,
     /// Accept only these keys, in OpenSSH `ssh-ed25519 AAAA...` form.
     Pinned(Arc<Vec<String>>),
     /// Accept any key. Laboratory only; the operator opts in explicitly and the
     /// deployment guide says why this is not for production.
-    #[default]
     AcceptAny,
 }
 
@@ -278,6 +280,10 @@ impl client::Handler for ClientHandler {
     ) -> Result<bool, Self::Error> {
         match &self.policy {
             HostKeyPolicy::AcceptAny => Ok(true),
+            HostKeyPolicy::EnforcePinned => {
+                tracing::error!("SSH host key verification failed: unpinned connection rejected by EnforcePinned policy");
+                Ok(false)
+            }
             HostKeyPolicy::Pinned(allowed) => {
                 let offered = match key {
                     russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => {
@@ -322,13 +328,22 @@ impl Transport for SshTransport {
         let policy = match &router.host_key {
             Some(key) => HostKeyPolicy::Pinned(Arc::new(vec![key.clone()])),
             None => {
-                if matches!(self.host_keys, HostKeyPolicy::AcceptAny) {
+                if router.allow_insecure_host_key || matches!(self.host_keys, HostKeyPolicy::AcceptAny) {
                     tracing::warn!(
                         router = %router.id,
-                        "connecting to router via SSH without host key verification (AcceptAny)"
+                        "connecting to router via SSH without host key verification (allow_insecure_host_key)"
                     );
+                    HostKeyPolicy::AcceptAny
+                } else {
+                    tracing::error!(
+                        router = %router.id,
+                        "router has no host_key configured and allow_insecure_host_key is false. Set allow_insecure_host_key = true in routers.conf or configure host_key"
+                    );
+                    return Err(DriverError::ConnectionFailed(format!(
+                        "router '{}' has no host_key configured. To allow unpinned connections, set allow_insecure_host_key = true in routers.conf",
+                        router.id
+                    )));
                 }
-                self.host_keys.clone()
             }
         };
         let handler = ClientHandler { policy };
@@ -666,11 +681,10 @@ rviews@route-server.ip.att.net> ";
         assert_eq!(cleaned, "{\n    \"route-information\": []\n}");
     }
 
-    /// Default policy is documented as laboratory-only; this test exists so
-    /// changing it is a deliberate act with a visible diff.
+    /// Default policy enforces pinned keys or explicit allow_insecure_host_key opt-in.
     #[test]
-    fn the_default_host_key_policy_is_accept_any() {
-        assert!(matches!(HostKeyPolicy::default(), HostKeyPolicy::AcceptAny));
+    fn the_default_host_key_policy_is_enforce_pinned() {
+        assert!(matches!(HostKeyPolicy::default(), HostKeyPolicy::EnforcePinned));
     }
 }
 
@@ -779,5 +793,31 @@ mod host_key_tests {
                 .any(|algorithm| matches!(algorithm, Algorithm::Dsa)),
             "ssh-dss must not be added, however convenient it would be"
         );
+    }
+
+    #[tokio::test]
+    async fn unpinned_router_without_allow_insecure_flag_is_refused() {
+        let router = Router {
+            id: "unpinned".to_string(),
+            name: "Unpinned Router".to_string(),
+            vendor: "huawei_vrp".to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 22,
+            username: Some("user".to_string()),
+            credentials: crate::inventory::Credentials::None,
+            location: None,
+            queries: vec![],
+            max_concurrent: None,
+            host_key: None,
+            allow_insecure_host_key: false,
+        };
+        let transport = SshTransport::default();
+        let res = transport.run(&router, "display version", None).await;
+        match res {
+            Err(DriverError::ConnectionFailed(msg)) => {
+                assert!(msg.contains("no host_key configured"));
+            }
+            other => panic!("expected ConnectionFailed error, got {other:?}"),
+        }
     }
 }

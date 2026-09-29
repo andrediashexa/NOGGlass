@@ -35,6 +35,7 @@
   "form.running": "Running…",
   "form.submit": "Run",
   "form.target": "Target",
+  "form.target.not_required": "(not required)",
   "form.target.placeholder": "198.51.100.0/24, 2001:db8::1 or AS65500",
   "global.agrees": "The Internet sees the same origin AS.",
   "global.mismatch": "The Internet sees a different origin AS. This is what a hijack or a leak looks like.",

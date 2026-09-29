@@ -2,7 +2,7 @@
 
 A multi-vendor, production-hardened, self-hosted Looking Glass for Autonomous Systems (ASNs), Internet Service Providers (ISPs), and network operators.
 
-> The repository is named `looking-glass`; the official software product is **NOGGlass** ([ADR-0013](docs/adr/0013-product-name-and-branding.md)).
+> The repository and official software product is **NOGGlass** ([ADR-0013](docs/adr/0013-product-name-and-branding.md)).
 
 ---
 
@@ -11,6 +11,15 @@ A multi-vendor, production-hardened, self-hosted Looking Glass for Autonomous Sy
 NOGGlass allows visitors and NOC engineers to run read-only network diagnostics — `ping`, `traceroute`, BGP route lookup, and BGP session summary — against edge routers from an embedded web interface in Portuguese, English, or Spanish. BGP output is not dumped as plain text: it is parsed into a strongly typed data model, rendered as an interactive SVG topological AS-PATH graph using Bellman-Ford DAG ranking, enriched with Tiered RPKI validation, and paired with syntax highlighting for active FIB routes. It is free software licensed under the **GNU General Public License v3 (GPLv3)** and ships as a single, self-contained Rust binary or minimal Alpine Linux container.
 
 ![The BGP route view: an AS-PATH graph with topological DAG ranking, path table, and active route CLI highlighting](docs/design/screens/02-rota-bgp.png)
+
+### Interface Showcase
+
+NOGGlass features a responsive UI with both a high-contrast **Dark NOC Mode** (optimized for 24/7 network operations center video walls) and a **Clean Light Mode**:
+
+| Theme | Initial Query Console | Interactive BGP Route & Topological AS-PATH |
+| :---: | :---: | :---: |
+| **Dark NOC Mode** *(Default)* | [![Dark Console](docs/design/screens/nogglass3.png)](docs/design/screens/nogglass3.png) | [![Dark BGP Route View](docs/design/screens/nogglass4.png)](docs/design/screens/nogglass4.png) |
+| **Clean Light Mode** | [![Light Console](docs/design/screens/nogglass1.png)](docs/design/screens/nogglass1.png) | [![Light BGP Route View](docs/design/screens/nogglass2.png)](docs/design/screens/nogglass2.png) |
 
 ---
 
@@ -106,8 +115,10 @@ for the versions each was tested against and what each real device changed
 
 ```bash
 # Download production compose file and example configuration
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/nogglass.example.toml
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/nogglass.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/routers.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/ui.example.conf
 
 # Start the service (initializes default configuration and mock router)
 docker compose up -d
@@ -117,7 +128,7 @@ Open `http://localhost:8080/` in your browser. Out of the box, NOGGlass boots wi
 
 ### 2. Upgrading to Production Configuration
 
-Edit `nogglass.toml` to configure your production edge routers and credentials:
+Edit `routers.conf` (or `nogglass.conf`) to configure your production edge routers and credentials:
 
 ```toml
 [limits]

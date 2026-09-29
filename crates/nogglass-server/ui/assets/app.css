@@ -176,6 +176,10 @@ input:focus, select:focus, button:focus-visible {
   outline: 2px solid var(--accent-backup);
   outline-offset: 1px;
 }
+input:disabled, select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 button {
   font: 600 14px var(--font-sans);
   color: var(--btn-submit-text, #04110a);

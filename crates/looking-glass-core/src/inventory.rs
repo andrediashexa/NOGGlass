@@ -1,6 +1,6 @@
 //! The operator's router inventory.
 //!
-//! An operator describes their routers in `/etc/nogglass/nogglass.toml`: what
+//! An operator describes their routers in `/etc/nogglass/routers.conf`: what
 //! each one is called, which vendor it speaks, how to reach it, and which
 //! queries it may answer. The file is validated at startup and the process
 //! refuses to run with a broken one — a Looking Glass that starts with an
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::net::IpAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Default SSH port.
 const DEFAULT_SSH_PORT: u16 = 22;
@@ -139,6 +139,10 @@ pub struct Router {
     /// Pinned to prevent Man-in-the-Middle attacks on the management network.
     #[serde(default)]
     pub host_key: Option<String>,
+    /// Explicitly allow unverified host keys (AcceptAny) for lab or dev environments.
+    /// Defaults to false. If false and host_key is None, connection attempts are rejected.
+    #[serde(default)]
+    pub allow_insecure_host_key: bool,
 }
 
 fn default_port() -> u16 {
@@ -519,15 +523,93 @@ pub struct Inventory {
     pub routers: Vec<Router>,
 }
 
+#[derive(Debug, Deserialize)]
+struct RoutersFile {
+    #[serde(rename = "router", default)]
+    routers: Vec<Router>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UiFile {
+    #[serde(default)]
+    ui: Option<UiSettings>,
+}
+
 impl Inventory {
-    /// Reads and validates an inventory file.
+    /// Reads and validates an inventory file, automatically discovering companion
+    /// configuration files (`routers.conf` and `ui.conf`) in the same directory.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, InventoryError> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path).map_err(|e| InventoryError::Unreadable {
             path: path.display().to_string(),
             reason: e.to_string(),
         })?;
-        Self::from_toml(&source)
+        let mut inventory: Self = toml::from_str(&source)
+            .map_err(|e| InventoryError::Malformed(format!("{}: {e}", path.display())))?;
+
+        let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+
+        // 1. Look for companion routers configuration (routers.conf / routers.toml)
+        let routers_path = std::env::var("NOGGLASS_ROUTERS_CONFIG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let conf = base_dir.join("routers.conf");
+                if conf.exists() {
+                    conf
+                } else {
+                    base_dir.join("routers.toml")
+                }
+            });
+
+        if routers_path.exists() {
+            let routers_source =
+                std::fs::read_to_string(&routers_path).map_err(|e| InventoryError::Unreadable {
+                    path: routers_path.display().to_string(),
+                    reason: e.to_string(),
+                })?;
+            let parsed_file: RoutersFile = toml::from_str(&routers_source)
+                .map_err(|e| InventoryError::Malformed(format!("{}: {e}", routers_path.display())))?;
+            if !parsed_file.routers.is_empty() {
+                inventory.routers = parsed_file.routers;
+            }
+        }
+
+        // 2. Look for companion ui configuration (ui.conf / ui.toml)
+        let ui_path = std::env::var("NOGGLASS_UI_CONFIG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let conf = base_dir.join("ui.conf");
+                if conf.exists() {
+                    conf
+                } else {
+                    base_dir.join("ui.toml")
+                }
+            });
+
+        if ui_path.exists() {
+            let ui_source =
+                std::fs::read_to_string(&ui_path).map_err(|e| InventoryError::Unreadable {
+                    path: ui_path.display().to_string(),
+                    reason: e.to_string(),
+                })?;
+            let parsed_file: Result<UiFile, _> = toml::from_str(&ui_source);
+            match parsed_file {
+                Ok(file) if file.ui.is_some() => {
+                    inventory.ui = file.ui.unwrap();
+                }
+                _ => {
+                    // Fallback: try parsing directly as UiSettings if [ui] table header was omitted
+                    if let Ok(direct_ui) = toml::from_str::<UiSettings>(&ui_source) {
+                        inventory.ui = direct_ui;
+                    } else if let Err(e) = parsed_file {
+                        return Err(InventoryError::Malformed(format!("{}: {e}", ui_path.display())));
+                    }
+                }
+            }
+        }
+
+        inventory.validate(&crate::catalogue::BUILTIN)?;
+        Ok(inventory)
     }
 
     /// Parses and validates an inventory, without touching the environment.
@@ -833,16 +915,23 @@ host = "192.0.2.1"
     /// The file operators are told to copy has to load.
     #[test]
     fn the_shipped_example_is_a_valid_inventory() {
-        let example = include_str!("../../../nogglass.example.toml");
-        let inventory = Inventory::from_toml(example).expect("the example must load");
+        let conf = include_str!("../../../nogglass.example.conf");
+        let routers = include_str!("../../../routers.example.conf");
+        let ui = include_str!("../../../ui.example.conf");
+
+        assert!(
+            !routers.to_lowercase().contains("password = ")
+                && !conf.to_lowercase().contains("password = "),
+            "the example files must never contain a literal secret"
+        );
+
+        // Combined parsing test
+        let combined = format!("{conf}\n{routers}\n{ui}");
+        let inventory = Inventory::from_toml(&combined).expect("the combined examples must load");
         assert!(inventory.routers.len() >= 3);
         assert!(
             inventory.routers.iter().any(|r| r.is_mock()),
             "the example should show the mock router"
-        );
-        assert!(
-            !example.to_lowercase().contains("password = "),
-            "the example must never contain a literal secret"
         );
     }
 
@@ -938,5 +1027,42 @@ host = "192.0.2.1"
         let bad_logo = format!("{SAMPLE}\n[ui]\nlogo_height_px = 0\n");
         let err = Inventory::from_toml(&bad_logo).unwrap_err();
         assert!(matches!(err, InventoryError::Malformed(_)));
+    }
+
+    #[test]
+    fn loads_split_companion_configuration_files() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("nogglass_test_{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // 1. Base nogglass.conf (no routers, custom limit)
+        let main_conf = temp_dir.join("nogglass.conf");
+        std::fs::write(&main_conf, "[limits]\ntimeout_secs = 45\n").unwrap();
+
+        // 2. Companion routers.conf
+        let routers_conf = temp_dir.join("routers.conf");
+        std::fs::write(
+            &routers_conf,
+            "[[router]]\nid = \"split-demo\"\nname = \"Split Demo\"\nvendor = \"mock\"\nhost = \"127.0.0.1\"\n",
+        )
+        .unwrap();
+
+        // 3. Companion ui.conf
+        let ui_conf = temp_dir.join("ui.conf");
+        std::fs::write(
+            &ui_conf,
+            "[ui]\ntheme = \"light\"\nlogo_height_px = 88\nshow_best_path = false\n",
+        )
+        .unwrap();
+
+        let inventory = Inventory::load(&main_conf).unwrap();
+        assert_eq!(inventory.limits.timeout_secs, 45);
+        assert_eq!(inventory.routers.len(), 1);
+        assert_eq!(inventory.routers[0].id, "split-demo");
+        assert_eq!(inventory.ui.theme, Theme::Light);
+        assert_eq!(inventory.ui.logo_height_px, 88);
+        assert!(!inventory.ui.show_best_path);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

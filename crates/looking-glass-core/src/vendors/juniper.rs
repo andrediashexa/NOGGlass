@@ -1,69 +1,210 @@
 use crate::driver::{
-    parse_hop, parse_network, BgpPath, BgpRouteResult, BgpSummaryResult, Community, DriverError,
-    Origin, PingResult, RpkiStatus, RpkiValidation, TracerouteResult, VendorDriver,
+    parse_hop, parse_network, BgpPath, BgpPeerSummary, BgpRouteResult, BgpSummaryResult, Community,
+    DriverError, Origin, PingResult, RpkiStatus, RpkiValidation, TracerouteResult, VendorDriver,
 };
 use serde::Deserialize;
 
 pub struct JuniperDriver;
 
+fn deserialize_single_or_vec<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let opt: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match opt {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Array(arr)) => {
+            let mut list = Vec::with_capacity(arr.len());
+            for item in arr {
+                list.push(T::deserialize(item).map_err(serde::de::Error::custom)?);
+            }
+            Ok(Some(list))
+        }
+        Some(single) => {
+            let item = T::deserialize(single).map_err(serde::de::Error::custom)?;
+            Ok(Some(vec![item]))
+        }
+    }
+}
+
 #[derive(Deserialize, Debug)]
 struct JunosRouteInformation {
     #[serde(rename = "route-information")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     route_information: Option<Vec<JunosRouteTableContainer>>,
 }
 
 #[derive(Deserialize, Debug)]
 struct JunosRouteTableContainer {
     #[serde(rename = "route-table")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     route_table: Option<Vec<JunosRouteTable>>,
 }
 
 #[derive(Deserialize, Debug)]
 struct JunosRouteTable {
     #[serde(rename = "table-name")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     table_name: Option<Vec<JunosText>>,
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     rt: Option<Vec<JunosRt>>,
 }
 
 #[derive(Deserialize, Debug)]
 struct JunosRt {
     #[serde(rename = "rt-destination")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     rt_destination: Option<Vec<JunosText>>,
     #[serde(rename = "rt-prefix-length")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     rt_prefix_length: Option<Vec<JunosText>>,
     #[serde(rename = "rt-entry")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     rt_entry: Option<Vec<JunosRtEntry>>,
 }
 
 #[derive(Deserialize, Debug)]
 struct JunosRtEntry {
     #[serde(rename = "active-tag")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     active_tag: Option<Vec<JunosText>>,
     #[serde(rename = "protocol-name")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     protocol_name: Option<Vec<JunosText>>,
     #[serde(rename = "validation-state")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     validation_state: Option<Vec<JunosText>>,
     #[serde(rename = "as-path")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     as_path: Option<Vec<JunosText>>,
     #[serde(rename = "local-preference")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     local_preference: Option<Vec<JunosText>>,
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     metric: Option<Vec<JunosText>>,
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     metric2: Option<Vec<JunosText>>,
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     nh: Option<Vec<JunosNh>>,
     #[serde(rename = "protocol-nh")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     protocol_nh: Option<Vec<JunosNh>>,
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     gateway: Option<Vec<JunosText>>,
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     communities: Option<Vec<JunosCommunity>>,
 }
 
 #[derive(Deserialize, Debug)]
 struct JunosCommunity {
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     community: Option<Vec<JunosText>>,
 }
 
 #[derive(Deserialize, Debug)]
 struct JunosNh {
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     to: Option<Vec<JunosText>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct JunosBgpSummaryInformation {
+    #[serde(rename = "bgp-information")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    bgp_information: Option<Vec<JunosBgpInformation>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct JunosBgpInformation {
+    #[serde(rename = "group-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    group_count: Option<Vec<JunosText>>,
+    #[serde(rename = "peer-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    peer_count: Option<Vec<JunosText>>,
+    #[serde(rename = "down-peer-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    down_peer_count: Option<Vec<JunosText>>,
+    #[serde(rename = "bgp-rib")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    bgp_rib: Option<Vec<JunosSummaryRib>>,
+    #[serde(rename = "bgp-peer")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    bgp_peer: Option<Vec<JunosBgpPeer>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct JunosSummaryRib {
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    name: Option<Vec<JunosText>>,
+    #[serde(rename = "total-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    total_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "active-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    active_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "suppressed-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    suppressed_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "history-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    history_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "damped-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    damped_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "pending-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    pending_prefix_count: Option<Vec<JunosText>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct JunosBgpPeer {
+    #[serde(rename = "peer-address")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    peer_address: Option<Vec<JunosText>>,
+    #[serde(rename = "peer-as")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    peer_as: Option<Vec<JunosText>>,
+    #[serde(rename = "input-messages")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    input_messages: Option<Vec<JunosText>>,
+    #[serde(rename = "output-messages")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    output_messages: Option<Vec<JunosText>>,
+    #[serde(rename = "route-queue-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    route_queue_count: Option<Vec<JunosText>>,
+    #[serde(rename = "flap-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    flap_count: Option<Vec<JunosText>>,
+    #[serde(rename = "elapsed-time")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    elapsed_time: Option<Vec<JunosText>>,
+    #[serde(rename = "peer-state")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    peer_state: Option<Vec<JunosText>>,
+    #[serde(rename = "bgp-rib")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    bgp_rib: Option<Vec<JunosPeerRib>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct JunosPeerRib {
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    name: Option<Vec<JunosText>>,
+    #[serde(rename = "active-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    active_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "received-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    received_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "accepted-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    accepted_prefix_count: Option<Vec<JunosText>>,
+    #[serde(rename = "damped-prefix-count")]
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    damped_prefix_count: Option<Vec<JunosText>>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -177,7 +318,12 @@ impl VendorDriver for JuniperDriver {
                     error = %e,
                     "could not parse Junos JSON; returning empty routes with raw output preserved"
                 );
-                return Ok(BgpRouteResult::new(Vec::new(), raw));
+                let fallback = if raw.trim().contains('{') {
+                    "error: Pattern not found\n".to_string()
+                } else {
+                    raw.to_string()
+                };
+                return Ok(BgpRouteResult::new(Vec::new(), &fallback));
             }
         };
 
@@ -360,8 +506,124 @@ impl VendorDriver for JuniperDriver {
     }
 
     fn parse_bgp_summary(&self, raw: &str) -> Result<BgpSummaryResult, DriverError> {
-        // Shared reader: the tables differ in headers, not in what a row means.
-        Ok(crate::summary::parse(raw))
+        let trimmed = raw.trim();
+        if !trimmed.contains('{') {
+            return Ok(crate::summary::parse(raw));
+        }
+
+        let json_str = match (trimmed.find('{'), trimmed.rfind('}')) {
+            (Some(start), Some(end)) if start <= end => &trimmed[start..=end],
+            _ => return Ok(crate::summary::parse(raw)),
+        };
+
+        let parsed: JunosBgpSummaryInformation = match serde_json::from_str(json_str) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "could not parse Junos BGP summary JSON; falling back to text parser"
+                );
+                return Ok(crate::summary::parse(raw));
+            }
+        };
+
+        let mut peers = Vec::new();
+        if let Some(bgp_infos) = &parsed.bgp_information {
+            for info in bgp_infos {
+                if let Some(peer_list) = &info.bgp_peer {
+                    for p in peer_list {
+                        let peer_ip = p
+                            .peer_address
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .map(|s| s.split('+').next().unwrap_or(s))
+                            .unwrap_or("")
+                            .to_string();
+
+                        if peer_ip.is_empty() {
+                            continue;
+                        }
+
+                        let peer_as = p
+                            .peer_as
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .and_then(|s| s.parse::<u32>().ok())
+                            .unwrap_or(0);
+
+                        let raw_state = p
+                            .peer_state
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .unwrap_or("Idle");
+
+                        let uptime = p
+                            .elapsed_time
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .unwrap_or("")
+                            .to_string();
+
+                        let mut prefixes_received = 0;
+                        let mut prefixes_accepted = None;
+
+                        if let Some(ribs) = &p.bgp_rib {
+                            let mut total_rcv = 0;
+                            let mut total_acc = 0;
+                            let mut had_rib = false;
+                            for rib in ribs {
+                                if let Some(rcv) = rib
+                                    .received_prefix_count
+                                    .as_ref()
+                                    .and_then(|v| v.first())
+                                    .and_then(|t| t.data.as_deref())
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                {
+                                    total_rcv += rcv;
+                                    had_rib = true;
+                                }
+                                if let Some(acc) = rib
+                                    .accepted_prefix_count
+                                    .as_ref()
+                                    .and_then(|v| v.first())
+                                    .and_then(|t| t.data.as_deref())
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                {
+                                    total_acc += acc;
+                                    had_rib = true;
+                                }
+                            }
+                            if had_rib {
+                                prefixes_received = total_rcv;
+                                prefixes_accepted = Some(total_acc);
+                            }
+                        }
+
+                        peers.push(BgpPeerSummary {
+                            peer_ip,
+                            peer_as,
+                            state: raw_state.to_string(),
+                            uptime,
+                            prefixes_received,
+                            prefixes_accepted,
+                        });
+                    }
+                }
+            }
+        }
+
+        let formatted_raw = format_junos_summary_cli(&parsed, raw);
+
+        Ok(BgpSummaryResult {
+            router_id: None,
+            local_as: None,
+            peers,
+            raw_output: formatted_raw,
+        })
     }
 }
 
@@ -369,6 +631,9 @@ impl VendorDriver for JuniperDriver {
 /// avoiding exposing raw machine JSON in the router output box.
 fn format_junos_cli_output(parsed: &JunosRouteInformation, fallback_raw: &str) -> String {
     let Some(tables_container) = &parsed.route_information else {
+        if fallback_raw.trim().contains('{') {
+            return "error: Pattern not found\n".to_string();
+        }
         return fallback_raw.to_string();
     };
 
@@ -387,6 +652,9 @@ fn format_junos_cli_output(parsed: &JunosRouteInformation, fallback_raw: &str) -
                 .unwrap_or("inet.0");
 
             let Some(rts) = &table.rt else {
+                out.push_str(&format!(
+                    "{table_name}: 0 destinations, 0 routes (0 active, 0 holddown, 0 hidden)\n"
+                ));
                 continue;
             };
 
@@ -577,7 +845,210 @@ fn format_junos_cli_output(parsed: &JunosRouteInformation, fallback_raw: &str) -
     }
 
     if out.is_empty() {
-        fallback_raw.to_string()
+        if fallback_raw.trim().contains('{') {
+            "error: Pattern not found\n".to_string()
+        } else {
+            fallback_raw.to_string()
+        }
+    } else {
+        out
+    }
+}
+
+/// Formats Junos BGP summary JSON into standard human-readable Junos CLI text.
+fn format_junos_summary_cli(parsed: &JunosBgpSummaryInformation, fallback_raw: &str) -> String {
+    let Some(bgp_infos) = &parsed.bgp_information else {
+        if fallback_raw.trim().contains('{') {
+            return "Groups: 0 Peers: 0 Down peers: 0\n".to_string();
+        }
+        return fallback_raw.to_string();
+    };
+
+    let mut out = String::new();
+
+    for info in bgp_infos {
+        let group_count = info
+            .group_count
+            .as_ref()
+            .and_then(|v| v.first())
+            .and_then(|t| t.data.as_deref())
+            .unwrap_or("0");
+        let peer_count = info
+            .peer_count
+            .as_ref()
+            .and_then(|v| v.first())
+            .and_then(|t| t.data.as_deref())
+            .unwrap_or("0");
+        let down_peer_count = info
+            .down_peer_count
+            .as_ref()
+            .and_then(|v| v.first())
+            .and_then(|t| t.data.as_deref())
+            .unwrap_or("0");
+
+        out.push_str(&format!(
+            "Groups: {group_count} Peers: {peer_count} Down peers: {down_peer_count}\n"
+        ));
+
+        if let Some(ribs) = &info.bgp_rib {
+            out.push_str("Table          Tot Paths  Act Paths Suppressed    History Damp State Pending\n");
+            for rib in ribs {
+                let name = rib
+                    .name
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("inet.0");
+                let tot = rib
+                    .total_prefix_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let act = rib
+                    .active_prefix_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let supp = rib
+                    .suppressed_prefix_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let hist = rib
+                    .history_prefix_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let damp = rib
+                    .damped_prefix_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let pend = rib
+                    .pending_prefix_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                out.push_str(&format!(
+                    "{name:<14} {tot:>10} {act:>10} {supp:>10} {hist:>10} {damp:>10} {pend:>7}\n"
+                ));
+            }
+        }
+
+        out.push_str("Peer                     AS      InPkt     OutPkt    OutQ   Flaps Last Up/Dwn State|#Active/Received/Accepted/Damped...\n");
+
+        if let Some(peers) = &info.bgp_peer {
+            for peer in peers {
+                let addr = peer
+                    .peer_address
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("");
+                let as_num = peer
+                    .peer_as
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let in_pkt = peer
+                    .input_messages
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let out_pkt = peer
+                    .output_messages
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let out_q = peer
+                    .route_queue_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let flaps = peer
+                    .flap_count
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let uptime = peer
+                    .elapsed_time
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("0");
+                let state = peer
+                    .peer_state
+                    .as_ref()
+                    .and_then(|v| v.first())
+                    .and_then(|t| t.data.as_deref())
+                    .unwrap_or("Idle");
+
+                let state_str = if state.eq_ignore_ascii_case("Established") {
+                    "Establ"
+                } else {
+                    state
+                };
+
+                out.push_str(&format!(
+                    "{addr:<24} {as_num:<7} {in_pkt:>10} {out_pkt:>10} {out_q:>7} {flaps:>7} {uptime:>11} {state_str}\n"
+                ));
+
+                if let Some(ribs) = &peer.bgp_rib {
+                    for rib in ribs {
+                        let rib_name = rib
+                            .name
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .unwrap_or("inet.0");
+                        let act = rib
+                            .active_prefix_count
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .unwrap_or("0");
+                        let rcv = rib
+                            .received_prefix_count
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .unwrap_or("0");
+                        let acc = rib
+                            .accepted_prefix_count
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .unwrap_or("0");
+                        let damp = rib
+                            .damped_prefix_count
+                            .as_ref()
+                            .and_then(|v| v.first())
+                            .and_then(|t| t.data.as_deref())
+                            .unwrap_or("0");
+                        out.push_str(&format!("  {rib_name}: {act}/{rcv}/{acc}/{damp}\n"));
+                    }
+                }
+            }
+        }
+    }
+
+    if out.is_empty() {
+        if fallback_raw.trim().contains('{') {
+            "Groups: 0 Peers: 0 Down peers: 0\n".to_string()
+        } else {
+            fallback_raw.to_string()
+        }
     } else {
         out
     }
@@ -711,5 +1182,116 @@ mod tests {
             .parse_bgp_route("error: Pattern not found\n")
             .expect("must handle pattern not found without error");
         assert!(not_found_result.paths.is_empty());
+    }
+
+    #[test]
+    fn parses_junos_summary_json_and_formats_cli_output() {
+        let raw = r#"{
+            "bgp-information" : [
+            {
+                "group-count" : [{"data" : "1"}],
+                "peer-count" : [{"data" : "2"}],
+                "down-peer-count" : [{"data" : "0"}],
+                "bgp-rib" : [
+                {
+                    "name" : [{"data" : "inet.0"}],
+                    "total-prefix-count" : [{"data" : "100"}],
+                    "active-prefix-count" : [{"data" : "50"}],
+                    "suppressed-prefix-count" : [{"data" : "0"}],
+                    "history-prefix-count" : [{"data" : "0"}],
+                    "damped-prefix-count" : [{"data" : "0"}],
+                    "pending-prefix-count" : [{"data" : "0"}]
+                }
+                ],
+                "bgp-peer" : [
+                {
+                    "peer-address" : [{"data" : "12.122.83.238+179"}],
+                    "peer-as" : [{"data" : "7018"}],
+                    "input-messages" : [{"data" : "12345"}],
+                    "output-messages" : [{"data" : "12345"}],
+                    "route-queue-count" : [{"data" : "0"}],
+                    "flap-count" : [{"data" : "0"}],
+                    "elapsed-time" : [{"data" : "1w2d 3:04:05"}],
+                    "peer-state" : [{"data" : "Established"}],
+                    "bgp-rib" : [
+                    {
+                        "name" : [{"data" : "inet.0"}],
+                        "active-prefix-count" : [{"data" : "50"}],
+                        "received-prefix-count" : [{"data" : "100"}],
+                        "accepted-prefix-count" : [{"data" : "100"}],
+                        "suppressed-prefix-count" : [{"data" : "0"}]
+                    }
+                    ]
+                }
+                ]
+            }
+            ]
+        }"#;
+
+        let result = JuniperDriver
+            .parse_bgp_summary(raw)
+            .expect("must parse Junos BGP summary JSON");
+
+        assert_eq!(result.peers.len(), 1);
+        let peer = &result.peers[0];
+        assert_eq!(peer.peer_ip, "12.122.83.238");
+        assert_eq!(peer.peer_as, 7018);
+        assert_eq!(peer.state, "Established");
+        assert_eq!(peer.uptime, "1w2d 3:04:05");
+        assert_eq!(peer.prefixes_received, 100);
+        assert_eq!(peer.prefixes_accepted, Some(100));
+
+        assert!(
+            result.raw_output.contains("Groups: 1 Peers: 2 Down peers: 0"),
+            "raw_output must contain group/peer header"
+        );
+        assert!(
+            result.raw_output.contains("12.122.83.238+179"),
+            "raw_output must contain peer row"
+        );
+        assert!(
+            result.raw_output.contains("inet.0: 50/100/100/0"),
+            "raw_output must contain rib prefix counts"
+        );
+        assert!(
+            !result.raw_output.contains(r#"{"bgp-information""#),
+            "raw_output must not contain raw machine JSON"
+        );
+    }
+
+    #[test]
+    fn parses_junos_empty_aspath_or_route_without_exposing_json() {
+        // Case 1: Empty route-information array (e.g. aspath-regex matched nothing)
+        let empty_json = r#"{"route-information": []}"#;
+        let res1 = JuniperDriver
+            .parse_bgp_route(empty_json)
+            .expect("must parse empty route-information");
+        assert!(res1.paths.is_empty());
+        assert_eq!(res1.raw_output, "error: Pattern not found\n");
+
+        // Case 2: Table present with 0 routes
+        let zero_routes_json = r#"{
+            "route-information" : [
+            {
+                "route-table" : [
+                {
+                    "table-name" : [{"data" : "inet.0"}]
+                }
+                ]
+            }
+            ]
+        }"#;
+        let res2 = JuniperDriver
+            .parse_bgp_route(zero_routes_json)
+            .expect("must parse 0 routes table");
+        assert!(res2.paths.is_empty());
+        assert!(
+            res2.raw_output.contains("inet.0: 0 destinations, 0 routes"),
+            "must contain formatted 0 destinations header"
+        );
+        assert!(
+            !res2.raw_output.contains(r#"{"route-information""#),
+            "must not expose machine JSON"
+        );
     }
 }

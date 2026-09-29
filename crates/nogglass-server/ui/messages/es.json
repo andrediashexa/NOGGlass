@@ -35,6 +35,7 @@
   "form.running": "Consultando…",
   "form.submit": "Consultar",
   "form.target": "Objetivo",
+  "form.target.not_required": "(no requerido)",
   "form.target.placeholder": "198.51.100.0/24, 2001:db8::1 o AS65500",
   "global.agrees": "Internet ve el mismo AS de origen.",
   "global.mismatch": "Internet ve otro AS de origen. Así se ve un secuestro o una fuga.",

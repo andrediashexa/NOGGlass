@@ -17,7 +17,7 @@ behaviour you want from something that reaches production routers.
 | **Who** | The network operator running the instance. |
 | **Where** | Any Linux host with Docker, or a single binary on a host with none. |
 | **When** | From the first release onwards. |
-| **How** | Published image, Compose file, `nogglass.toml`, secrets in the environment. |
+| **How** | Published image, Compose file, `nogglass.conf` (and companion files), secrets in the environment. |
 | **How much** | Measured at 16 MB of RSS serving the mock router, in a debug build; a release build is smaller. |
 
 ## What you need first
@@ -76,14 +76,22 @@ docker build -t nogglass:latest .
 
 ```bash
 curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/nogglass.example.toml
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/logo_nogglass.png
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/nogglass.png
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/nogglass.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/routers.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/ui.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/logo_nogglass_dark.png
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/logo_nogglass_light.png
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/nogglass_dark.png
+curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/nogglass_light.png
 
 docker compose up -d                      # starts and fails loudly if misconfigured
-docker cp nogglass.example.toml nogglass:/etc/nogglass/nogglass.toml
-docker cp logo_nogglass.png nogglass:/etc/nogglass/logo_nogglass.png
-docker cp nogglass.png nogglass:/etc/nogglass/nogglass.png
+docker cp nogglass.example.conf nogglass:/etc/nogglass/nogglass.conf
+docker cp routers.example.conf nogglass:/etc/nogglass/routers.conf
+docker cp ui.example.conf nogglass:/etc/nogglass/ui.conf
+docker cp logo_nogglass_dark.png nogglass:/etc/nogglass/logo_nogglass_dark.png
+docker cp logo_nogglass_light.png nogglass:/etc/nogglass/logo_nogglass_light.png
+docker cp nogglass_dark.png nogglass:/etc/nogglass/nogglass_dark.png
+docker cp nogglass_light.png nogglass:/etc/nogglass/nogglass_light.png
 docker compose restart
 docker compose logs -f nogglass
 ```
@@ -96,8 +104,8 @@ your visitors will otherwise send you. See
 [running the documentation site](documentation-site.md).
 
 The configuration lives in a named volume (`nogglass-config`), so `docker compose pull && docker
-compose up -d` never overwrites it. On a Linux host the file is at
-`/var/lib/docker/volumes/nogglass-config/_data/nogglass.toml`, which is where
+compose up -d` never overwrites it. On a Linux host the configuration files reside at
+`/var/lib/docker/volumes/nogglass-config/_data/nogglass.conf`, which is where
 configuration management can write it.
 
 ---
@@ -114,18 +122,22 @@ configuration management can write it.
    ```bash
    sudo useradd -r -s /bin/false nogglass
    sudo mkdir -p /etc/nogglass /var/log/nogglass
-   sudo cp nogglass.example.toml /etc/nogglass/nogglass.toml
-   sudo cp crates/nogglass-server/ui/assets/logo_nogglass.png /etc/nogglass/logo_nogglass.png
-   sudo cp crates/nogglass-server/ui/assets/nogglass.png /etc/nogglass/nogglass.png
+   sudo cp nogglass.example.conf /etc/nogglass/nogglass.conf
+   sudo cp routers.example.conf /etc/nogglass/routers.conf
+   sudo cp ui.example.conf /etc/nogglass/ui.conf
+   sudo cp crates/nogglass-server/ui/assets/logo_nogglass_dark.png /etc/nogglass/logo_nogglass_dark.png
+   sudo cp crates/nogglass-server/ui/assets/logo_nogglass_light.png /etc/nogglass/logo_nogglass_light.png
+   sudo cp crates/nogglass-server/ui/assets/nogglass_dark.png /etc/nogglass/nogglass_dark.png
+   sudo cp crates/nogglass-server/ui/assets/nogglass_light.png /etc/nogglass/nogglass_light.png
    sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
    sudo chmod 750 /etc/nogglass /var/log/nogglass
-   sudo chmod 640 /etc/nogglass/nogglass.toml /etc/nogglass/logo_nogglass.png /etc/nogglass/nogglass.png
+   sudo chmod 640 /etc/nogglass/*.conf /etc/nogglass/*.png
    ```
 
 3. Configure secrets in `/etc/nogglass/nogglass.env` (mode `0600`):
    ```bash
    sudo bash -c 'cat <<EOF > /etc/nogglass/nogglass.env
-   NOGGLASS_CONFIG=/etc/nogglass/nogglass.toml
+   NOGGLASS_CONFIG=/etc/nogglass/nogglass.conf
    NOGGLASS_HTTP_ADDR=0.0.0.0:8080
    NOGGLASS_EDGE01_PASSWORD=""
    EOF'
@@ -171,7 +183,7 @@ configuration management can write it.
 
 ## Configuration
 
-Copy [`nogglass.example.toml`](https://github.com/andrediashexa/looking-glass/blob/main/nogglass.example.toml). Router passwords are
+Copy [`nogglass.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/nogglass.example.conf) and [`routers.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/routers.example.conf). Router passwords are
 **named** in that file and **read from the environment**, so the file is safe to
 keep in version control:
 
@@ -196,7 +208,7 @@ forgotten password is found by you and not by a visitor.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `NOGGLASS_CONFIG` | `/etc/nogglass/nogglass.toml` | Configuration file |
+| `NOGGLASS_CONFIG` | `/etc/nogglass/nogglass.conf` | Configuration file |
 | `NOGGLASS_HTTP_ADDR` | `0.0.0.0:8080` | Listen address |
 | `NOGGLASS_DEFAULT_LOCALE` | `en` | Language for a visitor whose browser asks for none we serve |
 | `NOGGLASS_BEHIND_PROXY` | unset | Declares that a proxy terminates TLS; silences the startup warning |
