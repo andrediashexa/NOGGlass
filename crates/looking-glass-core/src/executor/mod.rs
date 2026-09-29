@@ -23,9 +23,9 @@ use crate::vendors::{
     AristaDriver, BirdDriver, CiscoDriver, DatacomDriver, FrrDriver, HuaweiVrpDriver,
     JuniperDriver, MikrotikDriver, MockDriver, NokiaSrosDriver, MOCK_VENDOR,
 };
-use std::net::IpAddr;
 use std::collections::HashMap;
 use std::fmt;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;

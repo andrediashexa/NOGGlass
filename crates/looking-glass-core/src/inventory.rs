@@ -144,10 +144,22 @@ pub struct Router {
     #[serde(default)]
     pub allow_insecure_host_key: bool,
     /// Optional source IPv4 address used for ping and traceroute.
-    #[serde(default, deserialize_with = "deserialize_opt_ipv4", alias = "source_ip_v4", alias = "source_ipv4", alias = "src_v4")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_opt_ipv4",
+        alias = "source_ip_v4",
+        alias = "source_ipv4",
+        alias = "src_v4"
+    )]
     pub source_v4: Option<Ipv4Addr>,
     /// Optional source IPv6 address used for ping and traceroute.
-    #[serde(default, deserialize_with = "deserialize_opt_ipv6", alias = "source_ip_v6", alias = "source_ipv6", alias = "src_v6")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_opt_ipv6",
+        alias = "source_ip_v6",
+        alias = "source_ipv6",
+        alias = "src_v6"
+    )]
     pub source_v6: Option<Ipv6Addr>,
 }
 
@@ -158,7 +170,11 @@ where
     let opt = Option::<String>::deserialize(deserializer)?;
     match opt {
         Some(s) if s.trim().is_empty() => Ok(None),
-        Some(s) => s.trim().parse::<Ipv4Addr>().map(Some).map_err(serde::de::Error::custom),
+        Some(s) => s
+            .trim()
+            .parse::<Ipv4Addr>()
+            .map(Some)
+            .map_err(serde::de::Error::custom),
         None => Ok(None),
     }
 }
@@ -170,7 +186,11 @@ where
     let opt = Option::<String>::deserialize(deserializer)?;
     match opt {
         Some(s) if s.trim().is_empty() => Ok(None),
-        Some(s) => s.trim().parse::<Ipv6Addr>().map(Some).map_err(serde::de::Error::custom),
+        Some(s) => s
+            .trim()
+            .parse::<Ipv6Addr>()
+            .map(Some)
+            .map_err(serde::de::Error::custom),
         None => Ok(None),
     }
 }
