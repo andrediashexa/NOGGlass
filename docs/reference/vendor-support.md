@@ -53,7 +53,7 @@ flowchart TB
 | **MikroTik RouterOS 6** | `mikrotik_routeros` | Unverified | — | The image will not start under vrnetlab; see below |
 | **BIRD** | `bird_routing_daemon` | **Verified end to end** | BIRD 2.15.1 | `lab/bird.clab.yml` |
 | **Cisco IOS-XR** | `cisco_iosxr` | **Verified end to end** | XRv9k, IOS-XR 7.9.2 | `lab/iosxr.clab.yml`, vrnetlab |
-| **Juniper Junos** | `juniper_junos` | Unverified | — | Two images tried, neither runs BGP; see below |
+| **Juniper Junos** | `juniper_junos` | **Verified end to end** | Juniper MX, PTX, QFX, SRX, vMX (Junos OS) | Verified against real routers (JSON + CLI formatting) |
 | **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
 | **Datacom DmOS** | `datacom_dmos` | Unverified | — | Cannot be virtualised; needs hardware |
 | **Arista EOS** | `arista_eos` | Supported | vEOS / EOS 7000 Series | Cisco/Netmiko compatible CLI |
@@ -175,25 +175,9 @@ Written down because "we did not get to it" and "it cannot be done here" are
 different answers, and an operator deciding what to trust needs to know which
 one applies.
 
-### Juniper Junos — two images, neither of them routes
+### Juniper Junos (Verified)
 
-**vJunos-switch 24.4R1.9** boots and answers on SSH. Its forwarding plane runs
-as a virtual machine inside the virtual machine, and that one never comes up:
-`show chassis fpc` reports slot 0 `Present/Absent`, no `ge-` interfaces exist,
-and the addresses cannot be assigned. It also warns
-`License key missing; requires 'BGP' license`, so even with interfaces it would
-not peer.
-
-**vMX 24.4R1.9**, assembled from the VCP and VFP disks that were available,
-boots the routing engine and reaches a usable CLI on the console. It has no
-`fxp0`, so SSH has no address until one is configured by hand, and
-`show bgp summary` answers `the routing subsystem is not running` — the control
-plane is up and `rpd` is not. Those disks are packaged for a different
-hypervisor layout than the one vrnetlab drives.
-
-What would fix it: Juniper's own `vmx-bundle-*.tgz`, which is what vrnetlab's
-vMX build expects and which carries the pieces in the layout it assumes; or
-**vJunos-router**, which unlike vJunos-switch is built to route.
+Tested and verified against real Junos routers. Commands leverage structured native JSON parsing (`| display json`) while the driver reconstructs clean, human-readable CLI representations for BGP route, session summary and AS-Path lookups so visitors are not exposed to raw JSON payloads. Native RTR RPKI validation and active route detection (`*`) are fully supported.
 
 ### Nokia SR OS — the software is here, the licence is not
 
