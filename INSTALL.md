@@ -197,6 +197,7 @@ id = "edge-01"
 name = "Edge 01 - Sao Paulo"
 vendor = "huawei_vrp"
 host = "192.0.2.10"
+port = 22 # Optional, defaults to 22
 username = "nogglass"
 location = "Sao Paulo, BR"
 credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }

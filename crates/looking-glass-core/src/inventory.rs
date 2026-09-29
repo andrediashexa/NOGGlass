@@ -940,6 +940,29 @@ host = "192.0.2.1"
     }
 
     #[test]
+    fn parses_custom_ssh_port_and_defaults_to_22() {
+        let toml = r#"
+[[router]]
+id = "default-port"
+name = "R1"
+vendor = "huawei_vrp"
+host = "192.0.2.1"
+credentials = { password_env = "X" }
+
+[[router]]
+id = "custom-port"
+name = "R2"
+vendor = "huawei_vrp"
+host = "192.0.2.2"
+port = 2222
+credentials = { password_env = "Y" }
+"#;
+        let inventory = Inventory::from_toml(toml).expect("valid inventory");
+        assert_eq!(inventory.routers[0].port, 22);
+        assert_eq!(inventory.routers[1].port, 2222);
+    }
+
+    #[test]
     fn missing_secrets_are_named() {
         let inventory = Inventory::from_toml(SAMPLE).unwrap();
 

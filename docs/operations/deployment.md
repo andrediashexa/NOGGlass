@@ -192,6 +192,7 @@ keep in version control:
 id = "edge-01"
 vendor = "huawei_vrp"
 host = "192.0.2.10"
+port = 22
 username = "nogglass"
 credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
 ```
