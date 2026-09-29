@@ -2,65 +2,42 @@ name: release
 
 on:
   push:
-    branches: [main]
-  # Lets the image be rebuilt for a release that already exists, which is how
-  # an image is recovered when its build failed or was cancelled.
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to build an image for, such as v0.2.0"
-        required: true
+        description: "Tag to build and publish for, such as v1.1.2"
+        required: false
         type: string
 
 permissions:
   contents: write
-  pull-requests: write
+  packages: write
 
 jobs:
-  release-please:
-    name: Prepare and publish release
+  resolve-tag:
+    name: Resolve release version
     runs-on: ubuntu-latest
     outputs:
-      released: ${{ steps.release.outputs.release_created }}
-      tag: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.version }}
-      patch: ${{ steps.release.outputs.patch }}
+      tag: ${{ steps.vars.outputs.tag }}
+      version: ${{ steps.vars.outputs.version }}
+      patch: ${{ steps.vars.outputs.patch }}
     steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
-        with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-
-      # ADR-0014: a patch release ships continuously and is flagged as a
-      # pre-release, so GitHub keeps "Latest" pointing at a minor or major
-      # version that the maintainers stand behind.
-      - name: Mark patch releases as pre-releases
-        if: steps.release.outputs.release_created == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # This job never checks the repository out, so gh has no git
-          # directory to infer the repository from and has to be told.
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ steps.release.outputs.tag_name }}
-          PATCH: ${{ steps.release.outputs.patch }}
-        # A release that is published with the wrong flag is still published;
-        # failing the job here would also skip the image build, which is how
-        # v0.4.1 ended up with no image at all. Report loudly, carry on.
-        continue-on-error: true
+      - id: vars
         run: |
-          if [ "$PATCH" != "0" ]; then
-            echo "$TAG is a patch release; marking it as a pre-release."
-            gh release edit "$TAG" --prerelease --latest=false \
-              || echo "::error::could not flag $TAG as a pre-release; fix it by hand"
-          else
-            echo "$TAG is a minor or major release; leaving it as a full release."
-          fi
+          raw_tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="${raw_tag#refs/tags/}"
+          version="${tag#v}"
+          patch="${version##*.}"
+          echo "Resolved tag: $tag (version: $version, patch: $patch)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "patch=$patch" >> "$GITHUB_OUTPUT"
 
   docs-image:
     name: Build and publish the documentation image
-    needs: release-please
-    if: needs.release-please.outputs.released == 'true' || github.event_name == 'workflow_dispatch'
+    needs: resolve-tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -68,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.resolve-tag.outputs.tag }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -78,25 +55,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The documentation is released with the software it documents: an
-      # operator running v0.5.0 can read the pages that shipped with it, not a
-      # newer set describing options their binary does not have.
       - name: Work out the image tags
         id: tags
         env:
-          VERSION: ${{ needs.release-please.outputs.version }}
-          PATCH: ${{ needs.release-please.outputs.patch }}
-          MANUAL_TAG: ${{ github.event.inputs.tag }}
+          VERSION: ${{ needs.resolve-tag.outputs.version }}
         run: |
           image=ghcr.io/${{ github.repository_owner }}/nogglass-docs
-          version="${VERSION:-${MANUAL_TAG#v}}"
-          patch="${PATCH:-${version##*.}}"
-          minor=${version%.*}
-          tags="$image:$version,$image:$minor"
-          if [ "$patch" = "0" ]; then
-            tags="$tags,$image:latest"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          minor=${VERSION%.*}
+          tags="$image:$VERSION,$image:$minor,$image:latest"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v6
@@ -116,8 +83,6 @@ jobs:
           docker run -d --name docs-smoke -p 8081:8081 "$IMAGE"
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8081/ >/dev/null 2>&1; then
-              # The wiki is the reason this image exists; check a page of it
-              # rather than only the index.
               curl -fsS http://127.0.0.1:8081/wiki/ >/dev/null
               echo "The documentation image starts and serves the wiki."
               docker rm -f docs-smoke >/dev/null
@@ -132,8 +97,7 @@ jobs:
 
   image:
     name: Build and publish the container image
-    needs: release-please
-    if: needs.release-please.outputs.released == 'true' || github.event_name == 'workflow_dispatch'
+    needs: resolve-tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -141,7 +105,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.resolve-tag.outputs.tag }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -151,30 +115,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # A patch release is a pre-release (ADR-0014), so it does not move
-      # "latest": an operator pulling latest gets a version the maintainers
-      # stand behind.
       - name: Work out the image tags
         id: tags
         env:
-          VERSION: ${{ needs.release-please.outputs.version }}
-          PATCH: ${{ needs.release-please.outputs.patch }}
-          MANUAL_TAG: ${{ github.event.inputs.tag }}
+          VERSION: ${{ needs.resolve-tag.outputs.version }}
         run: |
           image=ghcr.io/${{ github.repository_owner }}/nogglass
-          version="${VERSION:-${MANUAL_TAG#v}}"
-          patch="${PATCH:-${version##*.}}"
-          minor=${version%.*}
-          tags="$image:$version,$image:$minor"
-          if [ "$patch" = "0" ]; then
-            tags="$tags,$image:latest"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          minor=${VERSION%.*}
+          tags="$image:$VERSION,$image:$minor,$image:latest"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
-      # Both architectures, cross-compiled rather than emulated: the builder
-      # stage runs natively and zig links for the target. Emulating the Rust
-      # compile instead ran past 30 minutes and was cancelled.
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -188,10 +139,6 @@ jobs:
             NOGGLASS_COMMIT=${{ github.sha }}
             NOGGLASS_BUILT_AT=${{ github.event.repository.updated_at }}
 
-      # An image that was pushed but cannot start is worse than no image: the
-      # operator finds out, not us. Only the native architecture is started
-      # here; an arm64 image cannot run on this runner without the emulation
-      # this build exists to avoid.
       - name: Start the image and check it answers
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/nogglass:${{ steps.tags.outputs.version }}
@@ -215,27 +162,24 @@ jobs:
 
   binary-linux-amd64:
     name: Build and publish native Linux amd64 binary (host / bare-metal)
-    needs: release-please
-    if: needs.release-please.outputs.released == 'true' || github.event_name == 'workflow_dispatch'
+    needs: resolve-tag
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.resolve-tag.outputs.tag }}
 
       # We compile a 100% statically linked MUSL binary using the Dockerfile builder stage.
       # This produces a portable, standalone binary that runs on ANY Linux x86_64 distribution
       # without glibc dependencies or external runtime libraries.
       - name: Build static binary with Zig & Musl
         env:
-          VERSION: ${{ needs.release-please.outputs.version }}
-          MANUAL_TAG: ${{ github.event.inputs.tag }}
+          VERSION: ${{ needs.resolve-tag.outputs.version }}
           COMMIT: ${{ github.sha }}
         run: |
-          ver="${VERSION:-${MANUAL_TAG#v}}"
-          ver="${ver:-1.0.0}"
+          ver="${VERSION:-1.0.0}"
           echo "Building static Linux amd64 binary for version $ver"
 
           docker build --target builder \
@@ -275,10 +219,14 @@ jobs:
       - name: Attach binary tarball to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release-please.outputs.tag || github.event.inputs.tag }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           if [ -n "$TAG" ]; then
             echo "Uploading native binary assets to release $TAG"
+            if ! gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Release $TAG does not exist yet. Creating release $TAG..."
+              gh release create "$TAG" --title "$TAG" --generate-notes
+            fi
             gh release upload "$TAG" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber
           else
             echo "No tag found for GitHub release upload; skipping."
