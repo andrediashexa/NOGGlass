@@ -56,9 +56,9 @@ RUN set -eux; \
 
 COPY crates ./crates
 
-# The release build stamps the version, so /api/version and the footer report
-# what is actually running instead of "dev".
-ARG NOGGLASS_VERSION=1.0.0
+# The release build stamps the version, falling back to Cargo.toml version
+# if not explicitly supplied as a build-arg.
+ARG NOGGLASS_VERSION
 ARG NOGGLASS_COMMIT=unknown
 ARG NOGGLASS_BUILT_AT=unknown
 ENV NOGGLASS_VERSION=$NOGGLASS_VERSION \

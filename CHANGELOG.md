@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.2](https://github.com/andrediashexa/NOGGlass/compare/v1.1.1...v1.1.2) (2026-09-29)
+
+### Bug Fixes
+
+* **docker:** remove hardcoded `ARG NOGGLASS_VERSION=1.0.0` default in `Dockerfile`, allowing local and compose builds to dynamically adopt workspace `Cargo.toml` package version
+
 ## [1.1.1](https://github.com/andrediashexa/NOGGlass/compare/v1.1.0...v1.1.1) (2026-09-29)
 
 ### Bug Fixes
