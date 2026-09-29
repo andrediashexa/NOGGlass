@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/andrediashexa/NOGGlass/compare/v1.0.0...v1.1.0) (2026-09-29)
+
+### Features
+
+* **web:** display BGP route installation age/duration in BGP paths table across all supported vendors
+* **core:** support router-specific source IPv4 (`source_v4`) and IPv6 (`source_v6`) for diagnostic ping and traceroute queries
+* **inventory:** support custom SSH port (`port`, defaults to 22) per edge router in `routers.conf`
+
+### Documentation
+
+* **inventory:** document `port`, `source_v4`, and `source_v6` in `routers.example.conf`, `INSTALL.md`, and deployment guides
+
 ## [1.0.0](https://github.com/andrediashexa/NOGGlass/compare/v0.9.3...v1.0.0) (2026-09-29)
 
 ### Features

@@ -31,11 +31,12 @@ NOGGlass was built for the diverse routing mix that regional carriers and ISPs r
 
 ---
 
-## Key Features (v1.0.0)
+## Key Features (v1.1.0)
 
 - **The Router is Sacred:** Complete immunity to command injection. Diagnostic targets and counts are strictly deserialized into Rust types (`std::net::IpAddr`, `ipnet::IpNet`, validated enums) and mapped to read-only command templates.
 - **Topological AS-PATH Graph (Bellman-Ford DAG):** Renders route propagation from the local router node. Direct peers (e.g. transit providers and IX peers) are locked in parallel on Column 1, eliminating false cascade representations.
-- **Operational Route Highlighting:** Dynamic CLI analyzer (`highlightBgpRaw`) detects winning routes in tabular outputs (`*>`, `DAv`, `[*BGP]`) and detailed blocks (Huawei VRP/Cisco), highlighting the active FIB path in emerald green with a `[★ ROTA ATIVA]` badge.
+- **Operational Route Highlighting & Route Age:** Dynamic CLI analyzer detects winning routes in tabular outputs and detailed blocks, highlighting the active FIB path in emerald green with a `[★ ROTA ATIVA]` badge, alongside route installation age/uptime across vendors.
+- **Router Source IP & Custom SSH Ports:** Configure dedicated IPv4 (`source_v4`) and IPv6 (`source_v6`) source addresses for ping/traceroute tests, as well as non-standard SSH ports (`port`, default 22) per edge router.
 - **Tiered RPKI Engine:** Tier 1 prioritizes router-native validation states from RTR sessions (Huawei, JunOS, Cisco). Tier 2 provides an asynchronous fallback to RIPEstat/Routinator with an in-memory LRU cache and a 3000ms timeout. Transient lookup timeouts are excluded from caching to prevent cache poisoning.
 - **Zero-Jitter Defense & Security Headers:** Sharded 16-partition rate limiter eliminates mutex contention. Stateless HMAC-SHA256 CAPTCHAs prevent replay attacks. Native HTTP security headers (CSP, X-Frame-Options, nosniff, Referrer-Policy) are injected on all routes.
 - **Pinned SSH Host Keys (Anti-MitM):** Support for `host_key` in `nogglass.toml` (`HostKeyPolicy::Pinned`) prevents Man-in-the-Middle attacks on management networks.
