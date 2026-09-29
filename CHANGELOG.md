@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/andrediashexa/NOGGlass/compare/v1.1.1...v1.1.2) (2026-09-29)
+
+
+### Chores
+
+* update release-please manifest to 1.1.1 ([a6946af](https://github.com/andrediashexa/NOGGlass/commit/a6946afbcf90d3a6168cb1fff4a601da8117f0c0))
+
 ## [1.1.1](https://github.com/andrediashexa/NOGGlass/compare/v1.1.0...v1.1.1) (2026-09-29)
 
 ### Bug Fixes
