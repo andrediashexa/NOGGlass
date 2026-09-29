@@ -328,7 +328,9 @@ impl Transport for SshTransport {
         let policy = match &router.host_key {
             Some(key) => HostKeyPolicy::Pinned(Arc::new(vec![key.clone()])),
             None => {
-                if router.allow_insecure_host_key || matches!(self.host_keys, HostKeyPolicy::AcceptAny) {
+                if router.allow_insecure_host_key
+                    || matches!(self.host_keys, HostKeyPolicy::AcceptAny)
+                {
                     tracing::warn!(
                         router = %router.id,
                         "connecting to router via SSH without host key verification (allow_insecure_host_key)"
@@ -684,7 +686,10 @@ rviews@route-server.ip.att.net> ";
     /// Default policy enforces pinned keys or explicit allow_insecure_host_key opt-in.
     #[test]
     fn the_default_host_key_policy_is_enforce_pinned() {
-        assert!(matches!(HostKeyPolicy::default(), HostKeyPolicy::EnforcePinned));
+        assert!(matches!(
+            HostKeyPolicy::default(),
+            HostKeyPolicy::EnforcePinned
+        ));
     }
 }
 

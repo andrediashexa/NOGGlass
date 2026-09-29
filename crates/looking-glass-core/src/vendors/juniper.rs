@@ -891,7 +891,9 @@ fn format_junos_summary_cli(parsed: &JunosBgpSummaryInformation, fallback_raw: &
         ));
 
         if let Some(ribs) = &info.bgp_rib {
-            out.push_str("Table          Tot Paths  Act Paths Suppressed    History Damp State Pending\n");
+            out.push_str(
+                "Table          Tot Paths  Act Paths Suppressed    History Damp State Pending\n",
+            );
             for rib in ribs {
                 let name = rib
                     .name
@@ -1242,7 +1244,9 @@ mod tests {
         assert_eq!(peer.prefixes_accepted, Some(100));
 
         assert!(
-            result.raw_output.contains("Groups: 1 Peers: 2 Down peers: 0"),
+            result
+                .raw_output
+                .contains("Groups: 1 Peers: 2 Down peers: 0"),
             "raw_output must contain group/peer header"
         );
         assert!(

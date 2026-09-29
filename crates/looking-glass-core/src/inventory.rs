@@ -567,8 +567,9 @@ impl Inventory {
                     path: routers_path.display().to_string(),
                     reason: e.to_string(),
                 })?;
-            let parsed_file: RoutersFile = toml::from_str(&routers_source)
-                .map_err(|e| InventoryError::Malformed(format!("{}: {e}", routers_path.display())))?;
+            let parsed_file: RoutersFile = toml::from_str(&routers_source).map_err(|e| {
+                InventoryError::Malformed(format!("{}: {e}", routers_path.display()))
+            })?;
             if !parsed_file.routers.is_empty() {
                 inventory.routers = parsed_file.routers;
             }
@@ -602,7 +603,10 @@ impl Inventory {
                     if let Ok(direct_ui) = toml::from_str::<UiSettings>(&ui_source) {
                         inventory.ui = direct_ui;
                     } else if let Err(e) = parsed_file {
-                        return Err(InventoryError::Malformed(format!("{}: {e}", ui_path.display())));
+                        return Err(InventoryError::Malformed(format!(
+                            "{}: {e}",
+                            ui_path.display()
+                        )));
                     }
                 }
             }
