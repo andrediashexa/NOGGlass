@@ -312,6 +312,14 @@ async fn run() -> Result<(), String> {
             format!("{e}\nNOGGlass will not start with an invalid UI configuration.")
         })?);
 
+    // Opt-in admin API (issue #204): off unless an owner token is provided.
+    let admin_token = std::env::var("NOGGLASS_ADMIN_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty());
+    if admin_token.is_some() {
+        tracing::info!("admin API enabled (NOGGLASS_ADMIN_TOKEN set)");
+    }
+
     let app = api::routes(AppState {
         executor,
         inventory,
@@ -321,6 +329,7 @@ async fn run() -> Result<(), String> {
         global_view,
         captcha_secret,
         used_captchas: Arc::new(Mutex::new(HashSet::new())),
+        admin_token,
     })
     .merge(ui::routes(ui_state))
     .layer(axum::middleware::from_fn(security_headers_middleware))

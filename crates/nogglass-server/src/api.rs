@@ -42,6 +42,10 @@ pub struct AppState {
     pub captcha_secret: String,
     /// Replay protection tracking recently verified CAPTCHA tokens.
     pub used_captchas: Arc<Mutex<HashSet<String>>>,
+    /// Owner token for the read-only admin API (issue #204). `None` disables the
+    /// admin interface entirely: its routes answer 404, as if they did not
+    /// exist. Set from `NOGGLASS_ADMIN_TOKEN` — opt-in, off by default.
+    pub admin_token: Option<String>,
 }
 
 impl AppState {
@@ -139,6 +143,7 @@ pub fn routes(state: AppState) -> AxumRouter {
             get(stream_query).post(stream_query_post),
         )
         .route("/api/catalogue/{vendor}", get(vendor_commands))
+        .route("/api/admin/routers", get(admin_routers))
         .with_state(state)
 }
 
@@ -186,6 +191,47 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
         .collect();
 
     Json(listing)
+}
+
+/// Constant-time token comparison, so an admin token check does not leak the
+/// token through response timing.
+fn tokens_match(provided: &str, expected: &str) -> bool {
+    let a = provided.as_bytes();
+    let b = expected.as_bytes();
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// The admin counterpart to `/api/routers` (issue #204). For the authenticated
+/// owner it returns the full inventory — host, port, username and the credential
+/// *variable names* — which the public listing deliberately hides. It never
+/// returns a secret value, because the inventory holds none. Read-only.
+///
+/// Disabled unless `NOGGLASS_ADMIN_TOKEN` is set: with no token configured the
+/// route answers 404, so an instance that did not opt in reveals nothing — not
+/// even that the endpoint exists.
+async fn admin_routers(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+    let Some(expected) = state.admin_token.as_deref() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let presented = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+
+    match presented {
+        Some(token) if tokens_match(token, expected) => {
+            Json(state.inventory.routers.clone()).into_response()
+        }
+        _ => (StatusCode::UNAUTHORIZED, "admin authentication required").into_response(),
+    }
 }
 
 /// Commands a vendor would run, so an operator can see exactly what NOGGlass
@@ -706,6 +752,38 @@ queries = ["bgp_route"]
             global_view,
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            admin_token: None,
+        })
+    }
+
+    /// The same app, but with the admin API enabled behind `token`.
+    fn app_with_admin(config: &str, token: &str) -> AxumRouter {
+        let inventory = Arc::new(Inventory::from_toml(config).expect("test inventory"));
+        let executor = Arc::new(Executor::new(
+            inventory.clone(),
+            Arc::new(BUILTIN.clone()),
+            Arc::new(NoTransport),
+        ));
+        let (client_address, _) = inventory.rate_limit.to_client_address();
+        let limiter = inventory
+            .rate_limit
+            .enabled
+            .then(|| Arc::new(RateLimiter::new(inventory.rate_limit.to_limit())));
+        let global_view = Arc::new(GlobalViewLookup::new(
+            inventory.global_view.enabled,
+            Duration::from_millis(inventory.global_view.timeout_ms),
+        ));
+
+        routes(AppState {
+            executor,
+            inventory,
+            version: VersionInfo::from_build(),
+            limiter,
+            client_address: Arc::new(client_address),
+            global_view,
+            captcha_secret: "test_secret".to_string(),
+            used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            admin_token: Some(token.to_string()),
         })
     }
 
@@ -764,6 +842,71 @@ queries = ["bgp_route"]
         for secret in ["192.0.2.10", "nogglass", "NOGGLASS_EDGE01_PASSWORD"] {
             assert!(!body.contains(secret), "leaked {secret} in {body}");
         }
+    }
+
+    #[tokio::test]
+    async fn the_admin_api_is_hidden_when_no_token_is_configured() {
+        // Opt-in: with no NOGGLASS_ADMIN_TOKEN the endpoint answers 404, so an
+        // instance that did not enable it reveals nothing.
+        let response = app()
+            .oneshot(
+                Request::get("/api/admin/routers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_admin_api_rejects_a_missing_or_wrong_token() {
+        let app = || app_with_admin(INVENTORY, "s3cr3t-owner-token");
+
+        let no_token = app()
+            .oneshot(
+                Request::get("/api/admin/routers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(no_token.status(), StatusCode::UNAUTHORIZED);
+
+        let wrong = app()
+            .oneshot(
+                Request::get("/api/admin/routers")
+                    .header("authorization", "Bearer wrong")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn the_admin_api_returns_full_router_details_to_the_owner() {
+        // Unlike the public listing, the authenticated owner sees the management
+        // plane: host, username and the credential *variable name* — but never a
+        // secret value, because the inventory holds none.
+        let response = app_with_admin(INVENTORY, "s3cr3t-owner-token")
+            .oneshot(
+                Request::get("/api/admin/routers")
+                    .header("authorization", "Bearer s3cr3t-owner-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await.to_string();
+        assert!(body.contains("192.0.2.10"), "owner sees the host");
+        assert!(body.contains("nogglass"), "owner sees the username");
+        assert!(
+            body.contains("NOGGLASS_EDGE01_PASSWORD"),
+            "owner sees the credential variable name"
+        );
     }
 
     #[tokio::test]
@@ -978,6 +1121,7 @@ host = "192.0.2.200"
             global_view: Arc::new(GlobalViewLookup::new(false, Duration::from_millis(1))),
             captcha_secret: "test_secret".to_string(),
             used_captchas: Arc::new(Mutex::new(HashSet::new())),
+            admin_token: None,
         };
 
         let target = parse_target("203.0.113.0/24").unwrap();
