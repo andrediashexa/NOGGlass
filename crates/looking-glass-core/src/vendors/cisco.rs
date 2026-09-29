@@ -166,6 +166,14 @@ pub(crate) fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
                     .extend(rest.split_whitespace().map(Community::parse));
                 continue;
             }
+            if let Some(rest) = line.strip_prefix("Updated on ") {
+                path.age = Some(rest.trim().to_string());
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("Last update: ") {
+                path.age = Some(rest.trim().to_string());
+                continue;
+            }
         }
 
         // An AS path sits on its own line just above the next hop. `Local`
@@ -397,6 +405,11 @@ Paths: (3 available, best #1, table default)
             .expect("real IOS-XE output");
 
         assert_eq!(result.paths.len(), 3);
+        assert_eq!(
+            result.paths[0].age.as_deref(),
+            Some("Sep 21 2026 06:56:50 UTC"),
+            "route update timestamp is parsed as age"
+        );
         for path in &result.paths {
             assert_eq!(
                 path.prefix.map(|p| p.to_string()).as_deref(),

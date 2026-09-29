@@ -166,6 +166,8 @@ impl VendorDriver for MikrotikDriver {
                         "incomplete" => Some(Origin::Incomplete),
                         _ => None,
                     };
+                } else if let Some(val) = token.strip_prefix("age=") {
+                    path.age = Some(val.trim_matches('"').to_string());
                 } else if let Some(val) = token
                     .strip_prefix("bgp-communities=")
                     .or_else(|| token.strip_prefix("communities="))
@@ -398,7 +400,7 @@ mod tests {
 Flags: X - disabled, A - active, D - dynamic, b - bgp
 
  0 ADb dst-address=198.51.100.0/24 gateway=192.0.2.254 immediate-gw=192.0.2.254
-       as-path=\"65100,65500\" local-pref=150 med=10 origin=igp
+       as-path=\"65100,65500\" local-pref=150 med=10 origin=igp age=\"1d04h\"
        bgp-communities=\"65001:100,65100:500\"
 
  1  Db dst-address=198.51.100.0/24 gateway=192.0.2.253
@@ -417,6 +419,7 @@ Flags: X - disabled, A - active, D - dynamic, b - bgp
         assert_eq!(best.as_path, vec![65100, 65500]);
         assert_eq!(best.local_pref, Some(150));
         assert_eq!(best.med, Some(10));
+        assert_eq!(best.age.as_deref(), Some("1d04h"));
         assert_eq!(best.origin, Some(Origin::Igp));
         assert_eq!(best.communities.len(), 2);
         assert_eq!(best.communities[0].raw, "65001:100");

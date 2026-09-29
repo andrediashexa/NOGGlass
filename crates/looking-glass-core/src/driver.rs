@@ -253,6 +253,8 @@ pub struct BgpPath {
     pub local_pref: Option<u32>,
     pub med: Option<u32>,
     pub weight: Option<u32>,
+    /// The route age or duration since learned/installed, as reported by the router.
+    pub age: Option<String>,
     pub origin: Option<Origin>,
     pub communities: Vec<Community>,
     pub rpki: RpkiValidation,

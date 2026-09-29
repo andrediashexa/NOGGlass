@@ -739,6 +739,7 @@ function renderTable(paths) {
       },
       (cell) => valueOrUnknown(cell, path.local_pref),
       (cell) => valueOrUnknown(cell, path.med),
+      (cell) => valueOrUnknown(cell, path.age),
       (cell) => valueOrUnknown(cell, path.origin, (v) => v.toUpperCase()),
       (cell) => {
         const badge = document.createElement("span");

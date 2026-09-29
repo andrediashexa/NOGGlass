@@ -49,6 +49,9 @@ neighbour's local preference means nothing to your router.
 links they prefer you to use. Lower is better. It only compares paths from the
 same neighbour, and many networks ignore it.
 
+**Age.** How long this path has been installed in the routing table without flaps or
+reannouncements. It is useful for spotting route churn and flaps.
+
 **Weight.** Same idea as local preference but even more local: it never leaves
 the router it is set on. Cisco-specific in origin.
 

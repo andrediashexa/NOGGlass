@@ -93,6 +93,8 @@ struct JunosRtEntry {
     #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     gateway: Option<Vec<JunosText>>,
     #[serde(default, deserialize_with = "deserialize_single_or_vec")]
+    age: Option<Vec<JunosText>>,
+    #[serde(default, deserialize_with = "deserialize_single_or_vec")]
     communities: Option<Vec<JunosCommunity>>,
 }
 
@@ -479,6 +481,12 @@ impl VendorDriver for JuniperDriver {
                                             }
                                         }
 
+                                        let age = entry
+                                            .age
+                                            .as_ref()
+                                            .and_then(|a| a.first())
+                                            .and_then(|x| x.data.clone());
+
                                         paths.push(BgpPath {
                                             is_best,
                                             is_valid: Some(true),
@@ -487,6 +495,7 @@ impl VendorDriver for JuniperDriver {
                                             as_path,
                                             local_pref,
                                             med,
+                                            age,
                                             origin,
                                             communities,
                                             rpki: RpkiValidation::from_router(rpki_status),
@@ -828,6 +837,15 @@ fn format_junos_cli_output(parsed: &JunosRouteInformation, fallback_raw: &str) -
 
                         if let Some(m) = metric {
                             out.push_str(&format!("                Metric: {m}\n"));
+                        }
+
+                        if let Some(age_val) = entry
+                            .age
+                            .as_ref()
+                            .and_then(|a| a.first())
+                            .and_then(|t| t.data.as_deref())
+                        {
+                            out.push_str(&format!("                Age: {age_val}\n"));
                         }
 
                         if let Some(val) = entry

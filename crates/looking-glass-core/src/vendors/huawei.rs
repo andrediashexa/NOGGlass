@@ -476,8 +476,18 @@ fn parse_detail_blocks(raw: &str) -> BgpRouteResult {
                 "not-found" | "notfound" | "n" => RpkiValidation::from_router(RpkiStatus::NotFound),
                 _ => RpkiValidation::default(),
             };
+        } else if let Some(rest) = line
+            .strip_prefix("Route Duration:")
+            .or_else(|| line.strip_prefix("Route Duration :"))
+            .or_else(|| line.strip_prefix("Age:"))
+            .or_else(|| line.strip_prefix("Age :"))
+        {
+            in_community = false;
+            let dur = rest.trim();
+            if !dur.is_empty() {
+                path.age = Some(dur.to_string());
+            }
         } else if line.starts_with("Qos information")
-            || line.starts_with("Route Duration")
             || line.starts_with("Direct Out-interface")
             || line.starts_with("Relay")
             || line.starts_with("Aggregator")
@@ -999,6 +1009,11 @@ mod real_ne40e_tests {
             .expect("real NE40E output");
 
         assert_eq!(result.paths.len(), 3, "three paths, none of them lost");
+        assert_eq!(
+            result.paths[0].age.as_deref(),
+            Some("0d00h15m42s"),
+            "route duration is parsed as route age"
+        );
         for path in &result.paths {
             assert_eq!(
                 path.prefix.map(|p| p.to_string()).as_deref(),

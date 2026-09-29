@@ -62,6 +62,7 @@ Paths: (2 available, best #1, table default)
         assert_eq!(best.med, Some(10));
         assert_eq!(best.local_pref, Some(150));
         assert_eq!(best.origin, Some(Origin::Igp));
+        assert_eq!(best.age.as_deref(), Some("Mon Sep 21 06:56:50 2026"));
         assert!(best.is_best);
 
         let alt = &result.paths[1];
