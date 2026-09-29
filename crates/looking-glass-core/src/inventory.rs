@@ -17,7 +17,7 @@ use crate::target::QueryLimits;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 
 /// Default SSH port.
@@ -143,6 +143,36 @@ pub struct Router {
     /// Defaults to false. If false and host_key is None, connection attempts are rejected.
     #[serde(default)]
     pub allow_insecure_host_key: bool,
+    /// Optional source IPv4 address used for ping and traceroute.
+    #[serde(default, deserialize_with = "deserialize_opt_ipv4", alias = "source_ip_v4", alias = "source_ipv4", alias = "src_v4")]
+    pub source_v4: Option<Ipv4Addr>,
+    /// Optional source IPv6 address used for ping and traceroute.
+    #[serde(default, deserialize_with = "deserialize_opt_ipv6", alias = "source_ip_v6", alias = "source_ipv6", alias = "src_v6")]
+    pub source_v6: Option<Ipv6Addr>,
+}
+
+fn deserialize_opt_ipv4<'de, D>(deserializer: D) -> Result<Option<Ipv4Addr>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    match opt {
+        Some(s) if s.trim().is_empty() => Ok(None),
+        Some(s) => s.trim().parse::<Ipv4Addr>().map(Some).map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
+}
+
+fn deserialize_opt_ipv6<'de, D>(deserializer: D) -> Result<Option<Ipv6Addr>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    match opt {
+        Some(s) if s.trim().is_empty() => Ok(None),
+        Some(s) => s.trim().parse::<Ipv6Addr>().map(Some).map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
 }
 
 fn default_port() -> u16 {
@@ -1091,5 +1121,95 @@ credentials = { password_env = "Y" }
         assert!(!inventory.ui.show_best_path);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_router_source_ip_configuration() {
+        // 1. Omitted source_v4 and source_v6 defaults to None
+        let toml_default = r#"
+[[router]]
+id = "r1"
+name = "Router 1"
+vendor = "mock"
+host = "127.0.0.1"
+"#;
+        let inv = Inventory::from_toml(toml_default).unwrap();
+        assert_eq!(inv.routers[0].source_v4, None);
+        assert_eq!(inv.routers[0].source_v6, None);
+
+        // 2. Empty or whitespace strings evaluate to None
+        let toml_empty = r#"
+[[router]]
+id = "r2"
+name = "Router 2"
+vendor = "mock"
+host = "127.0.0.1"
+source_v4 = ""
+source_v6 = "   "
+"#;
+        let inv = Inventory::from_toml(toml_empty).unwrap();
+        assert_eq!(inv.routers[0].source_v4, None);
+        assert_eq!(inv.routers[0].source_v6, None);
+
+        // 3. Valid IPv4 and IPv6 addresses
+        let toml_valid = r#"
+[[router]]
+id = "r3"
+name = "Router 3"
+vendor = "mock"
+host = "127.0.0.1"
+source_v4 = "192.0.2.1"
+source_v6 = "2001:db8::1"
+"#;
+        let inv = Inventory::from_toml(toml_valid).unwrap();
+        assert_eq!(
+            inv.routers[0].source_v4,
+            Some("192.0.2.1".parse::<Ipv4Addr>().unwrap())
+        );
+        assert_eq!(
+            inv.routers[0].source_v6,
+            Some("2001:db8::1".parse::<Ipv6Addr>().unwrap())
+        );
+
+        // 4. Aliases (source_ip_v4, source_ip_v6)
+        let toml_aliases = r#"
+[[router]]
+id = "r4"
+name = "Router 4"
+vendor = "mock"
+host = "127.0.0.1"
+source_ip_v4 = "192.0.2.10"
+source_ip_v6 = "2001:db8::10"
+"#;
+        let inv = Inventory::from_toml(toml_aliases).unwrap();
+        assert_eq!(
+            inv.routers[0].source_v4,
+            Some("192.0.2.10".parse::<Ipv4Addr>().unwrap())
+        );
+        assert_eq!(
+            inv.routers[0].source_v6,
+            Some("2001:db8::10".parse::<Ipv6Addr>().unwrap())
+        );
+
+        // 5. Invalid IPs fail deserialization
+        let toml_invalid_v4 = r#"
+[[router]]
+id = "r5"
+name = "Router 5"
+vendor = "mock"
+host = "127.0.0.1"
+source_v4 = "999.999.999.999"
+"#;
+        assert!(Inventory::from_toml(toml_invalid_v4).is_err());
+
+        let toml_invalid_injection = r#"
+[[router]]
+id = "r6"
+name = "Router 6"
+vendor = "mock"
+host = "127.0.0.1"
+source_v4 = "192.0.2.1; rm -rf /"
+"#;
+        assert!(Inventory::from_toml(toml_invalid_injection).is_err());
     }
 }

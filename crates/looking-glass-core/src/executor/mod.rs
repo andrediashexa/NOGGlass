@@ -23,6 +23,7 @@ use crate::vendors::{
     AristaDriver, BirdDriver, CiscoDriver, DatacomDriver, FrrDriver, HuaweiVrpDriver,
     JuniperDriver, MikrotikDriver, MockDriver, NokiaSrosDriver, MOCK_VENDOR,
 };
+use std::net::IpAddr;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -267,10 +268,18 @@ impl Executor {
             .ok_or_else(|| ExecutionError::Unsupported(format!("{query:?} requires a target")))?;
         let command = match (query, target) {
             (QueryType::Ping, QueryTarget::Ip(ip)) => {
-                self.catalogue.ping(&router.vendor, *ip, limits)?
+                let source = match ip {
+                    IpAddr::V4(_) => router.source_v4.map(IpAddr::V4),
+                    IpAddr::V6(_) => router.source_v6.map(IpAddr::V6),
+                };
+                self.catalogue.ping(&router.vendor, *ip, limits, source)?
             }
             (QueryType::Traceroute, QueryTarget::Ip(ip)) => {
-                self.catalogue.traceroute(&router.vendor, *ip)?
+                let source = match ip {
+                    IpAddr::V4(_) => router.source_v4.map(IpAddr::V4),
+                    IpAddr::V6(_) => router.source_v6.map(IpAddr::V6),
+                };
+                self.catalogue.traceroute(&router.vendor, *ip, source)?
             }
             (QueryType::Ping | QueryType::Traceroute, _) => {
                 // Pinging a prefix or an AS number is not a thing; say so
@@ -531,6 +540,17 @@ credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
 queries = ["ping", "bgp_route"]
 
 [[router]]
+id = "edge-src"
+name = "Edge Source"
+vendor = "huawei_vrp"
+host = "192.0.2.20"
+username = "nogglass"
+credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
+source_v4 = "192.0.2.1"
+source_v6 = "2001:db8::1"
+queries = ["ping", "traceroute"]
+
+[[router]]
 id = "demo"
 name = "Demo"
 vendor = "mock"
@@ -733,5 +753,78 @@ host = "127.0.0.1"
             .await
             .unwrap_err();
         assert!(matches!(error, ExecutionError::Unsupported(_)));
+    }
+
+    #[tokio::test]
+    async fn diagnostic_commands_use_configured_source_ip_matching_family() {
+        let ping_output = "\
+  --- 198.51.100.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0.00% packet loss
+  round-trip min/avg/max = 1/2/4 ms
+";
+        let executor = executor(FakeTransport::answering(ping_output));
+
+        // 1. Router with source_v4 and source_v6:
+        // Ping IPv4 target -> uses source_v4
+        let exec_ping_v4 = executor
+            .execute(
+                "edge-src",
+                QueryType::Ping,
+                Some(&parse_target("198.51.100.1").unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(exec_ping_v4.command, "ping -a 192.0.2.1 -c 5 198.51.100.1");
+
+        // Ping IPv6 target -> uses source_v6
+        let exec_ping_v6 = executor
+            .execute(
+                "edge-src",
+                QueryType::Ping,
+                Some(&parse_target("2001:db8::2").unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            exec_ping_v6.command,
+            "ping ipv6 -a 2001:db8::1 -c 5 2001:db8::2"
+        );
+
+        // Traceroute IPv4 target -> uses source_v4
+        let exec_trace_v4 = executor
+            .execute(
+                "edge-src",
+                QueryType::Traceroute,
+                Some(&parse_target("198.51.100.1").unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(exec_trace_v4.command, "tracert -a 192.0.2.1 198.51.100.1");
+
+        // Traceroute IPv6 target -> uses source_v6
+        let exec_trace_v6 = executor
+            .execute(
+                "edge-src",
+                QueryType::Traceroute,
+                Some(&parse_target("2001:db8::2").unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            exec_trace_v6.command,
+            "tracert ipv6 -a 2001:db8::1 2001:db8::2"
+        );
+
+        // 2. Router without source IPs configured (edge-01):
+        // Ping IPv4 target -> no source flag passed
+        let exec_default_ping = executor
+            .execute(
+                "edge-01",
+                QueryType::Ping,
+                Some(&parse_target("198.51.100.1").unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(exec_default_ping.command, "ping -c 5 198.51.100.1");
     }
 }

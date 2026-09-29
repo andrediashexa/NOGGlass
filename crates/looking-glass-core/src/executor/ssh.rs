@@ -815,6 +815,8 @@ mod host_key_tests {
             max_concurrent: None,
             host_key: None,
             allow_insecure_host_key: false,
+            source_v4: None,
+            source_v6: None,
         };
         let transport = SshTransport::default();
         let res = transport.run(&router, "display version", None).await;

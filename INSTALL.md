@@ -198,6 +198,8 @@ name = "Edge 01 - Sao Paulo"
 vendor = "huawei_vrp"
 host = "192.0.2.10"
 port = 22 # Optional, defaults to 22
+source_v4 = "192.0.2.1" # Optional source IPv4 for ping / traceroute
+source_v6 = "2001:db8::1" # Optional source IPv6 for ping / traceroute
 username = "nogglass"
 location = "Sao Paulo, BR"
 credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
@@ -209,6 +211,7 @@ id = "border-02"
 name = "Border 02 - Rio de Janeiro"
 vendor = "juniper_junos"
 host = "192.0.2.11"
+# source_v4 and source_v6 omitted: runs without source IP
 username = "nogglass"
 location = "Rio de Janeiro, BR"
 credentials = { key_file = { path = "/etc/nogglass/keys/border-02.key", passphrase_env = "NOGGLASS_BORDER02_PASSPHRASE" } }

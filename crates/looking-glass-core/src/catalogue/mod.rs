@@ -25,7 +25,15 @@ use std::sync::LazyLock;
 static BUILTIN_TOML: &str = include_str!("commands.toml");
 
 /// Placeholders a template may use. Anything else fails validation.
-const KNOWN_PLACEHOLDERS: &[&str] = &["target", "network", "netmask", "prefix_len", "count", "asn"];
+const KNOWN_PLACEHOLDERS: &[&str] = &[
+    "target",
+    "network",
+    "netmask",
+    "prefix_len",
+    "count",
+    "asn",
+    "source",
+];
 
 /// Characters that let one command become two, or run another program. Pipes
 /// are allowed because Junos and IOS use them for output modifiers, and the
@@ -102,8 +110,16 @@ pub struct VendorCommands {
 
     pub ping_v4: Option<String>,
     pub ping_v6: Option<String>,
+    #[serde(default, alias = "ping_v4_source")]
+    pub ping_source_v4: Option<String>,
+    #[serde(default, alias = "ping_v6_source")]
+    pub ping_source_v6: Option<String>,
     pub traceroute_v4: Option<String>,
     pub traceroute_v6: Option<String>,
+    #[serde(default, alias = "traceroute_v4_source")]
+    pub traceroute_source_v4: Option<String>,
+    #[serde(default, alias = "traceroute_v6_source")]
+    pub traceroute_source_v6: Option<String>,
     pub bgp_route_v4: Option<String>,
     pub bgp_route_v6: Option<String>,
     /// Dedicated command when querying a single host IP (Longest Prefix Match)
@@ -122,8 +138,12 @@ impl VendorCommands {
         [
             ("ping_v4", self.ping_v4.as_ref()),
             ("ping_v6", self.ping_v6.as_ref()),
+            ("ping_source_v4", self.ping_source_v4.as_ref()),
+            ("ping_source_v6", self.ping_source_v6.as_ref()),
             ("traceroute_v4", self.traceroute_v4.as_ref()),
             ("traceroute_v6", self.traceroute_v6.as_ref()),
+            ("traceroute_source_v4", self.traceroute_source_v4.as_ref()),
+            ("traceroute_source_v6", self.traceroute_source_v6.as_ref()),
             ("bgp_route_v4", self.bgp_route_v4.as_ref()),
             ("bgp_route_v6", self.bgp_route_v6.as_ref()),
             ("bgp_route_ip_v4", self.bgp_route_ip_v4.as_ref()),
@@ -219,47 +239,78 @@ impl Catalogue {
             .ok_or_else(|| CatalogueError::UnknownVendor(id.to_string()))
     }
 
-    /// Builds the ping command for one vendor.
+    /// Builds the ping command for one vendor, optionally specifying a source address.
     pub fn ping(
         &self,
         vendor: &str,
         target: IpAddr,
         limits: &QueryLimits,
+        source: Option<IpAddr>,
     ) -> Result<String, CatalogueError> {
         let commands = self.vendor(vendor)?;
-        let template = pick(
-            target.is_ipv4(),
-            commands.ping_v4.as_ref(),
-            commands.ping_v6.as_ref(),
-        )
+        let template = match (target.is_ipv4(), source.is_some()) {
+            (true, true) => commands
+                .ping_source_v4
+                .as_ref()
+                .or(commands.ping_v4.as_ref()),
+            (true, false) => commands.ping_v4.as_ref(),
+            (false, true) => commands
+                .ping_source_v6
+                .as_ref()
+                .or(commands.ping_v6.as_ref()),
+            (false, false) => commands.ping_v6.as_ref(),
+        }
         .ok_or_else(|| CatalogueError::Unsupported {
             vendor: vendor.to_string(),
             query: "ping".to_string(),
         })?;
 
-        Ok(render(
-            template,
-            &[
-                ("target", target.to_string()),
-                ("count", limits.ping_count.clamp(1, 20).to_string()),
-            ],
-        ))
+        let mut values = vec![
+            ("target", target.to_string()),
+            ("count", limits.ping_count.clamp(1, 20).to_string()),
+        ];
+        if let Some(src) = source {
+            if src.is_ipv4() == target.is_ipv4() {
+                values.push(("source", src.to_string()));
+            }
+        }
+
+        Ok(render(template, &values))
     }
 
-    /// Builds the traceroute command for one vendor.
-    pub fn traceroute(&self, vendor: &str, target: IpAddr) -> Result<String, CatalogueError> {
+    /// Builds the traceroute command for one vendor, optionally specifying a source address.
+    pub fn traceroute(
+        &self,
+        vendor: &str,
+        target: IpAddr,
+        source: Option<IpAddr>,
+    ) -> Result<String, CatalogueError> {
         let commands = self.vendor(vendor)?;
-        let template = pick(
-            target.is_ipv4(),
-            commands.traceroute_v4.as_ref(),
-            commands.traceroute_v6.as_ref(),
-        )
+        let template = match (target.is_ipv4(), source.is_some()) {
+            (true, true) => commands
+                .traceroute_source_v4
+                .as_ref()
+                .or(commands.traceroute_v4.as_ref()),
+            (true, false) => commands.traceroute_v4.as_ref(),
+            (false, true) => commands
+                .traceroute_source_v6
+                .as_ref()
+                .or(commands.traceroute_v6.as_ref()),
+            (false, false) => commands.traceroute_v6.as_ref(),
+        }
         .ok_or_else(|| CatalogueError::Unsupported {
             vendor: vendor.to_string(),
             query: "traceroute".to_string(),
         })?;
 
-        Ok(render(template, &[("target", target.to_string())]))
+        let mut values = vec![("target", target.to_string())];
+        if let Some(src) = source {
+            if src.is_ipv4() == target.is_ipv4() {
+                values.push(("source", src.to_string()));
+            }
+        }
+
+        Ok(render(template, &values))
     }
 
     /// Builds the BGP AS-Path regex lookup for one vendor.
@@ -427,15 +478,36 @@ mod tests {
 
         assert_eq!(
             catalogue
-                .ping("huawei_vrp", "198.51.100.1".parse().unwrap(), &limits)
+                .ping("huawei_vrp", "198.51.100.1".parse().unwrap(), &limits, None)
                 .unwrap(),
             "ping -c 5 198.51.100.1"
         );
         assert_eq!(
             catalogue
-                .traceroute("huawei_vrp", "2001:db8::1".parse().unwrap())
+                .ping(
+                    "huawei_vrp",
+                    "198.51.100.1".parse().unwrap(),
+                    &limits,
+                    Some("192.0.2.1".parse().unwrap())
+                )
+                .unwrap(),
+            "ping -a 192.0.2.1 -c 5 198.51.100.1"
+        );
+        assert_eq!(
+            catalogue
+                .traceroute("huawei_vrp", "2001:db8::1".parse().unwrap(), None)
                 .unwrap(),
             "tracert ipv6 2001:db8::1"
+        );
+        assert_eq!(
+            catalogue
+                .traceroute(
+                    "huawei_vrp",
+                    "2001:db8::1".parse().unwrap(),
+                    Some("2001:db8::beef".parse().unwrap())
+                )
+                .unwrap(),
+            "tracert ipv6 -a 2001:db8::beef 2001:db8::1"
         );
         // VRP wants address and mask separately for IPv4 when querying a prefix.
         assert_eq!(
@@ -506,16 +578,28 @@ mod tests {
             }
             for ip in ["198.51.100.1", "2001:db8::1"] {
                 let ip: IpAddr = ip.parse().unwrap();
-                if let Ok(command) = catalogue.ping(vendor, ip, &limits) {
+                if let Ok(command) = catalogue.ping(vendor, ip, &limits, None) {
                     assert!(
                         !command.contains('{'),
                         "{vendor} left a placeholder in {command:?}"
                     );
                 }
-                if let Ok(command) = catalogue.traceroute(vendor, ip) {
+                if let Ok(command) = catalogue.ping(vendor, ip, &limits, Some(ip)) {
+                    assert!(
+                        !command.contains('{'),
+                        "{vendor} left a placeholder in ping with source: {command:?}"
+                    );
+                }
+                if let Ok(command) = catalogue.traceroute(vendor, ip, None) {
                     assert!(
                         !command.contains('{'),
                         "{vendor} left a placeholder in {command:?}"
+                    );
+                }
+                if let Ok(command) = catalogue.traceroute(vendor, ip, Some(ip)) {
+                    assert!(
+                        !command.contains('{'),
+                        "{vendor} left a placeholder in traceroute with source: {command:?}"
                     );
                 }
             }
@@ -589,7 +673,7 @@ ping_v4 = "ping {targt}"
             ..QueryLimits::default()
         };
         let command = BUILTIN
-            .ping("huawei_vrp", "198.51.100.1".parse().unwrap(), &limits)
+            .ping("huawei_vrp", "198.51.100.1".parse().unwrap(), &limits, None)
             .unwrap();
         assert_eq!(command, "ping -c 20 198.51.100.1");
     }
