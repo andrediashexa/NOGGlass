@@ -3,8 +3,11 @@
 .env.*
 !.env.example
 *.bak-*
+nogglass.conf
+routers.conf
+ui.conf
+!*.example.conf
 nogglass.toml
-!nogglass.example.toml
 # Lab inventories are sample configs for the reproducible harnesses, not real
 # deployment secrets, so they are tracked deliberately.
 !lab/*/nogglass.toml

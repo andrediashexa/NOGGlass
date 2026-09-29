@@ -196,9 +196,9 @@ jobs:
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/nogglass:${{ steps.tags.outputs.version }}
         run: |
-          printf '[[router]]\nid = "demo"\nname = "Demo"\nvendor = "mock"\nhost = "127.0.0.1"\n' > nogglass.toml
+          printf '[[router]]\nid = "demo"\nname = "Demo"\nvendor = "mock"\nhost = "127.0.0.1"\n' > nogglass.conf
           docker run -d --name smoke -p 8080:8080 \
-            -v "$PWD/nogglass.toml:/etc/nogglass/nogglass.toml:ro" "$IMAGE"
+            -v "$PWD/nogglass.conf:/etc/nogglass/nogglass.conf:ro" "$IMAGE"
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
               echo "The image starts and answers."
@@ -259,7 +259,9 @@ jobs:
           pkg="nogglass-v${ver}-linux-amd64"
           mkdir -p "dist/$pkg"
           cp dist/nogglass "dist/$pkg/"
-          cp nogglass.example.toml "dist/$pkg/"
+          cp nogglass.example.conf "dist/$pkg/"
+          cp routers.example.conf "dist/$pkg/"
+          cp ui.example.conf "dist/$pkg/"
           cp deploy/systemd/nogglass.service "dist/$pkg/"
           cp deploy/systemd/nogglass.env.example "dist/$pkg/"
           cp INSTALL.md "dist/$pkg/"
