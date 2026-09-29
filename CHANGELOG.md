@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.1](https://github.com/andrediashexa/NOGGlass/compare/v0.9.0...v0.9.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **compose:** use full ghcr image name and isolate docs service under profile ([db06fb3](https://github.com/andrediashexa/NOGGlass/commit/db06fb3c65013d9972eff62809f188101f6d3f85))
+* **server:** fallback to legacy nogglass.toml when nogglass.conf is missing in container ([6dc275a](https://github.com/andrediashexa/NOGGlass/commit/6dc275ae4237a926b1134a176e49c8bb535662d3))
+
+
+### Documentation
+
+* **vendor:** mark Juniper Junos as verified end to end ([7e3f6e3](https://github.com/andrediashexa/NOGGlass/commit/7e3f6e3559ab2216f544a3e83aab241c97f1abab))
+
 ## [0.9.0](https://github.com/andrediashexa/NOGGlass/compare/v0.8.1...v0.9.0) (2026-09-29)
 
 
