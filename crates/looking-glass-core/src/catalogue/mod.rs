@@ -609,6 +609,22 @@ mod tests {
                 .unwrap(),
             "traceroute inet6 2001:db8::2 source 2001:db8::1 no-resolve"
         );
+        assert_eq!(
+            catalogue.bgp_aspath("juniper_junos", 65500).unwrap(),
+            "show route table inet.0 aspath-regex \"^65500( .*|$)\" detail | display json"
+        );
+        assert_eq!(
+            catalogue.bgp_aspath_v6("juniper_junos", 65500).unwrap(),
+            "show route table inet6.0 aspath-regex \"^65500( .*|$)\" detail | display json"
+        );
+        assert_eq!(
+            catalogue.bgp_aspath("nokia_sros", 65500).unwrap(),
+            "show router bgp routes aspath-regex \"^65500( .*|$)\""
+        );
+        assert_eq!(
+            catalogue.bgp_aspath_v6("nokia_sros", 65500).unwrap(),
+            "show router bgp routes aspath-regex \"^65500( .*|$)\" ipv6"
+        );
     }
 
     #[test]

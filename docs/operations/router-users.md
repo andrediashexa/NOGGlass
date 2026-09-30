@@ -125,13 +125,16 @@ username nogglass
 ## Juniper Junos
 
 ```text
-set system login user nogglass class read-only
+set system login class nogglass-ro permissions [ view routing network ]
+set system login user nogglass class nogglass-ro
 set system login user nogglass authentication ssh-ed25519 "<public key>"
 set system services ssh protocol-version v2
 ```
 
-The built-in `read-only` class covers `show` commands and `ping` or
-`traceroute` from the operational mode, and excludes configuration.
+A dedicated class with permissions `[ view routing network ]` (or the built-in
+`operator` class) covers `show` commands, `ping` and `traceroute` from
+operational mode while strictly excluding configuration mode. The default
+`read-only` class lacks the `network` permission required for ping and traceroute.
 
 ## Nokia SR OS
 
