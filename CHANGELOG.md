@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.0](https://github.com/andrediashexa/NOGGlass/compare/v1.1.2...v1.2.0) (2026-09-29)
+
+### Features
+
+* **config (nogglass.conf):** introduce the `[server]` configuration section to define HTTP listener address (`http_addr`) and captcha secret (`captcha_secret`) directly in `nogglass.conf`, eliminating mandatory environment variable declarations:
+  ```toml
+  [server]
+  http_addr = "0.0.0.0:8080"
+  captcha_secret = "your_secret_key_here"
+  ```
+* **config (routers.conf):** add native support for direct router passwords using `password = "..."` or `credentials = { password = "..." }` directly inside `routers.conf`, eliminating the requirement for external `.env` files or runtime environment variable exports:
+  ```toml
+  [routers.edge1]
+  # ...
+  username = "lookingglass"
+  password = "your_router_password"
+  ```
+* **config (defaults):** set `/etc/nogglass/nogglass.conf` as the hardcoded native default path in the server binary, removing the necessity of declaring `NOGGLASS_CONFIG=/etc/nogglass/nogglass.conf` in systemd units, Dockerfile and container compose specs.
+* **infra:** remove `nogglass.env.example` and deprecated `EnvironmentFile` / `env_file` directives from `deploy/systemd/nogglass.service`, `docker-compose.yml`, and CI release workflows.
+
 ## [1.1.2](https://github.com/andrediashexa/NOGGlass/compare/v1.1.1...v1.1.2) (2026-09-29)
 
 ### Bug Fixes

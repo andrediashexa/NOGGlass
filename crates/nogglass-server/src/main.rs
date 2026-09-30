@@ -24,10 +24,6 @@ use tracing::{error, info, warn};
 const DEFAULT_CONFIG: &str = "/etc/nogglass/nogglass.conf";
 const LEGACY_CONFIG: &str = "/etc/nogglass/nogglass.toml";
 
-/// Unprivileged by default (ADR-0012): binding 80 or 443 needs a capability or
-/// a proxy, and the deployment guide covers both.
-const DEFAULT_LISTEN: &str = "0.0.0.0:8080";
-
 /// Loads key-value pairs from an environment file if present.
 ///
 /// Priority:
@@ -162,10 +158,14 @@ async fn run() -> Result<(), String> {
         }
     }
 
-    let listen: SocketAddr = std::env::var("NOGGLASS_HTTP_ADDR")
-        .unwrap_or_else(|_| DEFAULT_LISTEN.to_string())
+    let listen_str = std::env::var("NOGGLASS_HTTP_ADDR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| inventory.server.http_addr.clone());
+
+    let listen: SocketAddr = listen_str
         .parse()
-        .map_err(|e| format!("NOGGLASS_HTTP_ADDR is not an address: {e}"))?;
+        .map_err(|e| format!("http_addr '{listen_str}' is not an address: {e}"))?;
 
     // Saying this out loud beats a deployment that quietly serves a public
     // Looking Glass in the clear (ADR-0012, section 1.3).
@@ -279,9 +279,16 @@ async fn run() -> Result<(), String> {
         std::time::Duration::from_millis(inventory.global_view.timeout_ms),
     ));
 
-    let captcha_secret = match std::env::var("NOGGLASS_CAPTCHA_SECRET") {
-        Ok(s) if !s.trim().is_empty() => s,
-        _ => {
+    let configured_secret = std::env::var("NOGGLASS_CAPTCHA_SECRET")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| inventory.server.captcha_secret.clone())
+        .or_else(|| inventory.rate_limit.captcha_secret.clone())
+        .filter(|s| !s.trim().is_empty());
+
+    let captcha_secret = match configured_secret {
+        Some(s) => s,
+        None => {
             let is_prod = std::env::var("NOGGLASS_ENV").as_deref() == Ok("production")
                 || std::env::var("ENVIRONMENT").as_deref() == Ok("production")
                 || std::env::var("NOGGLASS_REQUIRE_CAPTCHA_SECRET")
@@ -290,15 +297,15 @@ async fn run() -> Result<(), String> {
 
             if is_prod {
                 return Err(
-                    "NOGGLASS_CAPTCHA_SECRET is required in production deployments to support multiple replicas and persistent restarts. Set NOGGLASS_CAPTCHA_SECRET in the environment."
+                    "captcha_secret is required in production deployments. Configure 'captcha_secret' under [server] in nogglass.conf or set NOGGLASS_CAPTCHA_SECRET in the environment."
                         .into(),
                 );
             }
 
             warn!(
-                "NOGGLASS_CAPTCHA_SECRET not set; generated ephemeral in-memory secret. \
+                "captcha_secret not configured; generated ephemeral in-memory secret. \
                  CAPTCHA tokens will not persist across restarts or multiple replicas. \
-                 Set NOGGLASS_CAPTCHA_SECRET in the environment for production deployments."
+                 Configure 'captcha_secret' under [server] in nogglass.conf for production deployments."
             );
             let mut bytes = [0u8; 32];
             let mut rng = rand::thread_rng();

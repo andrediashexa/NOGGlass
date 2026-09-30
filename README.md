@@ -31,7 +31,7 @@ NOGGlass was built for the diverse routing mix that regional carriers and ISPs r
 
 ---
 
-## Key Features (v1.1.2)
+## Key Features (v1.2.0)
 
 - **The Router is Sacred:** Complete immunity to command injection. Diagnostic targets and counts are strictly deserialized into Rust types (`std::net::IpAddr`, `ipnet::IpNet`, validated enums) and mapped to read-only command templates.
 - **Topological AS-PATH Graph (Bellman-Ford DAG):** Renders route propagation from the local router node. Direct peers (e.g. transit providers and IX peers) are locked in parallel on Column 1, eliminating false cascade representations.
@@ -143,7 +143,7 @@ name = "Edge 01 - Core Transit"
 vendor = "huawei_vrp"
 host = "192.0.2.10"
 username = "nogglass"
-credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
+password = "your_router_password_here"
 queries = ["ping", "traceroute", "bgp_route", "bgp_summary"]
 
 [ui]

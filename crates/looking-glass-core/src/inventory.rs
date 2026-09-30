@@ -91,11 +91,15 @@ impl std::error::Error for InventoryError {}
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Credentials {
+    /// Password directly specified in the configuration file.
+    Password(String),
     /// Password read from this environment variable.
     PasswordEnv(String),
-    /// Private key read from this file, with an optional passphrase variable.
+    /// Private key read from this file, with an optional passphrase or passphrase variable.
     KeyFile {
         path: String,
+        #[serde(default)]
+        passphrase: Option<String>,
         #[serde(default)]
         passphrase_env: Option<String>,
     },
@@ -124,6 +128,9 @@ pub struct Router {
     pub port: u16,
     #[serde(default)]
     pub username: Option<String>,
+    /// Password specified directly on the router entry.
+    #[serde(default)]
+    pub password: Option<String>,
     #[serde(default)]
     pub credentials: Credentials,
     /// Grouping shown in the selector, typically a POP or a city.
@@ -200,6 +207,21 @@ fn default_port() -> u16 {
 }
 
 impl Router {
+    /// Returns the resolved credentials for this router, considering both
+    /// the direct `password` property and the `credentials` configuration.
+    pub fn resolved_credentials(&self) -> Credentials {
+        match &self.credentials {
+            Credentials::None => {
+                if let Some(pass) = &self.password {
+                    Credentials::Password(pass.clone())
+                } else {
+                    Credentials::None
+                }
+            }
+            creds => creds.clone(),
+        }
+    }
+
     /// Whether a visitor may run this query against this router.
     pub fn allows(&self, query: QueryType) -> bool {
         if self.queries.is_empty() {
@@ -357,6 +379,9 @@ pub struct RateLimitSettings {
     /// sits in front.
     #[serde(default)]
     pub trusted_proxies: Vec<String>,
+    /// Optional CAPTCHA secret key configured under `[rate_limit]`.
+    #[serde(default)]
+    pub captcha_secret: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -384,6 +409,7 @@ impl Default for RateLimitSettings {
             burst: default_burst(),
             require_captcha_within_secs: default_captcha_secs(),
             trusted_proxies: Vec::new(),
+            captcha_secret: None,
         }
     }
 }
@@ -556,9 +582,33 @@ impl Default for UiSettings {
     }
 }
 
+/// Server listen and security settings.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerSettings {
+    #[serde(default = "default_http_addr", alias = "listen")]
+    pub http_addr: String,
+    #[serde(default)]
+    pub captcha_secret: Option<String>,
+}
+
+fn default_http_addr() -> String {
+    "0.0.0.0:8080".to_string()
+}
+
+impl Default for ServerSettings {
+    fn default() -> Self {
+        Self {
+            http_addr: default_http_addr(),
+            captcha_secret: None,
+        }
+    }
+}
+
 /// The whole configuration file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Inventory {
+    #[serde(default)]
+    pub server: ServerSettings,
     #[serde(default)]
     pub limits: Limits,
     #[serde(default)]
@@ -720,7 +770,7 @@ impl Inventory {
                 }
             }
 
-            if !router.is_mock() && matches!(router.credentials, Credentials::None) {
+            if !router.is_mock() && matches!(router.resolved_credentials(), Credentials::None) {
                 return Err(InventoryError::NoCredentials(router.id.clone()));
             }
         }
@@ -749,9 +799,17 @@ impl Inventory {
         lookup: impl Fn(&str) -> Option<String>,
     ) -> Result<(), InventoryError> {
         for router in &self.routers {
-            match &router.credentials {
+            match router.resolved_credentials() {
+                Credentials::Password(pass) => {
+                    if pass.trim().is_empty() {
+                        return Err(InventoryError::Malformed(format!(
+                            "router '{}' has an empty password",
+                            router.id
+                        )));
+                    }
+                }
                 Credentials::PasswordEnv(variable) => {
-                    if is_blank(lookup(variable)) {
+                    if is_blank(lookup(&variable)) {
                         return Err(InventoryError::MissingSecret {
                             router: router.id.clone(),
                             variable: variable.clone(),
@@ -760,9 +818,10 @@ impl Inventory {
                 }
                 Credentials::KeyFile {
                     passphrase_env: Some(variable),
+                    passphrase,
                     ..
                 } => {
-                    if is_blank(lookup(variable)) {
+                    if passphrase.is_none() && is_blank(lookup(&variable)) {
                         return Err(InventoryError::MissingSecret {
                             router: router.id.clone(),
                             variable: variable.clone(),
@@ -973,12 +1032,6 @@ host = "192.0.2.1"
         let routers = include_str!("../../../routers.example.conf");
         let ui = include_str!("../../../ui.example.conf");
 
-        assert!(
-            !routers.to_lowercase().contains("password = ")
-                && !conf.to_lowercase().contains("password = "),
-            "the example files must never contain a literal secret"
-        );
-
         // Combined parsing test
         let combined = format!("{conf}\n{routers}\n{ui}");
         let inventory = Inventory::from_toml(&combined).expect("the combined examples must load");
@@ -987,6 +1040,49 @@ host = "192.0.2.1"
             inventory.routers.iter().any(|r| r.is_mock()),
             "the example should show the mock router"
         );
+    }
+
+    #[test]
+    fn loads_router_with_direct_password() {
+        let toml = r#"
+[server]
+http_addr = "127.0.0.1:9090"
+captcha_secret = "test_secret_for_captcha_123456789"
+
+[[router]]
+id = "r-direct-pass"
+name = "Direct Password Router"
+vendor = "huawei_vrp"
+host = "192.0.2.1"
+password = "super_secret_router_pass"
+
+[[router]]
+id = "r-creds-pass"
+name = "Credentials Password Router"
+vendor = "juniper_junos"
+host = "192.0.2.2"
+credentials = { password = "another_secret_pass" }
+"#;
+        let inventory = Inventory::from_toml(toml).expect("should parse inventory with direct passwords");
+        assert_eq!(inventory.server.http_addr, "127.0.0.1:9090");
+        assert_eq!(
+            inventory.server.captcha_secret.as_deref(),
+            Some("test_secret_for_captcha_123456789")
+        );
+
+        let r1 = inventory.router("r-direct-pass").unwrap();
+        assert_eq!(
+            r1.resolved_credentials(),
+            Credentials::Password("super_secret_router_pass".to_string())
+        );
+
+        let r2 = inventory.router("r-creds-pass").unwrap();
+        assert_eq!(
+            r2.resolved_credentials(),
+            Credentials::Password("another_secret_pass".to_string())
+        );
+
+        inventory.check_secrets(|_| None).expect("check_secrets should pass for direct passwords");
     }
 
     #[test]

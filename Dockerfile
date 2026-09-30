@@ -92,8 +92,6 @@ USER nogglass:nogglass
 # Unprivileged port: binding 80 or 443 needs a capability or a proxy, and the
 # deployment guide covers both (ADR-0012).
 EXPOSE 8080
-ENV NOGGLASS_CONFIG=/etc/nogglass/nogglass.conf \
-    NOGGLASS_HTTP_ADDR=0.0.0.0:8080
 
 # The health endpoint answers without touching a router, so a health check
 # never costs control-plane CPU.

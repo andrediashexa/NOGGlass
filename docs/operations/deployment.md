@@ -131,21 +131,10 @@ configuration management can write it.
    sudo cp crates/nogglass-server/ui/assets/nogglass_light.png /etc/nogglass/nogglass_light.png
    sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
    sudo chmod 750 /etc/nogglass /var/log/nogglass
-   sudo chmod 640 /etc/nogglass/*.conf /etc/nogglass/*.png
+   sudo chmod 600 /etc/nogglass/*.conf /etc/nogglass/*.png
    ```
 
-3. Configure secrets in `/etc/nogglass/nogglass.env` (mode `0600`):
-   ```bash
-   sudo bash -c 'cat <<EOF > /etc/nogglass/nogglass.env
-   NOGGLASS_CONFIG=/etc/nogglass/nogglass.conf
-   NOGGLASS_HTTP_ADDR=0.0.0.0:8080
-   NOGGLASS_EDGE01_PASSWORD=""
-   EOF'
-   sudo chmod 600 /etc/nogglass/nogglass.env
-   sudo chown nogglass:nogglass /etc/nogglass/nogglass.env
-   ```
-
-4. Create the systemd service unit `/etc/systemd/system/nogglass.service`:
+3. Create the systemd service unit `/etc/systemd/system/nogglass.service`:
    ```ini
    [Unit]
    Description=NOGGlass Multi-Vendor Looking Glass
@@ -155,7 +144,6 @@ configuration management can write it.
    Type=simple
    User=nogglass
    Group=nogglass
-   EnvironmentFile=/etc/nogglass/nogglass.env
    ExecStart=/usr/local/bin/nogglass
    Restart=always
    RestartSec=5
@@ -172,7 +160,7 @@ configuration management can write it.
    WantedBy=multi-user.target
    ```
 
-5. Enable and start:
+4. Enable and start:
    ```bash
    sudo systemctl daemon-reload
    sudo systemctl enable --now nogglass
@@ -183,9 +171,7 @@ configuration management can write it.
 
 ## Configuration
 
-Copy [`nogglass.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/nogglass.example.conf) and [`routers.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/routers.example.conf). Router passwords are
-**named** in that file and **read from the environment**, so the file is safe to
-keep in version control:
+Copy [`nogglass.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/nogglass.example.conf) and [`routers.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/routers.example.conf). Router passwords can be specified directly in `routers.conf` (or via `credentials = { password = "..." }`):
 
 ```toml
 [[router]]
@@ -194,27 +180,27 @@ vendor = "huawei_vrp"
 host = "192.0.2.10"
 port = 22
 username = "nogglass"
-credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
+password = "REPLACE_WITH_ROUTER_PASSWORD"
 ```
+
+Set file permissions to `0600` on `/etc/nogglass/*.conf` so passwords remain protected:
 
 ```bash
-# In your secret store, your systemd unit, or a .env file with mode 600.
-NOGGLASS_EDGE01_PASSWORD=...
+sudo chmod 600 /etc/nogglass/*.conf
 ```
-
-NOGGlass checks every named variable at startup and names the missing one, so a
-forgotten password is found by you and not by a visitor.
 
 ## Environment variables
 
+All core settings are read directly from `/etc/nogglass/nogglass.conf` and `routers.conf`. Environment variables can optionally override them:
+
 | Variable | Default | What it does |
 |---|---|---|
-| `NOGGLASS_CONFIG` | `/etc/nogglass/nogglass.conf` | Configuration file |
-| `NOGGLASS_HTTP_ADDR` | `0.0.0.0:8080` | Listen address |
+| `NOGGLASS_CONFIG` | `/etc/nogglass/nogglass.conf` | Path to main configuration file (optional override) |
+| `NOGGLASS_HTTP_ADDR` | `0.0.0.0:8080` (or `[server] http_addr` in `nogglass.conf`) | Listen address |
+| `NOGGLASS_CAPTCHA_SECRET` | Configured in `nogglass.conf` | HMAC secret for CAPTCHA challenge signing |
 | `NOGGLASS_DEFAULT_LOCALE` | `en` | Language for a visitor whose browser asks for none we serve |
 | `NOGGLASS_BEHIND_PROXY` | unset | Declares that a proxy terminates TLS; silences the startup warning |
-| `NOGGLASS_LOG` | `info` | Log filter |
-| `NOGGLASS_<ROUTER>_PASSWORD` | — | Whatever your configuration names |
+| `NOGGLASS_LOG` | `info` | Tracing log filter |
 
 ## Exposure and TLS
 

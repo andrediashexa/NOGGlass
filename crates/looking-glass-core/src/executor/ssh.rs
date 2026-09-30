@@ -92,7 +92,31 @@ impl SshTransport {
             .clone()
             .unwrap_or_else(|| "admin".to_string());
 
-        let result = match &router.credentials {
+        let credentials = router.resolved_credentials();
+        let result = match &credentials {
+            Credentials::Password(password) => {
+                if password.is_empty() {
+                    tracing::error!(
+                        router = %router.id,
+                        "router credential error: password is empty"
+                    );
+                    return Err(DriverError::ConnectionFailed(format!(
+                        "password for router '{}' is empty",
+                        router.id
+                    )));
+                }
+                session
+                    .authenticate_password(user.clone(), password.clone())
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            router = %router.id,
+                            error = %e,
+                            "SSH authenticate_password network/protocol error"
+                        );
+                        DriverError::ConnectionFailed(e.to_string())
+                    })?
+            }
             Credentials::PasswordEnv(variable) => {
                 let password = std::env::var(variable).map_err(|_| {
                     tracing::error!(
@@ -126,13 +150,18 @@ impl SshTransport {
             }
             Credentials::KeyFile {
                 path,
+                passphrase,
                 passphrase_env,
             } => {
-                let passphrase = passphrase_env
-                    .as_ref()
-                    .and_then(|variable| std::env::var(variable).ok())
+                let pass = passphrase
+                    .clone()
+                    .or_else(|| {
+                        passphrase_env
+                            .as_ref()
+                            .and_then(|variable| std::env::var(variable).ok())
+                    })
                     .filter(|value| !value.is_empty());
-                let key = load_secret_key(path, passphrase.as_deref()).map_err(|e| {
+                let key = load_secret_key(path, pass.as_deref()).map_err(|e| {
                     tracing::error!(
                         router = %router.id,
                         path = %path,
@@ -854,6 +883,7 @@ mod host_key_tests {
             host: "127.0.0.1".to_string(),
             port: 22,
             username: Some("user".to_string()),
+            password: None,
             credentials: crate::inventory::Credentials::None,
             location: None,
             queries: vec![],

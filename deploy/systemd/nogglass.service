@@ -7,7 +7,6 @@ After=network.target
 Type=simple
 User=nogglass
 Group=nogglass
-EnvironmentFile=-/etc/nogglass/nogglass.env
 ExecStart=/usr/local/bin/nogglass
 Restart=always
 RestartSec=5

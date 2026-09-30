@@ -137,17 +137,16 @@ sudo chmod 640 /etc/nogglass/*.conf /etc/nogglass/*.png
 ```
 
 #### Setup for Container Installation (Docker / Method 2)
-When running via Docker Compose, no system user on the host is needed. Configuration files (`nogglass.conf`, `routers.conf`, `ui.conf`), credentials (`nogglass.env`), and visual assets are stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and container rebuilds:
+When running via Docker Compose, no system user on the host is needed. Configuration files (`nogglass.conf`, `routers.conf`, `ui.conf`) and visual assets are stored inside a dedicated Docker named volume (`nogglass-config`), ensuring your settings survive image updates and container rebuilds:
 
 ```bash
 # 1. Start the container to initialize the named volume
 docker compose up -d nogglass
 
-# 2. Copy modular templates, environment file, and visual assets into the volume
+# 2. Copy modular templates and visual assets into the volume
 docker cp nogglass.example.conf nogglass:/etc/nogglass/nogglass.conf
 docker cp routers.example.conf nogglass:/etc/nogglass/routers.conf
 docker cp ui.example.conf nogglass:/etc/nogglass/ui.conf
-docker cp deploy/systemd/nogglass.env.example nogglass:/etc/nogglass/nogglass.env
 docker cp crates/nogglass-server/ui/assets/logo_nogglass_dark.png nogglass:/etc/nogglass/logo_nogglass_dark.png
 docker cp crates/nogglass-server/ui/assets/logo_nogglass_light.png nogglass:/etc/nogglass/logo_nogglass_light.png
 docker cp crates/nogglass-server/ui/assets/nogglass_dark.png nogglass:/etc/nogglass/nogglass_dark.png
@@ -162,6 +161,12 @@ docker compose restart nogglass
 
 #### Primary Daemon Policies (`nogglass.conf`)
 ```toml
+[server]
+# Address and port on which NOGGlass listens (default: 0.0.0.0:8080)
+http_addr = "0.0.0.0:8080"
+# Secret key used to sign and verify CAPTCHA tokens (32+ chars recommended in production)
+captcha_secret = "generate_a_random_secret_string_here_32_chars_or_more"
+
 [limits]
 timeout_secs = 30
 max_output_bytes = 262144
@@ -191,7 +196,7 @@ timeout_ms = 1500
 
 #### Router Inventory (`routers.conf`)
 ```toml
-# Example Huawei VRP Router
+# Example Huawei VRP Router with direct password
 [[router]]
 id = "edge-01"
 name = "Edge 01 - Sao Paulo"
@@ -201,8 +206,8 @@ port = 22 # Optional, defaults to 22
 source_v4 = "192.0.2.1" # Optional source IPv4 for ping / traceroute
 source_v6 = "2001:db8::1" # Optional source IPv6 for ping / traceroute
 username = "nogglass"
+password = "REPLACE_WITH_ROUTER_PASSWORD"
 location = "Sao Paulo, BR"
-credentials = { password_env = "NOGGLASS_EDGE01_PASSWORD" }
 queries = ["ping", "traceroute", "bgp_route", "bgp_summary"]
 
 # Example Juniper JunOS Router using SSH Key
@@ -214,7 +219,7 @@ host = "192.0.2.11"
 # source_v4 and source_v6 omitted: runs without source IP
 username = "nogglass"
 location = "Rio de Janeiro, BR"
-credentials = { key_file = { path = "/etc/nogglass/keys/border-02.key", passphrase_env = "NOGGLASS_BORDER02_PASSPHRASE" } }
+credentials = { key_file = { path = "/etc/nogglass/keys/border-02.key", passphrase = "optional_key_passphrase" } }
 
 # Mock Router for Demonstration and Testing
 [[router]]
@@ -280,23 +285,10 @@ show_raw_output = true
    sudo cp crates/nogglass-server/ui/assets/nogglass_light.png /etc/nogglass/nogglass_light.png
    sudo chown -R nogglass:nogglass /etc/nogglass /var/log/nogglass
    sudo chmod 750 /etc/nogglass /var/log/nogglass
-   sudo chmod 640 /etc/nogglass/*.conf /etc/nogglass/*.png
+   sudo chmod 600 /etc/nogglass/*.conf /etc/nogglass/*.png
    ```
 
-3. Create the environment file `/etc/nogglass/nogglass.env` (permissions `0600`):
-   ```bash
-   sudo bash -c 'cat <<EOF > /etc/nogglass/nogglass.env
-   NOGGLASS_CONFIG=/etc/nogglass/nogglass.conf
-   # Use 0.0.0.0:8080 for public access or 127.0.0.1:8080 when behind a local reverse proxy
-   NOGGLASS_HTTP_ADDR=0.0.0.0:8080
-   NOGGLASS_EDGE01_PASSWORD="REPLACE_WITH_ROUTER_PASSWORD"
-   NOGGLASS_BORDER02_PASSPHRASE=""
-   EOF'
-   sudo chmod 600 /etc/nogglass/nogglass.env
-   sudo chown nogglass:nogglass /etc/nogglass/nogglass.env
-   ```
-
-4. Create the systemd service unit `/etc/systemd/system/nogglass.service`:
+3. Create the systemd service unit `/etc/systemd/system/nogglass.service`:
    ```ini
    [Unit]
    Description=NOGGlass Multi-Vendor Looking Glass
@@ -306,7 +298,6 @@ show_raw_output = true
    Type=simple
    User=nogglass
    Group=nogglass
-   EnvironmentFile=/etc/nogglass/nogglass.env
    ExecStart=/usr/local/bin/nogglass
    Restart=always
    RestartSec=5
@@ -323,7 +314,7 @@ show_raw_output = true
    WantedBy=multi-user.target
    ```
 
-5. Enable and start:
+4. Enable and start:
    ```bash
    sudo systemctl daemon-reload
    sudo systemctl enable --now nogglass
@@ -332,29 +323,15 @@ show_raw_output = true
 
 ### Method 2: Running with Docker Compose
 
-Running with Docker Compose stores all configuration, credentials, and visual assets inside a Docker named volume (`nogglass-config`), mounted at `/etc/nogglass` in the container. No system user creation on the host and no root `/etc` filesystem modifications are needed.
+Running with Docker Compose stores all configuration files and visual assets inside a dedicated Docker named volume (`nogglass-config`), mounted at `/etc/nogglass` in the container. No system user creation on the host and no root `/etc` filesystem modifications are needed.
 
-1. Prepare your local environment file (`nogglass.env`):
-   ```bash
-   # Copy the example environment template and restrict permissions
-   cp deploy/systemd/nogglass.env.example nogglass.env
-   chmod 600 nogglass.env
-
-   # Edit nogglass.env to define your router passwords and settings.
-   # Note: Inside the container, keep NOGGLASS_HTTP_ADDR=0.0.0.0:8080 so it
-   # accepts traffic from the Docker bridge. Loopback isolation is handled
-   # on the host via ports: ["127.0.0.1:8080:8080"] in docker-compose.yml.
-   ```
-
-2. Prepare your `docker-compose.yml`:
+1. Prepare your `docker-compose.yml`:
    ```yaml
    services:
      nogglass:
        image: nogglass:latest
        container_name: nogglass
        restart: unless-stopped
-       env_file:
-         - nogglass.env
        volumes:
          - nogglass-config:/etc/nogglass
        ports:
@@ -365,7 +342,7 @@ Running with Docker Compose stores all configuration, credentials, and visual as
        name: nogglass-config
    ```
 
-3. Bootstrap configuration and visual assets directly into the Docker volume:
+2. Bootstrap configuration and visual assets directly into the Docker volume:
    ```bash
    # 1. Bring up the container (initializes the named volume)
    docker compose up -d nogglass
@@ -374,19 +351,18 @@ Running with Docker Compose stores all configuration, credentials, and visual as
    docker cp nogglass.example.conf nogglass:/etc/nogglass/nogglass.conf
    docker cp routers.example.conf nogglass:/etc/nogglass/routers.conf
    docker cp ui.example.conf nogglass:/etc/nogglass/ui.conf
-   docker cp nogglass.env nogglass:/etc/nogglass/nogglass.env
    docker cp crates/nogglass-server/ui/assets/logo_nogglass_dark.png nogglass:/etc/nogglass/logo_nogglass_dark.png
    docker cp crates/nogglass-server/ui/assets/logo_nogglass_light.png nogglass:/etc/nogglass/logo_nogglass_light.png
    docker cp crates/nogglass-server/ui/assets/nogglass_dark.png nogglass:/etc/nogglass/nogglass_dark.png
    docker cp crates/nogglass-server/ui/assets/nogglass_light.png nogglass:/etc/nogglass/nogglass_light.png
 
-   # 3. Recreate the container to reload configuration and credentials
+   # 3. Recreate the container to reload configuration
    docker compose up -d --force-recreate nogglass
    docker compose logs -f nogglass
    ```
 
    > [!TIP]
-   > Because `/etc/nogglass` is a Docker named volume, you can edit `nogglass.conf`, `routers.conf`, `ui.conf`, or `nogglass.env` locally and push updates with `docker cp`, or edit them directly on the Linux host filesystem at `/var/lib/docker/volumes/nogglass-config/_data/`.
+   > Because `/etc/nogglass` is a Docker named volume, you can edit `nogglass.conf`, `routers.conf`, or `ui.conf` locally and push updates with `docker cp`, or edit them directly on the Linux host filesystem at `/var/lib/docker/volumes/nogglass-config/_data/`.
 
 
 ---
