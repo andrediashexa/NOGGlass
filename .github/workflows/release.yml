@@ -207,7 +207,6 @@ jobs:
           cp routers.example.conf "dist/$pkg/"
           cp ui.example.conf "dist/$pkg/"
           cp deploy/systemd/nogglass.service "dist/$pkg/"
-          cp deploy/systemd/nogglass.env.example "dist/$pkg/"
           cp INSTALL.md "dist/$pkg/"
           cp README.md "dist/$pkg/"
           cp LICENSE "dist/$pkg/"
