@@ -1063,7 +1063,8 @@ vendor = "juniper_junos"
 host = "192.0.2.2"
 credentials = { password = "another_secret_pass" }
 "#;
-        let inventory = Inventory::from_toml(toml).expect("should parse inventory with direct passwords");
+        let inventory =
+            Inventory::from_toml(toml).expect("should parse inventory with direct passwords");
         assert_eq!(inventory.server.http_addr, "127.0.0.1:9090");
         assert_eq!(
             inventory.server.captcha_secret.as_deref(),
@@ -1082,7 +1083,9 @@ credentials = { password = "another_secret_pass" }
             Credentials::Password("another_secret_pass".to_string())
         );
 
-        inventory.check_secrets(|_| None).expect("check_secrets should pass for direct passwords");
+        inventory
+            .check_secrets(|_| None)
+            .expect("check_secrets should pass for direct passwords");
     }
 
     #[test]
