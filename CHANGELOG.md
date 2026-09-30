@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.2.1](https://github.com/andrediashexa/NOGGlass/compare/v1.2.0...v1.2.1) (2026-09-30)
 
 ### Bug Fixes
 

@@ -145,7 +145,7 @@ function updatePlaceholder() {
 async function loadVersion() {
   try {
     const info = await fetch("/api/version").then((r) => r.json());
-    const ver = info.version && info.version !== "dev" ? info.version : "1.2.0";
+    const ver = info.version && info.version !== "dev" ? info.version : "1.2.1";
     const versionEl = document.getElementById("version");
     if (versionEl) {
       versionEl.textContent = ver;
