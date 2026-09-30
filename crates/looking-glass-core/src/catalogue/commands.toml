@@ -101,8 +101,8 @@ traceroute_source_v6 = "traceroute inet6 {target} source {source} no-resolve"
 # Junos returns structured output, which is why it needs no text parser.
 bgp_route_v4 = "show route protocol bgp {target} detail | display json"
 bgp_route_v6 = "show route protocol bgp {target} detail | display json"
-bgp_route_asn = "show route table inet.0 aspath-regex \"^{asn}( .*|$)\" detail | display json"
-bgp_route_asn_v6 = "show route table inet6.0 aspath-regex \"^{asn}( .*|$)\" detail | display json"
+bgp_route_asn = "show route table inet.0 aspath-regex \"^{asn}( .*)?$\" detail | display json"
+bgp_route_asn_v6 = "show route table inet6.0 aspath-regex \"^{asn}( .*)?$\" detail | display json"
 bgp_summary = "show bgp summary | display json"
 
 [nokia_sros]
@@ -119,8 +119,8 @@ traceroute_source_v4 = "traceroute {target} source {source}"
 traceroute_source_v6 = "traceroute {target} source {source}"
 bgp_route_v4 = "show router bgp routes {target}"
 bgp_route_v6 = "show router bgp routes {target} ipv6"
-bgp_route_asn = "show router bgp routes aspath-regex \"^{asn}( .*|$)\""
-bgp_route_asn_v6 = "show router bgp routes aspath-regex \"^{asn}( .*|$)\" ipv6"
+bgp_route_asn = "show router bgp routes aspath-regex \"^{asn}( .*)?$\""
+bgp_route_asn_v6 = "show router bgp routes aspath-regex \"^{asn}( .*)?$\" ipv6"
 bgp_summary = "show router bgp summary"
 
 # RouterOS answers an exec request immediately and pages nothing. Given a
