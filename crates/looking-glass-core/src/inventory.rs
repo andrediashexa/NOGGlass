@@ -284,7 +284,7 @@ fn default_timeout() -> u64 {
     30
 }
 fn default_output_bytes() -> usize {
-    256 * 1024
+    2 * 1024 * 1024
 }
 fn default_ping_count() -> u8 {
     5

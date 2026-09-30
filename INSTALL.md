@@ -169,7 +169,7 @@ captcha_secret = "generate_a_random_secret_string_here_32_chars_or_more"
 
 [limits]
 timeout_secs = 30
-max_output_bytes = 262144
+max_output_bytes = 2097152
 ping_count = 5
 max_concurrent_per_router = 2
 max_concurrent_total = 16

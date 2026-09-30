@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Bug Fixes
+
+* **catalogue:** anchor AS-Path regex in Juniper JunOS and Nokia SR OS to `^{asn}( .*)?$` avoiding command pipe (`|`) collision in the Junos CLI and preventing digit collisions with unrelated ASNs
+* **config:** elevate default `max_output_bytes` from 256 KB to 2 MB (2,097,152 bytes) in code defaults, `nogglass.example.conf`, and deployment guides to accommodate structured Junos JSON responses for multi-prefix queries without premature truncation
+* **docs:** update Juniper Junos user provisioning recipe in `docs/operations/router-users.md` to require `network` permission class (`[ view routing network ]`) for `ping` and `traceroute`
+
 ## [1.2.0](https://github.com/andrediashexa/NOGGlass/compare/v1.1.2...v1.2.0) (2026-09-29)
 
 ### Features

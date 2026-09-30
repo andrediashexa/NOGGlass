@@ -28,7 +28,7 @@ Four settings bound it:
 ```toml
 [limits]
 timeout_secs = 30                 # a command that runs longer is cut
-max_output_bytes = 262144         # output past this is dropped, flagged truncated
+max_output_bytes = 2097152        # output past this is dropped, flagged truncated
 max_concurrent_per_router = 2     # one busy router cannot starve the others
 max_concurrent_total = 16         # the whole instance
 

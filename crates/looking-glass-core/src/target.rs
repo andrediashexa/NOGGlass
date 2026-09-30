@@ -242,8 +242,9 @@ impl Default for QueryLimits {
         Self {
             timeout_secs: 30,
             // A full BGP table dump is tens of megabytes; a legitimate answer to
-            // a single-prefix query is kilobytes.
-            max_output_bytes: 256 * 1024,
+            // an ASN or prefix query with multiple paths/communities fits in 2 MB,
+            // matching the SSH transport buffer ceiling.
+            max_output_bytes: 2 * 1024 * 1024,
             ping_count: 5,
         }
     }
