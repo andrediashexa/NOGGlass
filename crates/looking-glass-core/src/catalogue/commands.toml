@@ -118,9 +118,9 @@ traceroute_v6 = "traceroute {target}"
 traceroute_source_v4 = "traceroute {target} source {source}"
 traceroute_source_v6 = "traceroute {target} source {source}"
 bgp_route_v4 = "show router bgp routes {target}"
-bgp_route_v6 = "show router bgp routes {target} ipv6"
+bgp_route_v6 = "show router bgp routes ipv6 {target}"
 bgp_route_asn = "show router bgp routes aspath-regex \"^{asn}( .*)?$\""
-bgp_route_asn_v6 = "show router bgp routes aspath-regex \"^{asn}( .*)?$\" ipv6"
+bgp_route_asn_v6 = "show router bgp routes ipv6 aspath-regex \"^{asn}( .*)?$\""
 bgp_summary = "show router bgp summary"
 
 # RouterOS answers an exec request immediately and pages nothing. Given a

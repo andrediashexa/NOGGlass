@@ -623,7 +623,7 @@ mod tests {
         );
         assert_eq!(
             catalogue.bgp_aspath_v6("nokia_sros", 65500).unwrap(),
-            "show router bgp routes aspath-regex \"^65500( .*)?$\" ipv6"
+            "show router bgp routes ipv6 aspath-regex \"^65500( .*)?$\""
         );
     }
 

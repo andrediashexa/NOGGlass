@@ -6,6 +6,7 @@
 
 * **nokia_sros:** dynamically track multi-line `Legend` blocks and isolate route table scope (`in_table`), preventing wrapped status codes (e.g. `l - leaked`, `p - purge`) and banners from erroneously flagging complete outputs as `Completeness::Partial`
 * **nokia_sros:** generalize route flag marker recognition to any alphanumeric and standard status punctuation (`*`, `>`, `?`, `-`), ensuring full compatibility across all Nokia SR OS versions, firmware releases, and custom terminal widths
+* **catalogue:** reposition `ipv6` address-family keyword immediately after `routes` in Nokia SR OS command templates (`show router bgp routes ipv6 {target}` and `show router bgp routes ipv6 aspath-regex ...`), resolving CLI `Error: Invalid parameter. detail|longer` syntax rejections on IPv6 queries
 
 ## [1.2.2](https://github.com/andrediashexa/NOGGlass/compare/v1.2.1...v1.2.2) (2026-09-30)
 
