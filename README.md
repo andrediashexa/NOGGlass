@@ -31,7 +31,7 @@ NOGGlass was built for the diverse routing mix that regional carriers and ISPs r
 
 ---
 
-## Key Features (v1.2.2)
+## Key Features (v1.2.3)
 
 - **The Router is Sacred:** Complete immunity to command injection. Diagnostic targets and counts are strictly deserialized into Rust types (`std::net::IpAddr`, `ipnet::IpNet`, validated enums) and mapped to read-only command templates.
 - **Topological AS-PATH Graph (Bellman-Ford DAG):** Renders route propagation from the local router node. Direct peers (e.g. transit providers and IX peers) are locked in parallel on Column 1, eliminating false cascade representations.

@@ -37,37 +37,66 @@ impl VendorDriver for NokiaSrosDriver {
         let mut paths = Vec::new();
         let mut unreadable = 0usize;
         let mut current: Option<(BgpPath, usize)> = None;
+        let mut in_legend = false;
+        let mut in_table = false;
 
         for line in raw.lines() {
             let body = line.trim();
             if body.is_empty()
                 || body.starts_with('=')
                 || body.starts_with('-')
-                || body.starts_with("Flag")
                 // The header spans three lines on SR OS; these are the other
                 // two, and they look like the value lines they describe.
                 || body.starts_with("Nexthop")
                 || body.starts_with("As-Path")
-                || body.starts_with("Legend")
                 || body.starts_with("Status codes")
                 || body.starts_with("Origin codes")
                 || body.starts_with("BGP")
-                || body.starts_with("Routes :")
                 || body.starts_with("No Matching Entries")
             {
+                if in_legend && (body.starts_with('=') || body.starts_with("BGP") || body.starts_with("Flag")) {
+                    in_legend = false;
+                }
+                continue;
+            }
+
+            if body.starts_with("Legend") {
+                in_legend = true;
+                continue;
+            }
+
+            if in_legend {
+                if body.starts_with('=') || body.starts_with("BGP") || body.starts_with("Flag") {
+                    in_legend = false;
+                } else {
+                    continue;
+                }
+            }
+
+            if body.starts_with("Flag") {
+                in_table = true;
+                continue;
+            }
+
+            if body.starts_with("Routes :") {
+                if let Some((path, _)) = current.take() {
+                    paths.push(path);
+                }
+                in_table = false;
                 continue;
             }
 
             let fields: Vec<&str> = body.split_whitespace().collect();
 
-            // A flag line: flags, then the network.
+            // A flag line: flags (alphanumeric, *, >, ?, -), then the network.
             let starts_record = fields
                 .first()
-                .is_some_and(|flag| flag.chars().all(|c| "u*>ish?bxld".contains(c)))
+                .is_some_and(|flag| !flag.is_empty() && flag.chars().all(|c| c.is_ascii_alphanumeric() || "*>?-".contains(c)))
                 && fields.len() >= 2
                 && parse_network(fields[1]).is_some();
 
             if starts_record {
+                in_table = true;
                 if let Some((path, _)) = current.take() {
                     paths.push(path);
                 }
@@ -88,7 +117,9 @@ impl VendorDriver for NokiaSrosDriver {
             }
 
             let Some((path, seen)) = current.as_mut() else {
-                unreadable += 1;
+                if in_table {
+                    unreadable += 1;
+                }
                 continue;
             };
 
@@ -209,5 +240,55 @@ round-trip min/avg/max = 0.412/0.501/0.688 ms
         let result = NokiaSrosDriver.parse_ping(raw).unwrap();
         assert_eq!(result.packets_received, 5);
         assert_eq!(result.avg_rtt_ms, Some(0.501));
+    }
+
+    #[test]
+    fn reads_real_world_sros_routes_with_wrapped_legend() {
+        let raw = "\
+===============================================================================
+ BGP Router ID:10.10.10.1      AS:52838         Local AS:52838                 
+===============================================================================
+ Legend -
+ Status codes  : u - used, s - suppressed, h - history, d - decayed, * - valid
+                 l - leaked, x - stale, > - best, b - backup, p - purge
+ Origin codes  : i - IGP, e - EGP, ? - incomplete
+
+===============================================================================
+BGP IPv4 Routes
+===============================================================================
+Flag  Network                                           LocalPref   MED
+      Nexthop (Router)                                  Path-Id     IGP Cost
+      As-Path                                                       Label
+-------------------------------------------------------------------------------
+u*>i  1.1.1.0/24                                        None        100
+      89.221.42.164                                     None        0
+      6762 13335                                                    -
+*i    1.1.1.0/24                                        None        11556
+      200.15.9.84                                       None        0
+      2914 13335                                                    -
+*i    1.1.1.0/24                                        None        108711
+      199.100.1.161                                     None        0
+      174 13335                                                     -
+-------------------------------------------------------------------------------
+Routes : 3
+===============================================================================
+";
+        let result = NokiaSrosDriver.parse_bgp_route(raw).unwrap();
+        assert_eq!(result.paths.len(), 3);
+        assert_eq!(result.completeness, Completeness::Complete);
+
+        let best = result.best().expect("u*>i route is best");
+        assert_eq!(best.prefix.unwrap().to_string(), "1.1.1.0/24");
+        assert_eq!(best.next_hop.unwrap().to_string(), "89.221.42.164");
+        assert_eq!(best.as_path, vec![6762, 13335]);
+        assert_eq!(best.local_pref, None);
+        assert_eq!(best.med, Some(100));
+        assert_eq!(best.origin, Some(Origin::Igp));
+
+        assert_eq!(result.paths[1].as_path, vec![2914, 13335]);
+        assert_eq!(result.paths[1].med, Some(11556));
+
+        assert_eq!(result.paths[2].as_path, vec![174, 13335]);
+        assert_eq!(result.paths[2].med, Some(108711));
     }
 }

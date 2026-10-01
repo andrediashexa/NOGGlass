@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/andrediashexa/NOGGlass/compare/v1.2.2...v1.2.3) (2026-10-01)
+
+### Bug Fixes
+
+* **nokia_sros:** dynamically track multi-line `Legend` blocks and isolate route table scope (`in_table`), preventing wrapped status codes (e.g. `l - leaked`, `p - purge`) and banners from erroneously flagging complete outputs as `Completeness::Partial`
+* **nokia_sros:** generalize route flag marker recognition to any alphanumeric and standard status punctuation (`*`, `>`, `?`, `-`), ensuring full compatibility across all Nokia SR OS versions, firmware releases, and custom terminal widths
+
 ## [1.2.2](https://github.com/andrediashexa/NOGGlass/compare/v1.2.1...v1.2.2) (2026-09-30)
 
 ### Bug Fixes
