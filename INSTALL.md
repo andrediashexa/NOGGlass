@@ -579,10 +579,19 @@ In MD-CLI:
 
 In Classic CLI:
 ```text
+/configure system security profile "read-only"
+    entry 20
+        match "environment"
+        action permit
+    exit
+
 /configure system security user "nogglass" password <PASSWORD>
 /configure system security user "nogglass" access console
-/configure system security profile "read-only"
+/configure system security user "nogglass" console member "read-only"
 ```
+
+> [!IMPORTANT]
+> The `environment` command permission is REQUIRED for NOGGlass to execute `environment no more` and disable output pagination non-interactively. Without this permission, Nokia SR OS rejects the command (`MINOR: CLI Command not allowed for this user`), causing queries with more than 24 lines (such as `bgp_summary` or multi-route `bgp_route`) to halt on `Press any key to continue` and time out.
 
 ### 8.10. BIRD 2 (Linux Host)
 
