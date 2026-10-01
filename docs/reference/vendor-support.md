@@ -54,7 +54,7 @@ flowchart TB
 | **BIRD** | `bird_routing_daemon` | **Verified end to end** | BIRD 2.15.1 | `lab/bird.clab.yml` |
 | **Cisco IOS-XR** | `cisco_iosxr` | **Verified end to end** | XRv9k, IOS-XR 7.9.2 | `lab/iosxr.clab.yml`, vrnetlab |
 | **Juniper Junos** | `juniper_junos` | **Verified end to end** | Juniper MX, PTX, QFX, SRX, vMX (Junos OS) | Verified against real routers (JSON + CLI formatting) |
-| **Nokia SR OS** | `nokia_sros` | Unverified | — | The software is available; the licence is not |
+| **Nokia SR OS** | `nokia_sros` | **Verified** | Nokia 7750 SR / SR OS | Real router production outputs & fixtures |
 | **Datacom DmOS** | `datacom_dmos` | Unverified | — | Cannot be virtualised; needs hardware |
 | **Arista EOS** | `arista_eos` | Supported | vEOS / EOS 7000 Series | Cisco/Netmiko compatible CLI |
 | **FRRouting (FRR)** | `frr` | **Verified** | FRR 9.1.0 | `lab/frr/`, two containers over eBGP |
@@ -179,13 +179,12 @@ one applies.
 
 Tested and verified against real Junos routers. Commands leverage structured native JSON parsing (`| display json`) while the driver reconstructs clean, human-readable CLI representations for BGP route, session summary and AS-Path lookups so visitors are not exposed to raw JSON payloads. Native RTR RPKI validation and active route detection (`*`) are fully supported.
 
-### Nokia SR OS — the software is here, the licence is not
+### Nokia SR OS (Verified)
 
-The available distribution is a TiMOS `cflash` tree (24.10.R2), not the
-`sros-vm.qcow2` vrnetlab builds from, and SR OS requires a licence file to run
-as a virtual router at all. No licence came with it.
-
-What would fix it: a `sros-vm-<version>.qcow2` and a licence file.
+Tested and verified against production Nokia 7750 SR routers running SR OS (TiMOS classic and MD-CLI). Drivers and fixtures handle:
+- Multi-line BGP route blocks with wrapped `Legend` status codes (`l - leaked`, `p - purge`) and flag markers (`*`, `>`, `?`, `-`).
+- Session summary via `show router bgp summary all`, parsing multi-line peer blocks, IPv4/IPv6 addresses, peer ASNs, uptimes, and non-established states (`Connect`, `Active`, `Idle`, `Admin Down`).
+- Multi-protocol prefix accumulation across address families (`<rcv>/<act>/<sent>`), accurately tracking combined IPv4 unicast and Labeled IPv6 / VPN route volumes per peer.
 
 ### MikroTik RouterOS 6 — the same driver, and nobody knows if that is right
 
