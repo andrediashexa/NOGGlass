@@ -16,7 +16,7 @@
 set -euo pipefail
 
 DRY_RUN=0
-REPO="${WIKI_REPO:-andrediashexa/looking-glass}"
+REPO="${WIKI_REPO:-andrediashexa/nogglass}"
 SOURCE="docs/wiki"
 IMAGES="docs/design/screens"
 
@@ -99,7 +99,7 @@ text = re.sub(r"\]\(README\.md\)", "](Home)", text)
 
 # Links out of the wiki point back at the repository, where those documents
 # live and are reviewed.
-repo = "https://github.com/andrediashexa/looking-glass/blob/main"
+repo = "https://github.com/andrediashexa/nogglass/blob/main"
 text = re.sub(r"\]\(\.\./([^)]+)\)", rf"]({repo}/docs/\1)", text)
 
 target.write_text(text, encoding="utf-8")

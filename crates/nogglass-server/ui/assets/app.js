@@ -209,7 +209,7 @@ async function loadVersion() {
     }
     const link = document.getElementById("project-link") || document.getElementById("version-link");
     if (link) {
-      link.href = "https://github.com/andrediashexa/looking-glass";
+      link.href = "https://github.com/andrediashexa/nogglass";
     }
   } catch {
     // The footer is not worth breaking the page over.

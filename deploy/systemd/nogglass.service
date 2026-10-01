@@ -1,6 +1,6 @@
 [Unit]
 Description=NOGGlass Multi-Vendor Looking Glass
-Documentation=https://github.com/andrediashexa/looking-glass
+Documentation=https://github.com/andrediashexa/nogglass
 After=network.target
 
 [Service]

@@ -12,7 +12,7 @@ Please do not open public GitHub issues or public pull requests for security vul
 
 Instead, report vulnerabilities privately through one of the following channels:
 1. **GitHub Private Vulnerability Reporting:**
-   [Submit a Security Advisory](https://github.com/andrediashexa/looking-glass/security/advisories/new)
+   [Submit a Security Advisory](https://github.com/andrediashexa/nogglass/security/advisories/new)
 2. **Direct Maintainer Email:**
    - Marcelo Gondim da Cunha: [gondim@ispfocus.net.br](mailto:gondim@ispfocus.net.br) / [gondim@gmail.com](mailto:gondim@gmail.com)
    - André Dias: [andreluizroddias@gmail.com](mailto:andreluizroddias@gmail.com)

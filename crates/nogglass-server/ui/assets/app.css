@@ -163,6 +163,7 @@ main { padding: 24px 16px 48px; max-width: 1280px; margin: 0 auto; }
 }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
 .field-grow { flex: 1 1 260px; }
+[hidden], .field[hidden] { display: none !important; }
 select, input {
   font: 14px var(--font-mono);
   color: var(--text-main);

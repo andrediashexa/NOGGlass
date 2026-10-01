@@ -46,7 +46,7 @@ FROM nginx:alpine-slim
 
 LABEL org.opencontainers.image.title="NOGGlass documentation" \
       org.opencontainers.image.description="The NOGGlass documentation set, served as a site" \
-      org.opencontainers.image.source="https://github.com/andrediashexa/looking-glass" \
+      org.opencontainers.image.source="https://github.com/andrediashexa/nogglass" \
       org.opencontainers.image.licenses="MIT"
 
 COPY --from=builder /build/site /usr/share/nginx/html

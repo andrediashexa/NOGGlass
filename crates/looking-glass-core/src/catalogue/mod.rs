@@ -11,7 +11,7 @@
 //! unknown placeholder. A typo therefore fails when the binary starts, not on
 //! a production router.
 //!
-//! [ADR-0006]: https://github.com/andrediashexa/looking-glass/blob/main/docs/adr/0006-structured-bgp-model-and-data-sources.md
+//! [ADR-0006]: https://github.com/andrediashexa/nogglass/blob/main/docs/adr/0006-structured-bgp-model-and-data-sources.md
 
 use crate::driver::QueryTarget;
 use crate::target::QueryLimits;

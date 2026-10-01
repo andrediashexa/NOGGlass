@@ -50,8 +50,8 @@ NOGGlass can be compiled natively from source or run via container.
 ### Compile natively from source
 
 ```bash
-git clone https://github.com/andrediashexa/looking-glass.git
-cd looking-glass
+git clone https://github.com/andrediashexa/nogglass.git
+cd nogglass
 
 # Run the test suite
 cargo test --workspace
@@ -75,14 +75,14 @@ docker build -t nogglass:latest .
 ## Install with Docker
 
 ```bash
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/nogglass.example.conf
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/routers.example.conf
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/ui.example.conf
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/logo_nogglass_dark.png
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/logo_nogglass_light.png
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/nogglass_dark.png
-curl -O https://raw.githubusercontent.com/andrediashexa/looking-glass/main/crates/nogglass-server/ui/assets/nogglass_light.png
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/nogglass.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/routers.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/ui.example.conf
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/crates/nogglass-server/ui/assets/logo_nogglass_dark.png
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/crates/nogglass-server/ui/assets/logo_nogglass_light.png
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/crates/nogglass-server/ui/assets/nogglass_dark.png
+curl -O https://raw.githubusercontent.com/andrediashexa/nogglass/main/crates/nogglass-server/ui/assets/nogglass_light.png
 
 docker compose up -d                      # starts and fails loudly if misconfigured
 docker cp nogglass.example.conf nogglass:/etc/nogglass/nogglass.conf
@@ -171,7 +171,7 @@ configuration management can write it.
 
 ## Configuration
 
-Copy [`nogglass.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/nogglass.example.conf) and [`routers.example.conf`](https://github.com/andrediashexa/looking-glass/blob/main/routers.example.conf). Router passwords can be specified directly in `routers.conf` (or via `credentials = { password = "..." }`):
+Copy [`nogglass.example.conf`](https://github.com/andrediashexa/nogglass/blob/main/nogglass.example.conf) and [`routers.example.conf`](https://github.com/andrediashexa/nogglass/blob/main/routers.example.conf). Router passwords can be specified directly in `routers.conf` (or via `credentials = { password = "..." }`):
 
 ```toml
 [[router]]

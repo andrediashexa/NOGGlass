@@ -56,8 +56,8 @@ Download the official statically linked `x86_64-unknown-linux-musl` release arch
 ```bash
 # 1. Download the release archive and checksum (replace with desired version)
 VERSION="1.0.0"
-curl -fsSLO "https://github.com/andrediashexa/looking-glass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz"
-curl -fsSLO "https://github.com/andrediashexa/looking-glass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz.sha256"
+curl -fsSLO "https://github.com/andrediashexa/nogglass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz"
+curl -fsSLO "https://github.com/andrediashexa/nogglass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz.sha256"
 
 # 2. Verify integrity
 sha256sum -c "nogglass-v${VERSION}-linux-amd64.tar.gz.sha256"
@@ -75,8 +75,8 @@ sudo install -m 755 nogglass /usr/local/bin/nogglass
 Clone the repository and build the workspace with release optimizations:
 
 ```bash
-git clone https://github.com/andrediashexa/looking-glass.git
-cd looking-glass
+git clone https://github.com/andrediashexa/nogglass.git
+cd nogglass
 
 # Run tests to verify parser and driver integrity
 cargo test --workspace
