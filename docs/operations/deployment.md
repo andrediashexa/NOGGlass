@@ -198,6 +198,7 @@ All core settings are read directly from `/etc/nogglass/nogglass.conf` and `rout
 | `NOGGLASS_CONFIG` | `/etc/nogglass/nogglass.conf` | Path to main configuration file (optional override) |
 | `NOGGLASS_HTTP_ADDR` | `0.0.0.0:8080` (or `[server] http_addr` in `nogglass.conf`) | Listen address |
 | `NOGGLASS_CAPTCHA_SECRET` | Configured in `nogglass.conf` | HMAC secret for CAPTCHA challenge signing |
+| `NOGGLASS_BGP_SUMMARY_PASSWORD` | unset | Operational access key required to execute BGP summary queries |
 | `NOGGLASS_DEFAULT_LOCALE` | `en` | Language for a visitor whose browser asks for none we serve |
 | `NOGGLASS_BEHIND_PROXY` | unset | Declares that a proxy terminates TLS; silences the startup warning |
 | `NOGGLASS_LOG` | `info` | Tracing log filter |

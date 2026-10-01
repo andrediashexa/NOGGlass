@@ -1,14 +1,23 @@
 # Changelog
 
-## [1.3.0](https://github.com/andrediashexa/NOGGlass/compare/v1.2.3...v1.3.0) (2026-10-01)
+## [1.3.0](https://github.com/andrediashexa/nogglass/compare/v1.2.3...v1.3.0) (2026-10-01)
 
 ### Features
 
-* **security:** introduce protected BGP Summary queries with operational access key verification (`bgp_summary_password` in `[security]` / `[server]` or via `NOGGLASS_BGP_SUMMARY_PASSWORD`), preventing public exposure of ISP peering topologies, transit providers, and IXP sessions
-* **security:** enforce constant-time authentication using HMAC-SHA256 (`ring`) in `looking-glass-core::auth`, eliminating timing side-channel attacks on operator access keys
-* **security:** redact access keys and passwords in request debugging and tracing (`[REDACTED]`), preventing secret leakage into systemd journals, Docker logs, and error dumps
-* **security:** restrict protected BGP Summary queries exclusively to HTTP POST payloads, rejecting execution via GET query parameters (`bgp_summary_post_required`) to prevent credential leakage into browser history, reverse proxy access logs, and CDN headers
-* **ui:** dynamically reveal password input with session persistence (`sessionStorage`) when BGP Summary is selected, and disable execution with explicit alerts when unconfigured on the server
+* **security (bgp_summary):** protect sensitive BGP Summary queries with an operational access password (`bgp_summary_password` in `nogglass.conf` under `[security]` or `[server]`, or via `NOGGLASS_BGP_SUMMARY_PASSWORD`). BGP Summary exposes complete peering tables, transit provider addresses, IXP connections, and session counts. When this setting is omitted, BGP Summary is automatically disabled for public safety:
+  ```toml
+  # /etc/nogglass/nogglass.conf
+  [security]
+  bgp_summary_password = "replace_with_a_secure_operator_password"
+  ```
+* **security (auth):** implement constant-time authentication using HMAC-SHA256 (`ring::hmac`) in `looking-glass-core::auth`, eliminating timing side-channel attacks on access keys.
+* **security (api & audit):** enforce zero-leakage policies across logs and requests:
+  - Custom `fmt::Debug` implementations mask access keys as `[REDACTED]` in tracing, systemd journals, and Docker logs.
+  - Reject BGP Summary executions attempted via GET query string (`/api/query/stream`) with HTTP 405 `bgp_summary_post_required` to avoid logging secrets in reverse proxy logs, browser histories, and referrer headers.
+  - Return HTTP 403 `bgp_summary_disabled` when unconfigured, HTTP 401 `bgp_summary_password_required` when the key is missing, and HTTP 403 `invalid_auth_key` on incorrect credentials.
+* **ui:** dynamically toggle between the target input and an access key password field (`type="password"`) when BGP Summary is selected. If unconfigured on the server, disable query execution and display a prominent warning banner. Persist the access key in browser `sessionStorage` during the active tab session for seamless operator workflows.
+* **ui:** ensure strict visibility resets in `app.css` (`[hidden], .field[hidden] { display: none !important; }`), preventing flex container overrides on hidden form elements.
+* **repo:** update all official repository, advisory, and documentation links from `looking-glass` to `nogglass`.
 
 ## [1.2.3](https://github.com/andrediashexa/NOGGlass/compare/v1.2.2...v1.2.3) (2026-10-01)
 

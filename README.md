@@ -34,7 +34,7 @@ NOGGlass was built for the diverse routing mix that regional carriers and ISPs r
 ## Key Features (v1.3.0)
 
 - **The Router is Sacred:** Complete immunity to command injection. Diagnostic targets and counts are strictly deserialized into Rust types (`std::net::IpAddr`, `ipnet::IpNet`, validated enums) and mapped to read-only command templates.
-- **Protected BGP Summary & Zero Leakage:** In public instances, sensitive BGP neighbor summaries (revealing transit upstreams, IXP peers, and internal topologies) require an operational access password configured in `nogglass.conf` (`bgp_summary_password` or `NOGGLASS_BGP_SUMMARY_PASSWORD`). Verification uses constant-time HMAC-SHA256 (`ring`) to prevent timing side-channel attacks, credentials are redacted in logs (`[REDACTED]`), and queries are restricted to POST.
+- **Operational Protection for Sensitive Queries (BGP Summary):** Protects sensitive BGP neighbor tables (upstream transit, IXP peers, topology, and prefix volumes) behind an operational access password (`bgp_summary_password` in `nogglass.conf` or `NOGGLASS_BGP_SUMMARY_PASSWORD`). Verification uses constant-time HMAC-SHA256 (`ring`) to neutralize timing attacks. Unconfigured instances disable the query by default with explicit UI alerts and HTTP 403 API responses. Execution is restricted to POST to prevent secret leakage in logs and browser history, with automatic redaction (`[REDACTED]`) in all logs.
 - **Topological AS-PATH Graph (Bellman-Ford DAG):** Renders route propagation from the local router node. Direct peers (e.g. transit providers and IX peers) are locked in parallel on Column 1, eliminating false cascade representations.
 - **Operational Route Highlighting & Route Age:** Dynamic CLI analyzer detects winning routes in tabular outputs and detailed blocks, highlighting the active FIB path in emerald green with a `[★ ROTA ATIVA]` badge, alongside route installation age/uptime across vendors.
 - **Router Source IP & Custom SSH Ports:** Configure dedicated IPv4 (`source_v4`) and IPv6 (`source_v6`) source addresses for ping/traceroute tests, as well as non-standard SSH ports (`port`, default 22) per edge router.
@@ -156,6 +156,26 @@ Restart the container to apply changes:
 ```bash
 docker compose restart nogglass
 ```
+
+### 3. Operational Security: Protected BGP Summary
+
+In public deployments, BGP neighbor tables reveal sensitive network topology (transit providers, private peers, IXP sessions, and prefix statistics). NOGGlass protects this query behind an operator access key:
+
+```toml
+# /etc/nogglass/nogglass.conf
+[security]
+bgp_summary_password = "replace_with_a_secure_operator_password"
+```
+
+You can also pass the password via environment variable:
+```bash
+export NOGGLASS_BGP_SUMMARY_PASSWORD="replace_with_a_secure_operator_password"
+```
+
+- **Unconfigured (Default):** BGP Summary is disabled for public safety. The web UI informs visitors that the feature requires an access key, and the API returns HTTP 403 (`bgp_summary_disabled`).
+- **Configured:** Selecting BGP Summary replaces the target field with a password input. Successful keys persist in `sessionStorage` for the active browser session.
+- **Timing Attack Immunity:** Verification runs in constant execution time via HMAC-SHA256 (`ring::hmac`).
+- **Zero Log Leakage:** Access keys are masked as `[REDACTED]` in tracing logs and systemd journals. Execution is restricted to HTTP POST JSON payloads to keep secrets out of web server and reverse proxy access logs.
 
 For bare-metal and Systemd deployments, refer to [`INSTALL.md`](INSTALL.md) and [`docs/operations/deployment.md`](docs/operations/deployment.md).
 

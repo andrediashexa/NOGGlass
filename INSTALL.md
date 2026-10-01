@@ -167,6 +167,13 @@ http_addr = "0.0.0.0:8080"
 # Secret key used to sign and verify CAPTCHA tokens (32+ chars recommended in production)
 captcha_secret = "generate_a_random_secret_string_here_32_chars_or_more"
 
+[security]
+# Access password for sensitive operational queries (BGP Summary).
+# When set, BGP Summary requires this password in the UI and API.
+# If omitted or empty, BGP Summary queries are disabled for public safety.
+# Can also be set via NOGGLASS_BGP_SUMMARY_PASSWORD environment variable.
+# bgp_summary_password = "replace_with_a_secure_operator_password"
+
 [limits]
 timeout_secs = 30
 max_output_bytes = 2097152
@@ -259,6 +266,42 @@ show_raw_output = true
 | `arista_eos` | Arista EOS 7000 / vEOS Series |
 | `frr` | FRRouting (FRR) Routing Daemon |
 | `mock` | Synthetic test driver (no SSH connection needed) |
+
+### 3.4. Operational Security: Protecting BGP Summary Queries
+
+BGP Summary (`bgp_summary`) is an indispensable diagnostic tool for network engineers, but it exposes sensitive topological data that SHOULD NOT be visible to the general public on an open Looking Glass:
+- Full list of BGP neighbor IP addresses and peer Autonomous System Numbers (ASNs).
+- Identity of upstream transit providers, private bilateral peering partners, and Internet Exchange (IXP) sessions.
+- Accepted prefix counts, table versions, and session uptime statistics.
+
+#### Configuration Options
+
+NOGGlass protects BGP Summary queries with an operator access password configured in `nogglass.conf`:
+
+```toml
+[security]
+bgp_summary_password = "replace_with_a_secure_operator_password"
+```
+
+Alternatively, you can provide the password via environment variable:
+```bash
+export NOGGLASS_BGP_SUMMARY_PASSWORD="replace_with_a_secure_operator_password"
+```
+
+#### Behavior Matrix
+
+| State | Web Interface (UI) | API Endpoint (`/api/query/stream`) |
+|---|---|---|
+| **Unconfigured** (Default) | Disables submit button; hides target input; displays a prominent notice informing that BGP Summary has no password configured and is disabled. | Rejects requests with HTTP 403 `{"error": "bgp_summary_disabled"}`. |
+| **Configured (Password Set)** | Dynamically swaps the target field for a password input (`type="password"`). Persists the valid key in `sessionStorage` for the active tab session. | Validates access key against configured password in constant execution time. |
+| **Missing Password** | Prompts operator to enter the access password before submission. | Rejects requests with HTTP 401 `{"error": "bgp_summary_password_required"}`. |
+| **Invalid Password** | Clears cached session key and displays error notice. | Rejects requests with HTTP 403 `{"error": "invalid_auth_key"}`. |
+| **Attempt via GET URL** | N/A (UI dispatches POST). | Rejects with HTTP 405 `{"error": "bgp_summary_post_required"}` to prevent credential leakage into browser histories and proxy access logs. |
+
+#### Security Guarantees
+1. **Timing Attack Immunity:** Password verification uses `verify_password_constant_time` via HMAC-SHA256 (`ring::hmac`). Both hashes are computed and compared in strict constant time, eliminating timing side channels.
+2. **Zero Log Leakage:** Structs handling requests and configurations implement custom `fmt::Debug` implementations that mask password values as `[REDACTED]`, preventing passwords from appearing in tracing logs, systemd journals, or Docker output.
+3. **POST-Only Enforcement:** Queries to BGP Summary are forbidden over HTTP GET query parameters, ensuring credentials never appear in reverse proxy access logs (e.g. Nginx, Caddy, Cloudflare) or HTTP Referer headers.
 
 ---
 
