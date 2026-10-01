@@ -16,8 +16,12 @@
   - Reject BGP Summary executions attempted via GET query string (`/api/query/stream`) with HTTP 405 `bgp_summary_post_required` to avoid logging secrets in reverse proxy logs, browser histories, and referrer headers.
   - Return HTTP 403 `bgp_summary_disabled` when unconfigured, HTTP 401 `bgp_summary_password_required` when the key is missing, and HTTP 403 `invalid_auth_key` on incorrect credentials.
 * **ui:** dynamically toggle between the target input and an access key password field (`type="password"`) when BGP Summary is selected. If unconfigured on the server, disable query execution and display a prominent warning banner. Persist the access key in browser `sessionStorage` during the active tab session for seamless operator workflows.
-* **ui:** ensure strict visibility resets in `app.css` (`[hidden], .field[hidden] { display: none !important; }`), preventing flex container overrides on hidden form elements.
-* **repo:** update all official repository, advisory, and documentation links from `looking-glass` to `nogglass`.
+* **security (ratelimit):** extract client IP from the rightmost `X-Forwarded-For` entry (`rsplit`), ensuring reverse proxy chains (e.g. Nginx, Traefik, HAProxy, AWS ALB) reliably report the legitimate client address and mitigating IP spoofing bypasses of the 20 req/min rate limit and CAPTCHA challenge ([SEC-01]).
+* **config (trusted_proxies):** support CIDR subnet notations in `trusted_proxies` (e.g., `10.0.0.0/8`, `192.168.1.0/24`) using `ipnet::IpNet`, simplifying rate limiting behind dynamic Kubernetes ingress controllers and CDN IP ranges ([ARCH-01]).
+* **performance (ssh):** replace quadratic string traversal `output.lines().last()` with $O(L)$ reverse newline search `output.rfind('\n')` in `read_until_prompt`, removing high CPU overhead on large multi-megabyte BGP streams ([PERF-01]).
+* **reliability (captcha):** make the `used_captchas` mutex lock resilient to worker thread poisoning (`unwrap_or_else(|p| p.into_inner())`), preventing cascading panics across HTTP workers ([RUST-01]).
+* **infra (lifecycle):** handle the Unix `SIGTERM` signal alongside `SIGINT` (Ctrl+C) for graceful shutdown, allowing active SSH router queries to terminate cleanly during container or systemd stop events ([SEC-02]).
+* **repo:** update all official repository, advisory, and documentation links from `looking-glass` to `NOGGlass`.
 
 ## [1.2.3](https://github.com/andrediashexa/NOGGlass/compare/v1.2.2...v1.2.3) (2026-10-01)
 
