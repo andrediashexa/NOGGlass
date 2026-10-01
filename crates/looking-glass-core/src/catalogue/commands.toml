@@ -121,7 +121,7 @@ bgp_route_v4 = "show router bgp routes {target}"
 bgp_route_v6 = "show router bgp routes ipv6 {target}"
 bgp_route_asn = "show router bgp routes aspath-regex \"^{asn}( .*)?$\""
 bgp_route_asn_v6 = "show router bgp routes ipv6 aspath-regex \"^{asn}( .*)?$\""
-bgp_summary = "show router bgp summary"
+bgp_summary = "show router bgp summary all"
 
 # RouterOS answers an exec request immediately and pages nothing. Given a
 # terminal instead, it probes it — `ESC [ 9999 B`, `ESC Z`, `ESC [ 6 n` — and
