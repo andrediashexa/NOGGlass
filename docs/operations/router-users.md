@@ -139,11 +139,19 @@ operational mode while strictly excluding configuration mode. The default
 ## Nokia SR OS
 
 ```text
+/configure system security profile "read-only"
+    entry 20
+        match "environment"
+        action permit
+    exit
+
 /configure system security user "nogglass"
     password <password>
     access console
     console member "read-only"
 ```
+
+The `environment` CLI permission is REQUIRED for NOGGlass to execute `environment no more` and disable output pagination non-interactively. Without it, queries with more than 24 lines trigger interactive pagination (`Press any key to continue`) and time out.
 
 ## MikroTik RouterOS
 

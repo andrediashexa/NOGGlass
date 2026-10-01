@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/andrediashexa/NOGGlass/compare/v1.2.1...v1.2.2) (2026-09-30)
+
+### Bug Fixes
+
+* **ssh:** sanitize and strip ANSI VT100/VT220 escape sequences from router output before prompt evaluation and raw output display, preventing trailing terminal control codes (`\x1b[0m`, cursor positions) from blocking prompt matching
+* **catalogue:** universalize prompt matching regexes across vendors (Nokia SR OS, Cisco IOS-XR, Datacom DmOS) to support custom hostnames, multiple slots, MD-CLI user sessions, and operational subcontexts without vendor-specific fragility
+* **docs:** document `environment` permission grant requirement for Nokia SR OS read-only users in `docs/operations/router-users.md` to permit non-interactive output pagination disablement (`environment no more`)
+
 ## [1.2.1](https://github.com/andrediashexa/NOGGlass/compare/v1.2.0...v1.2.1) (2026-09-30)
 
 ### Bug Fixes

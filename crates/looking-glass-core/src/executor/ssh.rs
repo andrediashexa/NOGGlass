@@ -532,7 +532,22 @@ impl Transport for SshTransport {
             .disconnect(Disconnect::ByApplication, "done", "en")
             .await;
 
-        Ok(strip_echo(&output, command))
+        let clean = strip_ansi(&output);
+        Ok(strip_echo(&clean, command))
+    }
+}
+
+static ANSI_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\([a-zA-Z]|[=>])").unwrap()
+});
+
+/// Strips ANSI VT100/VT220 escape sequences (cursor movements, color codes,
+/// mode switches) from raw router output.
+pub fn strip_ansi(s: &str) -> Cow<'_, str> {
+    if s.contains('\x1b') {
+        Cow::Owned(ANSI_RE.replace_all(s, "").into_owned())
+    } else {
+        Cow::Borrowed(s)
     }
 }
 
@@ -582,10 +597,11 @@ async fn read_until_close(
         }
     }
 
-    if output.is_empty() {
+    let clean = strip_ansi(&output);
+    if clean.is_empty() {
         return Err(DriverError::EmptyResponse);
     }
-    Ok(output)
+    Ok(clean.into_owned())
 }
 
 /// Reads until the prompt reappears, the channel closes, or the router goes
@@ -622,8 +638,11 @@ async fn read_until_prompt(
                 }
                 // The prompt only counts at the end of what we have read; a
                 // prompt-shaped string inside the output is not the end.
+                // We strip ANSI escape sequences before testing to prevent trailing
+                // control codes (e.g. \x1b[0m or cursor placement) from breaking matching.
                 if let Some(last) = output.lines().last() {
-                    let trimmed = last.trim_end();
+                    let clean_last = strip_ansi(last);
+                    let trimmed = clean_last.trim_end();
                     if prompt
                         .find_iter(trimmed)
                         .any(|mat| mat.end() == trimmed.len())
@@ -764,6 +783,81 @@ rviews@route-server.ip.att.net> ";
             HostKeyPolicy::default(),
             HostKeyPolicy::EnforcePinned
         ));
+    }
+
+    #[test]
+    fn test_strip_ansi_removes_cursor_and_color_escapes() {
+        let raw = "\x1b[?1h\x1b=Welcome to Router\r\n\x1b[32m*A:RTR-PE-SPO-SP4-01#\x1b[0m \x1b[K";
+        let cleaned = strip_ansi(raw);
+        assert_eq!(cleaned, "Welcome to Router\r\n*A:RTR-PE-SPO-SP4-01# ");
+    }
+
+    #[test]
+    fn test_nokia_universal_prompt_with_and_without_ansi() {
+        let nokia_prompt = Regex::new(r"\*?(?:[A-Za-z0-9_\-]+:)?[\w\.\-@/:()]+[>#]").unwrap();
+
+        let cases = [
+            "*A:RTR-PE-SPO-SP4-01#",
+            "*A:RTR-PE-SPO-SP4-01# \x1b[0m",
+            "A:RTR-PE-SPO-SP4-01#",
+            "*B:node-01#",
+            "A:admin@RTR-PE-SPO-SP4-01#",
+            "A:admin@RTR-PE-SPO-SP4-01>config#",
+            "*(ro)[/]\nA:admin@edge-03#",
+            "*A:CPM-A:router#",
+        ];
+
+        for case in cases {
+            let last_line = case.lines().last().unwrap();
+            let cleaned = strip_ansi(last_line);
+            let trimmed = cleaned.trim_end();
+            let matches = nokia_prompt
+                .find_iter(trimmed)
+                .any(|mat| mat.end() == trimmed.len());
+            assert!(
+                matches,
+                "Prompt case '{case}' (trimmed: '{trimmed}') must match Nokia prompt"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cisco_iosxr_universal_prompt() {
+        let xr_prompt = Regex::new(r"(?:RP/\d+/\w+/CPU\d+:)?[\w\.\-]+[>#]").unwrap();
+        let cases = [
+            "RP/0/RP0/CPU0:edge-01#",
+            "RP/0/RSP0/CPU0:asr-core#",
+            "xrv-edge#",
+            "xrv-edge> ",
+        ];
+
+        for case in cases {
+            let trimmed = case.trim_end();
+            let matches = xr_prompt
+                .find_iter(trimmed)
+                .any(|mat| mat.end() == trimmed.len());
+            assert!(matches, "Cisco XR prompt '{trimmed}' must match");
+        }
+    }
+
+    #[test]
+    fn test_datacom_universal_prompt() {
+        let dmos_prompt = Regex::new(r"[\w\.\-@/:()]+[>#]").unwrap();
+        let cases = [
+            "DM4200#",
+            "DM4200> ",
+            "admin@DM4200#",
+            "DM4200(config)#",
+            "DM4200(config-router)#",
+        ];
+
+        for case in cases {
+            let trimmed = case.trim_end();
+            let matches = dmos_prompt
+                .find_iter(trimmed)
+                .any(|mat| mat.end() == trimmed.len());
+            assert!(matches, "Datacom prompt '{trimmed}' must match");
+        }
     }
 }
 

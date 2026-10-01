@@ -71,7 +71,7 @@ bgp_summary = "show bgp ipv4 unicast summary"
 [cisco_iosxr]
 display_name = "Cisco IOS-XR"
 disable_paging = "terminal length 0"
-prompt = 'RP/\d+/\w+/CPU\d+:[\w\.\-]+#'
+prompt = '(?:RP/\d+/\w+/CPU\d+:)?[\w\.\-]+[>#]'
 ping_v4 = "ping {target} count {count}"
 ping_v6 = "ping ipv6 {target} count {count}"
 ping_source_v4 = "ping {target} source {source} count {count}"
@@ -108,7 +108,7 @@ bgp_summary = "show bgp summary | display json"
 [nokia_sros]
 display_name = "Nokia SR OS"
 disable_paging = "environment no more"
-prompt = '\*?[AB]:[\w\.\-]+[>#]'
+prompt = '\*?(?:[A-Za-z0-9_\-]+:)?[\w\.\-@/:()]+[>#]'
 ping_v4 = "ping {target} count {count}"
 ping_v6 = "ping {target} count {count}"
 ping_source_v4 = "ping {target} source {source} count {count}"
@@ -146,7 +146,7 @@ bgp_summary = "/routing/bgp/session/print detail"
 [datacom_dmos]
 display_name = "Datacom DmOS"
 disable_paging = "terminal length 0"
-prompt = '[\w\.\-]+[>#]'
+prompt = '[\w\.\-@/:()]+[>#]'
 ping_v4 = "ping {target} count {count}"
 ping_v6 = "ping ipv6 {target} count {count}"
 ping_source_v4 = "ping {target} source {source} count {count}"
