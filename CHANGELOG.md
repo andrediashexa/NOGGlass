@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.0](https://github.com/andrediashexa/NOGGlass/compare/v1.2.3...v1.3.0) (2026-10-01)
+
+### Features
+
+* **security:** introduce protected BGP Summary queries with operational access key verification (`bgp_summary_password` in `[security]` / `[server]` or via `NOGGLASS_BGP_SUMMARY_PASSWORD`), preventing public exposure of ISP peering topologies, transit providers, and IXP sessions
+* **security:** enforce constant-time authentication using HMAC-SHA256 (`ring`) in `looking-glass-core::auth`, eliminating timing side-channel attacks on operator access keys
+* **security:** redact access keys and passwords in request debugging and tracing (`[REDACTED]`), preventing secret leakage into systemd journals, Docker logs, and error dumps
+* **security:** restrict protected BGP Summary queries exclusively to HTTP POST payloads, rejecting execution via GET query parameters (`bgp_summary_post_required`) to prevent credential leakage into browser history, reverse proxy access logs, and CDN headers
+* **ui:** dynamically reveal password input with session persistence (`sessionStorage`) when BGP Summary is selected, and disable execution with explicit alerts when unconfigured on the server
+
 ## [1.2.3](https://github.com/andrediashexa/NOGGlass/compare/v1.2.2...v1.2.3) (2026-10-01)
 
 ### Bug Fixes

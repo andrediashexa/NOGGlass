@@ -163,9 +163,12 @@ struct RouterListing {
     /// Query types this router answers, so the interface can disable the rest
     /// instead of offering a query that will be refused.
     queries: Vec<QueryType>,
+    /// Whether BGP summary queries are configured with an authentication password.
+    bgp_summary_configured: bool,
 }
 
 async fn routers(State(state): State<AppState>) -> impl IntoResponse {
+    let bgp_summary_configured = state.inventory.is_bgp_summary_configured();
     let listing: Vec<RouterListing> = state
         .inventory
         .routers
@@ -182,6 +185,7 @@ async fn routers(State(state): State<AppState>) -> impl IntoResponse {
             } else {
                 router.queries.clone()
             },
+            bgp_summary_configured,
         })
         .collect();
 
@@ -216,7 +220,7 @@ async fn vendor_commands(
 }
 
 /// A query as the browser sends it.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct QueryRequest {
     pub router: String,
     #[serde(rename = "type")]
@@ -227,6 +231,22 @@ pub struct QueryRequest {
     pub captcha_id: Option<String>,
     /// User entered CAPTCHA response
     pub captcha_code: Option<String>,
+    /// Optional access key / password for protected queries such as BGP summary
+    #[serde(default, alias = "password", alias = "bgp_summary_password")]
+    pub auth_key: Option<String>,
+}
+
+impl std::fmt::Debug for QueryRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QueryRequest")
+            .field("router", &self.router)
+            .field("query_type", &self.query_type)
+            .field("target", &self.target)
+            .field("captcha_id", &self.captcha_id)
+            .field("captcha_code", &self.captcha_code)
+            .field("auth_key", &self.auth_key.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 /// The answer.
@@ -383,6 +403,42 @@ fn verify_request_captcha(
     }
 }
 
+/// Validates access to BGP summary queries.
+///
+/// BGP summary exposes the entire peering and transit topology of an operator.
+/// In public deployments, this query requires an access password configured in `nogglass.conf`
+/// (or `NOGGLASS_BGP_SUMMARY_PASSWORD`).
+///
+/// If unconfigured, the query is blocked with HTTP 403 `bgp_summary_disabled`.
+/// If configured, the password must be supplied and is checked in constant time with HMAC-SHA256.
+fn verify_bgp_summary_access(state: &AppState, auth_key: Option<&str>) -> Result<(), ApiError> {
+    let Some(expected_password) = state.inventory.bgp_summary_password() else {
+        return Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "bgp_summary_disabled",
+            message: "BGP summary queries are disabled because no password is configured on this server.".to_string(),
+        });
+    };
+
+    let Some(key) = auth_key.map(str::trim).filter(|k| !k.is_empty()) else {
+        return Err(ApiError {
+            status: StatusCode::UNAUTHORIZED,
+            code: "bgp_summary_password_required",
+            message: "BGP summary queries require an access password.".to_string(),
+        });
+    };
+
+    if !looking_glass_core::auth::verify_password_constant_time(&expected_password, key) {
+        return Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "invalid_auth_key",
+            message: "Incorrect BGP summary password.".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
 async fn run_query(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -401,6 +457,10 @@ async fn run_query(
 
     if let Some(refusal) = state.check_rate_limit(peer, forwarded, captcha_verified) {
         return Err(refusal);
+    }
+
+    if request.query_type == QueryType::BgpSummary {
+        verify_bgp_summary_access(&state, request.auth_key.as_deref())?;
     }
 
     let target = resolve_target(request.query_type, &request.target)?;
@@ -449,7 +509,7 @@ async fn stream_query(
     headers: axum::http::HeaderMap,
     Query(request): Query<QueryRequest>,
 ) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
-    handle_stream_query(state, peer, headers, request).await
+    handle_stream_query(state, peer, headers, request, true).await
 }
 
 /// The same query, as a stream of events via POST body (protecting parameters and tokens from GET logs).
@@ -459,7 +519,7 @@ async fn stream_query_post(
     headers: axum::http::HeaderMap,
     Json(request): Json<QueryRequest>,
 ) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
-    handle_stream_query(state, peer, headers, request).await
+    handle_stream_query(state, peer, headers, request, false).await
 }
 
 async fn handle_stream_query(
@@ -467,6 +527,7 @@ async fn handle_stream_query(
     peer: SocketAddr,
     headers: axum::http::HeaderMap,
     request: QueryRequest,
+    is_get: bool,
 ) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
     let (sender, receiver) = tokio::sync::mpsc::channel::<Event>(8);
     let forwarded = headers
@@ -475,6 +536,23 @@ async fn handle_stream_query(
         .map(str::to_string);
 
     tokio::spawn(async move {
+        if is_get && request.query_type == QueryType::BgpSummary {
+            let err = ApiError {
+                status: StatusCode::METHOD_NOT_ALLOWED,
+                code: "bgp_summary_post_required",
+                message: "BGP summary queries with authentication are only allowed via POST.".to_string(),
+            };
+            let _ = sender
+                .send(
+                    Event::default()
+                        .event("error")
+                        .json_data(err.body())
+                        .unwrap_or_else(|_| Event::default().event("error").data("method not allowed")),
+                )
+                .await;
+            return;
+        }
+
         let captcha_verified = match verify_request_captcha(
             &state,
             request.captcha_id.as_deref(),
@@ -507,6 +585,20 @@ async fn handle_stream_query(
                 )
                 .await;
             return;
+        }
+
+        if request.query_type == QueryType::BgpSummary {
+            if let Err(e) = verify_bgp_summary_access(&state, request.auth_key.as_deref()) {
+                let _ = sender
+                    .send(
+                        Event::default()
+                            .event("error")
+                            .json_data(e.body())
+                            .unwrap_or_else(|_| Event::default().event("error").data("unauthorized")),
+                    )
+                    .await;
+                return;
+            }
         }
 
         let _ = sender
@@ -658,6 +750,9 @@ mod tests {
     }
 
     const INVENTORY: &str = r#"
+[security]
+bgp_summary_password = "test_summary_secret"
+
 [[router]]
 id = "demo"
 name = "Demo router"
@@ -761,7 +856,8 @@ queries = ["bgp_route"]
 
         assert!(body.contains("Edge 01"));
         assert!(body.contains("\"queries\""));
-        for secret in ["192.0.2.10", "nogglass", "NOGGLASS_EDGE01_PASSWORD"] {
+        assert!(body.contains("\"bgp_summary_configured\":true"));
+        for secret in ["192.0.2.10", "nogglass", "NOGGLASS_EDGE01_PASSWORD", "test_summary_secret"] {
             assert!(!body.contains(secret), "leaked {secret} in {body}");
         }
     }
@@ -808,7 +904,7 @@ queries = ["bgp_route"]
             Request::post("/api/query")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"router":"demo","type":"bgp_summary","target":""}"#,
+                    r#"{"router":"demo","type":"bgp_summary","target":"","auth_key":"test_summary_secret"}"#,
                 ))
                 .unwrap(),
             "198.51.100.90:5000",
@@ -833,7 +929,7 @@ queries = ["bgp_route"]
             Request::post("/api/query")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"router":"demo","type":"bgp_summary","target":"198.51.100.1; reload"}"#,
+                    r#"{"router":"demo","type":"bgp_summary","target":"198.51.100.1; reload","auth_key":"test_summary_secret"}"#,
                 ))
                 .unwrap(),
             "198.51.100.91:5000",
@@ -845,6 +941,102 @@ queries = ["bgp_route"]
     }
 
     #[tokio::test]
+    async fn bgp_summary_requires_password_when_configured() {
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"demo","type":"bgp_summary","target":""}"#,
+                ))
+                .unwrap(),
+            "198.51.100.93:5000",
+        );
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_json(response).await;
+        assert_eq!(body["code"], "bgp_summary_password_required");
+    }
+
+    #[tokio::test]
+    async fn bgp_summary_rejects_wrong_password() {
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"demo","type":"bgp_summary","target":"","auth_key":"wrong_pass"}"#,
+                ))
+                .unwrap(),
+            "198.51.100.94:5000",
+        );
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = body_json(response).await;
+        assert_eq!(body["code"], "invalid_auth_key");
+    }
+
+    #[tokio::test]
+    async fn bgp_summary_rejected_when_unconfigured() {
+        const INVENTORY_NO_AUTH: &str = r#"
+[[router]]
+id = "demo"
+name = "Demo router"
+vendor = "mock"
+host = "192.0.2.200"
+location = "Fixtures"
+"#;
+        let request = from_peer(
+            Request::post("/api/query")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"router":"demo","type":"bgp_summary","target":"","auth_key":"any_pass"}"#,
+                ))
+                .unwrap(),
+            "198.51.100.95:5000",
+        );
+        let response = app_from(INVENTORY_NO_AUTH).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = body_json(response).await;
+        assert_eq!(body["code"], "bgp_summary_disabled");
+    }
+
+    #[tokio::test]
+    async fn bgp_summary_via_get_stream_is_prohibited() {
+        let request = from_peer(
+            Request::get("/api/query/stream?router=demo&type=bgp_summary&target=")
+                .body(Body::empty())
+                .unwrap(),
+            "198.51.100.96:5000",
+        );
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            response.into_body().collect(),
+        )
+        .await
+        .expect("stream response")
+        .unwrap()
+        .to_bytes();
+        let body = String::from_utf8_lossy(&bytes);
+        assert!(body.contains("bgp_summary_post_required"));
+    }
+
+    #[test]
+    fn query_request_debug_redacts_auth_key() {
+        let req = QueryRequest {
+            router: "demo".to_string(),
+            query_type: QueryType::BgpSummary,
+            target: "".to_string(),
+            captcha_id: None,
+            captcha_code: None,
+            auth_key: Some("super_secret_operator_password".to_string()),
+        };
+        let debug_str = format!("{req:?}");
+        assert!(!debug_str.contains("super_secret_operator_password"));
+        assert!(debug_str.contains("[REDACTED]"));
+    }
+
+    #[tokio::test]
     async fn the_stream_endpoint_answers_and_bgp_summary_needs_no_target() {
         // /api/query/stream shares handle_stream_query, which — like the plain
         // query — must run bgp_summary with no target. Exercise the SSE path end
@@ -853,7 +1045,7 @@ queries = ["bgp_route"]
             Request::post("/api/query/stream")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"router":"demo","type":"bgp_summary","target":""}"#,
+                    r#"{"router":"demo","type":"bgp_summary","target":"","auth_key":"test_summary_secret"}"#,
                 ))
                 .unwrap(),
             "198.51.100.92:5000",

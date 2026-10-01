@@ -583,12 +583,30 @@ impl Default for UiSettings {
 }
 
 /// Server listen and security settings.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ServerSettings {
     #[serde(default = "default_http_addr", alias = "listen")]
     pub http_addr: String,
     #[serde(default)]
     pub captcha_secret: Option<String>,
+    #[serde(default)]
+    pub bgp_summary_password: Option<String>,
+}
+
+impl fmt::Debug for ServerSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServerSettings")
+            .field("http_addr", &self.http_addr)
+            .field(
+                "captcha_secret",
+                &self.captcha_secret.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "bgp_summary_password",
+                &self.bgp_summary_password.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 fn default_http_addr() -> String {
@@ -600,7 +618,26 @@ impl Default for ServerSettings {
         Self {
             http_addr: default_http_addr(),
             captcha_secret: None,
+            bgp_summary_password: None,
         }
+    }
+}
+
+/// Security and access control settings.
+#[derive(Clone, Default, Deserialize)]
+pub struct SecuritySettings {
+    #[serde(default)]
+    pub bgp_summary_password: Option<String>,
+}
+
+impl fmt::Debug for SecuritySettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecuritySettings")
+            .field(
+                "bgp_summary_password",
+                &self.bgp_summary_password.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
     }
 }
 
@@ -609,6 +646,8 @@ impl Default for ServerSettings {
 pub struct Inventory {
     #[serde(default)]
     pub server: ServerSettings,
+    #[serde(default)]
+    pub security: SecuritySettings,
     #[serde(default)]
     pub limits: Limits,
     #[serde(default)]
@@ -841,6 +880,26 @@ impl Inventory {
     /// What the interface lists, in configuration order.
     pub fn public_routers(&self) -> Vec<PublicRouter> {
         self.routers.iter().map(Router::public_view).collect()
+    }
+
+    /// Returns the configured BGP summary password, if any.
+    ///
+    /// Precedence:
+    /// 1. `NOGGLASS_BGP_SUMMARY_PASSWORD` environment variable.
+    /// 2. `[security].bgp_summary_password` in configuration.
+    /// 3. `[server].bgp_summary_password` in configuration.
+    pub fn bgp_summary_password(&self) -> Option<String> {
+        std::env::var("NOGGLASS_BGP_SUMMARY_PASSWORD")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| self.security.bgp_summary_password.clone())
+            .or_else(|| self.server.bgp_summary_password.clone())
+            .filter(|s| !s.trim().is_empty())
+    }
+
+    /// Whether BGP summary queries are protected with an authentication password.
+    pub fn is_bgp_summary_configured(&self) -> bool {
+        self.bgp_summary_password().is_some()
     }
 
     /// Parsed management address, when the host is an address rather than a
@@ -1331,4 +1390,61 @@ source_v4 = "192.0.2.1; rm -rf /"
 "#;
         assert!(Inventory::from_toml(toml_invalid_injection).is_err());
     }
+
+    #[test]
+    fn bgp_summary_password_configuration_and_redaction() {
+        let toml_with_security = r#"
+[security]
+bgp_summary_password = "SuperSecretPassword123"
+
+[[router]]
+id = "demo"
+name = "Demo"
+vendor = "mock"
+host = "127.0.0.1"
+"#;
+        let inv = Inventory::from_toml(toml_with_security).unwrap();
+        assert!(inv.is_bgp_summary_configured());
+        assert_eq!(
+            inv.bgp_summary_password(),
+            Some("SuperSecretPassword123".to_string())
+        );
+
+        let debug_security = format!("{:?}", inv.security);
+        assert!(!debug_security.contains("SuperSecretPassword123"));
+        assert!(debug_security.contains("[REDACTED]"));
+
+        let toml_with_server = r#"
+[server]
+bgp_summary_password = "ServerSecretPassword456"
+
+[[router]]
+id = "demo"
+name = "Demo"
+vendor = "mock"
+host = "127.0.0.1"
+"#;
+        let inv2 = Inventory::from_toml(toml_with_server).unwrap();
+        assert!(inv2.is_bgp_summary_configured());
+        assert_eq!(
+            inv2.bgp_summary_password(),
+            Some("ServerSecretPassword456".to_string())
+        );
+
+        let debug_server = format!("{:?}", inv2.server);
+        assert!(!debug_server.contains("ServerSecretPassword456"));
+        assert!(debug_server.contains("[REDACTED]"));
+
+        let toml_unconfigured = r#"
+[[router]]
+id = "demo"
+name = "Demo"
+vendor = "mock"
+host = "127.0.0.1"
+"#;
+        let inv3 = Inventory::from_toml(toml_unconfigured).unwrap();
+        assert!(!inv3.is_bgp_summary_configured());
+        assert_eq!(inv3.bgp_summary_password(), None);
+    }
 }
+

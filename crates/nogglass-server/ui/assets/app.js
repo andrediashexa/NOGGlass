@@ -125,27 +125,70 @@ function onRouterChange() {
 
 function updatePlaceholder() {
   const queryType = document.getElementById("query-type")?.value;
+  const targetField = document.getElementById("target-field");
+  const authField = document.getElementById("bgp-summary-auth-field");
   const target = document.getElementById("target");
+  const authInput = document.getElementById("bgp-summary-key");
+  const submitBtn = document.getElementById("submit");
+  const errorBox = document.getElementById("error");
   if (!target) return;
+
   const isSummary = queryType === "bgp_summary";
   target.required = !isSummary;
   target.disabled = isSummary;
+
+  const router = state.routers.find(
+    (r) => r.id === document.getElementById("router")?.value,
+  );
+  const isConfigured = router ? Boolean(router.bgp_summary_configured) : false;
+
   if (isSummary) {
     target.value = "";
     target.placeholder = t("form.target.not_required");
-  } else if (queryType === "bgp_aspath" || queryType === "bgp_aspath_v6") {
-    target.placeholder = "AS65500 ou 65500";
-  } else if (queryType === "bgp_route") {
-    target.placeholder = "198.51.100.0/24 ou 2001:db8::1";
+    if (targetField) targetField.hidden = true;
+
+    if (!isConfigured) {
+      if (authField) authField.hidden = true;
+      if (authInput) authInput.required = false;
+      showError("bgp_summary_disabled", t("error.bgp_summary_disabled"));
+      if (submitBtn) submitBtn.disabled = true;
+    } else {
+      if (authField) authField.hidden = false;
+      if (authInput) {
+        authInput.required = true;
+        authInput.placeholder = t("form.bgp_summary_key.placeholder");
+        const savedKey = sessionStorage.getItem("nogglass_bgp_summary_key") || "";
+        authInput.value = savedKey;
+      }
+      if (errorBox && errorBox.textContent === t("error.bgp_summary_disabled")) {
+        errorBox.textContent = "";
+        errorBox.hidden = true;
+      }
+      if (submitBtn) submitBtn.disabled = false;
+    }
   } else {
-    target.placeholder = t("form.target.placeholder");
+    if (targetField) targetField.hidden = false;
+    if (authField) authField.hidden = true;
+    if (authInput) authInput.required = false;
+    if (submitBtn) submitBtn.disabled = false;
+    if (errorBox && errorBox.textContent === t("error.bgp_summary_disabled")) {
+      errorBox.textContent = "";
+      errorBox.hidden = true;
+    }
+    if (queryType === "bgp_aspath" || queryType === "bgp_aspath_v6") {
+      target.placeholder = "AS65500 ou 65500";
+    } else if (queryType === "bgp_route") {
+      target.placeholder = "198.51.100.0/24 ou 2001:db8::1";
+    } else {
+      target.placeholder = t("form.target.placeholder");
+    }
   }
 }
 
 async function loadVersion() {
   try {
     const info = await fetch("/api/version").then((r) => r.json());
-    const ver = info.version && info.version !== "dev" ? info.version : "1.2.3";
+    const ver = info.version && info.version !== "dev" ? info.version : "1.3.0";
     const versionEl = document.getElementById("version");
     if (versionEl) {
       versionEl.textContent = ver;
@@ -203,6 +246,11 @@ function onClear(event) {
       targetInput.focus();
     }
   }
+  const authInput = document.getElementById("bgp-summary-key");
+  if (authInput) {
+    authInput.value = "";
+  }
+  sessionStorage.removeItem("nogglass_bgp_summary_key");
   const errorBox = document.getElementById("error");
   if (errorBox) {
     errorBox.textContent = "";
@@ -329,9 +377,21 @@ async function onCaptchaSubmit(event) {
         fetchCaptcha();
         return;
       }
+      if (body.code === "invalid_auth_key" || body.code === "bgp_summary_password_required") {
+        sessionStorage.removeItem("nogglass_bgp_summary_key");
+        const keyInput = document.getElementById("bgp-summary-key");
+        if (keyInput) {
+          keyInput.value = "";
+          keyInput.focus();
+        }
+      }
       document.getElementById("captcha-modal").close();
       showError(body.code, body.message);
       return;
+    }
+
+    if (payload.type === "bgp_summary" && payload.auth_key) {
+      sessionStorage.setItem("nogglass_bgp_summary_key", payload.auth_key);
     }
 
     document.getElementById("captcha-modal").close();
@@ -361,6 +421,28 @@ async function onSubmit(event) {
   };
   rememberInUrl(payload);
 
+  const isSummary = payload.type === "bgp_summary";
+  let authKey = "";
+  if (isSummary) {
+    const router = state.routers.find((r) => r.id === payload.router);
+    const isConfigured = router ? Boolean(router.bgp_summary_configured) : false;
+    if (!isConfigured) {
+      showError("bgp_summary_disabled", t("error.bgp_summary_disabled"));
+      button.disabled = true;
+      label.textContent = t("form.submit");
+      return;
+    }
+    authKey = document.getElementById("bgp-summary-key")?.value.trim() || "";
+    if (!authKey) {
+      showError("bgp_summary_password_required", t("error.bgp_summary_password_required"));
+      button.disabled = false;
+      label.textContent = t("form.submit");
+      document.getElementById("bgp-summary-key")?.focus();
+      return;
+    }
+    payload.auth_key = authKey;
+  }
+
   try {
     const response = await fetch("/api/query", {
       method: "POST",
@@ -373,8 +455,19 @@ async function onSubmit(event) {
         showCaptchaModal(payload);
         return;
       }
+      if (body.code === "invalid_auth_key" || body.code === "bgp_summary_password_required") {
+        sessionStorage.removeItem("nogglass_bgp_summary_key");
+        const keyInput = document.getElementById("bgp-summary-key");
+        if (keyInput) {
+          keyInput.value = "";
+          keyInput.focus();
+        }
+      }
       showError(body.code, body.message);
       return;
+    }
+    if (isSummary && authKey) {
+      sessionStorage.setItem("nogglass_bgp_summary_key", authKey);
     }
     answer = body;
   } catch (error) {
