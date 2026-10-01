@@ -352,8 +352,33 @@ async fn run() -> Result<(), String> {
 /// Finishes in-flight queries before exiting, so a restart does not cut a
 /// visitor's answer in half.
 async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
-    info!("shutting down");
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install CTRL+C signal handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(_) => {
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("shutting down gracefully");
 }
 
 /// Injects standard HTTP security headers across all responses.

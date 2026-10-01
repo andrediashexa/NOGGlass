@@ -225,24 +225,33 @@ impl RateLimiter {
     }
 }
 
+use ipnet::IpNet;
+
 /// Works out which address a request really came from.
 ///
 /// `X-Forwarded-For` is trusted only when the connection itself came from an
-/// address the operator listed as a proxy. Anywhere else it is attacker
+/// address or CIDR subnet the operator listed as a proxy. Anywhere else it is attacker
 /// controlled: a limiter keyed on an unverified header is a limiter with a
 /// documented bypass.
 #[derive(Debug, Clone, Default)]
 pub struct ClientAddress {
-    trusted_proxies: Vec<IpAddr>,
+    trusted_proxies: Vec<IpNet>,
 }
 
 impl ClientAddress {
-    pub fn new(trusted_proxies: Vec<IpAddr>) -> Self {
+    pub fn new(trusted_proxies: Vec<IpNet>) -> Self {
         Self { trusted_proxies }
     }
 
-    /// Parses a comma-separated list of proxy addresses, ignoring what does not
-    /// parse rather than failing: a typo in one entry MUST NOT silently trust
+    /// Helper constructing from individual IP addresses for backwards compatibility.
+    pub fn from_ips(ips: Vec<IpAddr>) -> Self {
+        Self {
+            trusted_proxies: ips.into_iter().map(IpNet::from).collect(),
+        }
+    }
+
+    /// Parses a comma-separated list of proxy addresses or CIDR subnets, ignoring what
+    /// does not parse rather than failing: a typo in one entry MUST NOT silently trust
     /// everything, and it MUST NOT stop the service from starting either.
     pub fn from_list(list: &str) -> (Self, Vec<String>) {
         let mut proxies = Vec::new();
@@ -252,9 +261,12 @@ impl ClientAddress {
             if entry.is_empty() {
                 continue;
             }
-            match entry.parse::<IpAddr>() {
-                Ok(address) => proxies.push(address),
-                Err(_) => rejected.push(entry.to_string()),
+            if let Ok(net) = entry.parse::<IpNet>() {
+                proxies.push(net);
+            } else if let Ok(ip) = entry.parse::<IpAddr>() {
+                proxies.push(IpNet::from(ip));
+            } else {
+                rejected.push(entry.to_string());
             }
         }
         (Self::new(proxies), rejected)
@@ -268,18 +280,20 @@ impl ClientAddress {
     ///
     /// `forwarded_for` is the raw header value, if the request carried one.
     pub fn resolve(&self, peer: IpAddr, forwarded_for: Option<&str>) -> IpAddr {
-        if !self.trusted_proxies.contains(&peer) {
+        let is_trusted = self.trusted_proxies.iter().any(|net| net.contains(&peer));
+        if !is_trusted {
             return peer;
         }
         let Some(header) = forwarded_for else {
             return peer;
         };
 
-        // The left-most entry is the original client. Entries appended by
-        // untrusted hops can be forged, which is why this only runs when the
-        // immediate peer is a configured proxy.
+        // When traversing reverse proxies (e.g. Nginx, Traefik, HAProxy, AWS ALB),
+        // each proxy appends the client IP it received to the right end of the header.
+        // Reading from the right (rsplit) yields the most immediate IP added by the
+        // trusted proxy, neutralizing spoofed leftmost IPs injected by clients.
         header
-            .split(',')
+            .rsplit(',')
             .map(str::trim)
             .find_map(|entry| entry.parse::<IpAddr>().ok())
             .unwrap_or(peer)
@@ -442,7 +456,7 @@ mod tests {
     /// stranger changes nothing.
     #[test]
     fn a_forwarded_header_is_ignored_unless_the_peer_is_a_configured_proxy() {
-        let resolver = ClientAddress::new(vec![ip("192.0.2.1")]);
+        let resolver = ClientAddress::from_ips(vec![ip("192.0.2.1")]);
 
         // A stranger claiming to be someone else stays themselves.
         assert_eq!(
@@ -461,11 +475,31 @@ mod tests {
     }
 
     #[test]
-    fn the_left_most_forwarded_entry_is_the_client() {
-        let resolver = ClientAddress::new(vec![ip("192.0.2.1")]);
+    fn the_right_most_forwarded_entry_is_the_client() {
+        let resolver = ClientAddress::from_ips(vec![ip("192.0.2.1")]);
+        // Client spoofed 203.0.113.9, but proxy appended real client 198.51.100.22 at the right end
         assert_eq!(
-            resolver.resolve(ip("192.0.2.1"), Some("203.0.113.9, 192.0.2.7, 192.0.2.1")),
-            ip("203.0.113.9")
+            resolver.resolve(ip("192.0.2.1"), Some("203.0.113.9, 198.51.100.22")),
+            ip("198.51.100.22")
+        );
+    }
+
+    #[test]
+    fn trusted_proxies_supports_cidr_subnets() {
+        let (resolver, rejected) = ClientAddress::from_list("10.0.0.0/8, 192.168.1.0/24");
+        assert!(rejected.is_empty());
+        assert_eq!(
+            resolver.resolve(ip("10.42.1.5"), Some("198.51.100.99")),
+            ip("198.51.100.99")
+        );
+        assert_eq!(
+            resolver.resolve(ip("192.168.1.50"), Some("198.51.100.77")),
+            ip("198.51.100.77")
+        );
+        // Outside CIDR stays itself
+        assert_eq!(
+            resolver.resolve(ip("172.16.0.1"), Some("198.51.100.88")),
+            ip("172.16.0.1")
         );
     }
 
@@ -492,7 +526,7 @@ mod tests {
 
     #[test]
     fn a_garbled_forwarded_header_falls_back_to_the_peer() {
-        let resolver = ClientAddress::new(vec![ip("192.0.2.1")]);
+        let resolver = ClientAddress::from_ips(vec![ip("192.0.2.1")]);
         assert_eq!(
             resolver.resolve(ip("192.0.2.1"), Some("not-an-address, also-not")),
             ip("192.0.2.1")

@@ -359,7 +359,10 @@ fn verify_request_captcha(
     match (captcha_id, captcha_code) {
         (Some(id), Some(code)) if !id.trim().is_empty() && !code.trim().is_empty() => {
             // Prevent replay attacks: check if this token was already used
-            let mut used = state.used_captchas.lock().unwrap();
+            let mut used = state
+                .used_captchas
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if used.contains(id) {
                 return Err(ApiError {
                     status: StatusCode::BAD_REQUEST,

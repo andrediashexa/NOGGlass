@@ -640,15 +640,17 @@ async fn read_until_prompt(
                 // prompt-shaped string inside the output is not the end.
                 // We strip ANSI escape sequences before testing to prevent trailing
                 // control codes (e.g. \x1b[0m or cursor placement) from breaking matching.
-                if let Some(last) = output.lines().last() {
-                    let clean_last = strip_ansi(last);
-                    let trimmed = clean_last.trim_end();
-                    if prompt
-                        .find_iter(trimmed)
-                        .any(|mat| mat.end() == trimmed.len())
-                    {
-                        break;
-                    }
+                let last = match output.rfind('\n') {
+                    Some(pos) => &output[pos + 1..],
+                    None => output.as_str(),
+                };
+                let clean_last = strip_ansi(last);
+                let trimmed = clean_last.trim_end();
+                if prompt
+                    .find_iter(trimmed)
+                    .any(|mat| mat.end() == trimmed.len())
+                {
+                    break;
                 }
             }
             ChannelMsg::Eof | ChannelMsg::Close => break,
