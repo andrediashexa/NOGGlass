@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.1](https://github.com/andrediashexa/nogglass/compare/v1.3.0...v1.3.1) (2026-10-01)
+
+### Bug Fixes
+
+* **nokia_sros:** update BGP summary command in catalogue to `show router bgp summary all`, ensuring the full neighbor session table is retrieved instead of just global operational counters
+* **nokia_sros:** implement dedicated multi-line BGP summary parser in `looking-glass-core::vendors::nokia` supporting SR OS tabular structure:
+  - Recognize IPv4 and IPv6 neighbor addresses on standalone lines (including dynamic peers flagged with `D`)
+  - Accurately extract peer AS, session uptime, and session state (`Established` vs down states like `Connect`, `Active`, `Idle`, `Admin Down`)
+  - Accumulate prefix counters (`<rcv>/<act>/<sent>`) across all advertised address families (e.g., IPv4 unicast and Labeled IPv6 / VPN) for multi-protocol peers
+
 ## [1.3.0](https://github.com/andrediashexa/nogglass/compare/v1.2.3...v1.3.0) (2026-10-01)
 
 ### Features

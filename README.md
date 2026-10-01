@@ -31,7 +31,7 @@ NOGGlass was built for the diverse routing mix that regional carriers and ISPs r
 
 ---
 
-## Key Features (v1.3.0)
+## Key Features (v1.3.1)
 
 - **The Router is Sacred:** Complete immunity to command injection. Diagnostic targets and counts are strictly deserialized into Rust types (`std::net::IpAddr`, `ipnet::IpNet`, validated enums) and mapped to read-only command templates.
 - **Operational Protection for Sensitive Queries (BGP Summary):** Protects sensitive BGP neighbor tables (upstream transit, IXP peers, topology, and prefix volumes) behind an operational access password (`bgp_summary_password` in `nogglass.conf` or `NOGGLASS_BGP_SUMMARY_PASSWORD`). Verification uses constant-time HMAC-SHA256 (`ring`) to neutralize timing attacks. Unconfigured instances disable the query by default with explicit UI alerts and HTTP 403 API responses. Execution is restricted to POST to prevent secret leakage in logs and browser history, with automatic redaction (`[REDACTED]`) in all logs.
