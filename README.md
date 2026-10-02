@@ -105,7 +105,7 @@ for the versions each was tested against and what each real device changed
 | `arista_eos` | Arista EOS 7000 / vEOS Series | 🟡 Supported (Cisco/Netmiko-compatible CLI) | Detail and tabular BGP parsing, Unix ping statistics, BGP summary |
 | `frr` | FRRouting (FRR) Routing Daemon | ✅ Verified (FRR 9.1.0) | Cisco-compatible BGP detail/table parsing, vtysh integration |
 | `juniper_junos` | Juniper MX, PTX, QFX, SRX, vMX | ✅ Verified end to end (Junos OS) | Structured native JSON parsing (`\| display json`), CLI output formatting, native RTR RPKI |
-| `nokia_sros` | Nokia 7750 SR (TiMOS classic & MD-CLI)| ⚠️ Unverified (licence unavailable) | Tabular parsing, multi-hop traceroute decoding |
+| `nokia_sros` | Nokia 7750 SR (TiMOS classic & MD-CLI) | ✅ Verified end to end (SR OS) | Tabular parsing, multi-hop traceroute decoding |
 | `datacom_dmos` | Datacom DM4000 and DM4200 series | ⚠️ Unverified (needs hardware) | Tabular CLI extraction, next-hop resolution |
 | `mock` | Synthetic Lab Driver | ✅ CI fixtures | Deterministic fixtures for CI, testing, and public demonstrations |
 
