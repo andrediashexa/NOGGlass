@@ -55,7 +55,7 @@ Download the official statically linked `x86_64-unknown-linux-musl` release arch
 
 ```bash
 # 1. Download the release archive and checksum (replace with desired version)
-VERSION="1.0.0"
+VERSION="1.3.2"
 curl -fsSLO "https://github.com/andrediashexa/nogglass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz"
 curl -fsSLO "https://github.com/andrediashexa/nogglass/releases/download/v${VERSION}/nogglass-v${VERSION}-linux-amd64.tar.gz.sha256"
 
