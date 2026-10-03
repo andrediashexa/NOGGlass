@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/andrediashexa/nogglass/compare/v1.3.1...v1.3.2) (2026-10-03)
+
+### Bug Fixes
+
+* **ui (graph):** eliminate false AS-path node traversals and cross-traffic edge collisions in topological DAG:
+  - **Barycentric Parent-Child Alignment:** dynamically order nodes in each column according to the vertical coordinates ($Y$) of their predecessor nodes in earlier columns. Prevents unnatural "X" crossings between parallel upstream transit paths (e.g. parallel upstream transit lanes remain cleanly separated without criss-crossing).
+  - **Obstacle Avoidance Clearance Arch for Long Edges:** edges spanning across multiple columns (where a shorter BGP path skips intermediate transit hops) now route cleanly through an elevated or lowered clearance arch above or below intermediate nodes. Eliminates false visual impressions where a direct edge appeared to enter and exit an unrelated intermediate ASN circle.
+
 ## [1.3.1](https://github.com/andrediashexa/nogglass/compare/v1.3.0...v1.3.1) (2026-10-01)
 
 ### Bug Fixes

@@ -188,7 +188,7 @@ function updatePlaceholder() {
 async function loadVersion() {
   try {
     const info = await fetch("/api/version").then((r) => r.json());
-    const ver = info.version && info.version !== "dev" ? info.version : "1.3.1";
+    const ver = info.version && info.version !== "dev" ? info.version : "1.3.2";
     const versionEl = document.getElementById("version");
     if (versionEl) {
       versionEl.textContent = ver;
@@ -1013,14 +1013,20 @@ function renderGraph(paths) {
     }
   }
 
-  // 4. Vertical layout (Y-coordinates) using path centroids
-  const pathIndices = new Map();
-  cleanPaths.forEach((path, pIdx) => {
-    for (const asn of path.hops) {
-      if (!pathIndices.has(asn)) pathIndices.set(asn, []);
-      pathIndices.get(asn).push(pIdx);
+  // 4. Vertical layout (Y-coordinates) using Barycentric parent alignment
+  // Check if any edge in cleanPaths spans across intermediate columns (long edge)
+  let hasLongEdge = false;
+  for (const path of cleanPaths) {
+    for (let i = 0; i < path.hops.length - 1; i++) {
+      const uRank = ranks.get(path.hops[i]) ?? 0;
+      const vRank = ranks.get(path.hops[i + 1]) ?? 0;
+      if (vRank - uRank > 1) {
+        hasLongEdge = true;
+        break;
+      }
     }
-  });
+    if (hasLongEdge) break;
+  }
 
   const numPaths = Math.max(cleanPaths.length, 1);
   const maxColumnMembers = Math.max(...columns.map((c) => c.length), 1);
@@ -1028,49 +1034,84 @@ function renderGraph(paths) {
   const rowHeight = 96;
   const radius = 34;
   const height = Math.max(
-    Math.max(numPaths, maxColumnMembers) * rowHeight + 80,
-    240,
+    Math.max(numPaths, maxColumnMembers) * rowHeight + (hasLongEdge ? 130 : 80),
+    260,
   );
   const centerY = height / 2;
 
-  for (const [colIndex, members] of columns.entries()) {
-    if (members.length === 1 && members[0] === "local") {
-      const node = nodes.get("local");
-      node.x = 60;
-      node.y = centerY;
-      continue;
-    }
+  // Position local router node at Column 0
+  const localNode = nodes.get("local");
+  if (localNode) {
+    localNode.x = 60;
+    localNode.y = centerY;
+  }
 
-    // Sort members in column by their average path index (top to bottom)
-    members.sort((a, b) => {
-      const aIndices = pathIndices.get(a) ?? [0];
-      const bIndices = pathIndices.get(b) ?? [0];
-      const aAvg = aIndices.reduce((sum, v) => sum + v, 0) / aIndices.length;
-      const bAvg = bIndices.reduce((sum, v) => sum + v, 0) / bIndices.length;
-      if (Math.abs(aAvg - bAvg) > 0.001) return aAvg - bAvg;
-      const aBest = cleanPaths[0]?.hops.includes(a) ? 0 : 1;
-      const bBest = cleanPaths[0]?.hops.includes(b) ? 0 : 1;
-      if (aBest !== bBest) return aBest - bBest;
-      return String(a).localeCompare(String(b));
-    });
+  // Iterate column by column (1 to N) to establish deterministic barycentric coordinates
+  for (let colIndex = 1; colIndex < columns.length; colIndex++) {
+    const members = columns[colIndex];
+    if (colIndex === 1) {
+      // First hop (upstreams): best path upstream on top
+      members.sort((a, b) => {
+        const aBest = cleanPaths[0]?.hops[1] === a ? 0 : 1;
+        const bBest = cleanPaths[0]?.hops[1] === b ? 0 : 1;
+        if (aBest !== bBest) return aBest - bBest;
+        return String(a).localeCompare(String(b));
+      });
+    } else {
+      // Barycentric sort: average Y coordinate of predecessors from earlier columns
+      const getPredY = (asn) => {
+        const ys = [];
+        for (const p of cleanPaths) {
+          const idx = p.hops.indexOf(asn);
+          if (idx > 0) {
+            const pred = nodes.get(p.hops[idx - 1]);
+            if (pred && pred.column < colIndex && pred.y !== undefined) {
+              ys.push(pred.y);
+            }
+          }
+        }
+        return ys.length ? ys.reduce((sum, v) => sum + v, 0) / ys.length : centerY;
+      };
+
+      members.sort((a, b) => {
+        const aY = getPredY(a);
+        const bY = getPredY(b);
+        if (Math.abs(aY - bY) > 0.1) return aY - bY;
+        const aBest = cleanPaths[0]?.hops.includes(a) ? 0 : 1;
+        const bBest = cleanPaths[0]?.hops.includes(b) ? 0 : 1;
+        if (aBest !== bBest) return aBest - bBest;
+        return String(a).localeCompare(String(b));
+      });
+    }
 
     if (members.length === 1) {
       const asn = members[0];
-      const indices = pathIndices.get(asn) ?? [0];
-      const isSharedAll = indices.length === numPaths;
       const node = nodes.get(asn);
       node.x = 60 + colIndex * columnWidth;
+      const isSharedAll = cleanPaths.every((p) => p.hops.includes(asn));
       if (isSharedAll) {
         node.y = centerY;
       } else {
-        const avg = indices.reduce((sum, v) => sum + v, 0) / indices.length;
-        const offset = (avg - (numPaths - 1) / 2) * rowHeight;
-        node.y = Math.max(radius + 25, Math.min(height - radius - 25, centerY + offset));
+        const ys = [];
+        for (const p of cleanPaths) {
+          const idx = p.hops.indexOf(asn);
+          if (idx > 0) {
+            const pred = nodes.get(p.hops[idx - 1]);
+            if (pred && pred.column < colIndex && pred.y !== undefined) {
+              ys.push(pred.y);
+            }
+          }
+        }
+        const predY = ys.length ? ys.reduce((sum, v) => sum + v, 0) / ys.length : centerY;
+        node.y = Math.max(radius + (hasLongEdge ? 45 : 25), Math.min(height - radius - 35, predY));
       }
     } else {
       const minDistance = radius * 2 + 24;
       const totalSpan = (members.length - 1) * minDistance;
-      const startY = Math.max(radius + 25, centerY - totalSpan / 2);
+      const startY = Math.max(
+        radius + (hasLongEdge ? 45 : 25),
+        Math.min(height - radius - 35 - totalSpan, centerY - totalSpan / 2),
+      );
 
       members.forEach((asn, idx) => {
         const node = nodes.get(asn);
@@ -1106,9 +1147,62 @@ function renderGraph(paths) {
       const from = nodes.get(path.hops[i]);
       const to = nodes.get(path.hops[i + 1]);
       if (!from || !to) continue;
-      const midpoint = (from.x + to.x) / 2;
+
+      const colDiff = to.column - from.column;
+      let d;
+      if (colDiff <= 1) {
+        // Direct adjacent column transition (S-curve)
+        const midpoint = (from.x + to.x) / 2;
+        d = `M ${from.x + radius} ${from.y} C ${midpoint} ${from.y}, ${midpoint} ${to.y}, ${to.x - radius} ${to.y}`;
+      } else {
+        // Multi-column jump: bypass intermediate column obstacles cleanly in an arc
+        const intermediateNodes = [];
+        for (let c = from.column + 1; c < to.column; c++) {
+          const colMembers = columns[c] || [];
+          for (const asn of colMembers) {
+            const n = nodes.get(asn);
+            if (n) intermediateNodes.push(n);
+          }
+        }
+
+        let targetY;
+        if (intermediateNodes.length > 0) {
+          const minObsY = Math.min(...intermediateNodes.map((n) => n.y));
+          const maxObsY = Math.max(...intermediateNodes.map((n) => n.y));
+          const avgEndpointsY = (from.y + to.y) / 2;
+          const avgObsY = (minObsY + maxObsY) / 2;
+
+          // Route above or below depending on endpoint positions relative to obstacles
+          if (avgEndpointsY <= avgObsY) {
+            targetY = Math.max(radius + 14, minObsY - radius - 28);
+          } else {
+            targetY = Math.min(height - radius - 14, maxObsY + radius + 28);
+          }
+        } else {
+          targetY = Math.min(from.y, to.y) - 40;
+        }
+
+        const x0 = from.x + radius;
+        const y0 = from.y;
+        const x3 = to.x - radius;
+        const y3 = to.y;
+
+        const liftX = from.x + columnWidth * 0.75;
+        const landX = to.x - columnWidth * 0.75;
+
+        if (landX > liftX) {
+          d = `M ${x0} ${y0} ` +
+              `C ${x0 + 40} ${y0}, ${liftX - 40} ${targetY}, ${liftX} ${targetY} ` +
+              `L ${landX} ${targetY} ` +
+              `C ${landX + 40} ${targetY}, ${x3 - 40} ${y3}, ${x3} ${y3}`;
+        } else {
+          const midX = (x0 + x3) / 2;
+          d = `M ${x0} ${y0} C ${midX} ${targetY}, ${midX} ${targetY}, ${x3} ${y3}`;
+        }
+      }
+
       draw("path", {
-        d: `M ${from.x + radius} ${from.y} C ${midpoint} ${from.y}, ${midpoint} ${to.y}, ${to.x - radius} ${to.y}`,
+        d,
         fill: "none",
         stroke: path.is_best ? "var(--accent-best)" : "var(--accent-backup)",
         "stroke-width": path.is_best ? 3 : 1.5,

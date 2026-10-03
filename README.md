@@ -31,11 +31,11 @@ NOGGlass was built for the diverse routing mix that regional carriers and ISPs r
 
 ---
 
-## Key Features (v1.3.1)
+## Key Features (v1.3.2)
 
 - **The Router is Sacred:** Complete immunity to command injection. Diagnostic targets and counts are strictly deserialized into Rust types (`std::net::IpAddr`, `ipnet::IpNet`, validated enums) and mapped to read-only command templates.
 - **Operational Protection for Sensitive Queries (BGP Summary):** Protects sensitive BGP neighbor tables (upstream transit, IXP peers, topology, and prefix volumes) behind an operational access password (`bgp_summary_password` in `nogglass.conf` or `NOGGLASS_BGP_SUMMARY_PASSWORD`). Verification uses constant-time HMAC-SHA256 (`ring`) to neutralize timing attacks. Unconfigured instances disable the query by default with explicit UI alerts and HTTP 403 API responses. Execution is restricted to POST to prevent secret leakage in logs and browser history, with automatic redaction (`[REDACTED]`) in all logs.
-- **Topological AS-PATH Graph (Bellman-Ford DAG):** Renders route propagation from the local router node. Direct peers (e.g. transit providers and IX peers) are locked in parallel on Column 1, eliminating false cascade representations.
+- **Topological AS-PATH Graph (Bellman-Ford DAG):** Renders route propagation from the local router node. Direct peers (e.g. transit providers and IX peers) are locked in parallel on Column 1. Barycentric parent alignment prevents edge crossings between parallel upstreams, and multi-column jumps route through clearance arches avoiding intermediate obstacles, eliminating false node traversals.
 - **Operational Route Highlighting & Route Age:** Dynamic CLI analyzer detects winning routes in tabular outputs and detailed blocks, highlighting the active FIB path in emerald green with a `[★ ROTA ATIVA]` badge, alongside route installation age/uptime across vendors.
 - **Router Source IP & Custom SSH Ports:** Configure dedicated IPv4 (`source_v4`) and IPv6 (`source_v6`) source addresses for ping/traceroute tests, as well as non-standard SSH ports (`port`, default 22) per edge router.
 - **Tiered RPKI Engine:** Tier 1 prioritizes router-native validation states from RTR sessions (Huawei, JunOS, Cisco). Tier 2 provides an asynchronous fallback to RIPEstat/Routinator with an in-memory LRU cache and a 3000ms timeout. Transient lookup timeouts are excluded from caching to prevent cache poisoning.
