@@ -1447,4 +1447,3 @@ host = "127.0.0.1"
         assert_eq!(inv3.bgp_summary_password(), None);
     }
 }
-

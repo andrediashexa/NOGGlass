@@ -59,7 +59,11 @@ impl VendorDriver for NokiaSrosDriver {
                 || body.starts_with("BGP")
                 || body.starts_with("No Matching Entries")
             {
-                if in_legend && (body.starts_with('=') || body.starts_with("BGP") || body.starts_with("Flag")) {
+                if in_legend
+                    && (body.starts_with('=')
+                        || body.starts_with("BGP")
+                        || body.starts_with("Flag"))
+                {
                     in_legend = false;
                 }
                 continue;
@@ -94,10 +98,12 @@ impl VendorDriver for NokiaSrosDriver {
             let fields: Vec<&str> = body.split_whitespace().collect();
 
             // A flag line: flags (alphanumeric, *, >, ?, -), then the network.
-            let starts_record = fields
-                .first()
-                .is_some_and(|flag| !flag.is_empty() && flag.chars().all(|c| c.is_ascii_alphanumeric() || "*>?-".contains(c)))
-                && fields.len() >= 2
+            let starts_record = fields.first().is_some_and(|flag| {
+                !flag.is_empty()
+                    && flag
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "*>?-".contains(c))
+            }) && fields.len() >= 2
                 && parse_network(fields[1]).is_some();
 
             if starts_record {
@@ -184,7 +190,11 @@ fn looks_like_uptime(token: &str) -> bool {
 
 /// Parses Nokia SR OS prefix counters in format `<rcv>/<act>/<sent>` (e.g. `250511/47465/1081295`).
 fn parse_slash_counts(token: &str) -> Option<(u32, u32)> {
-    let clean = token.split('(').next().unwrap_or(token).trim_end_matches('*');
+    let clean = token
+        .split('(')
+        .next()
+        .unwrap_or(token)
+        .trim_end_matches('*');
     let parts: Vec<&str> = clean.split('/').collect();
     if parts.len() == 3 {
         let rcv = parts[0].trim_end_matches('*').parse::<u32>().ok()?;
@@ -523,8 +533,12 @@ round-trip min/avg/max = 8.80/8.84/8.88 ms
         // Ensure the raw_output was properly sanitized and contains no residual dots or backspaces
         assert!(!result.raw_output.contains('\x08'));
         assert!(!result.raw_output.contains(". 64 bytes"));
-        assert!(result.raw_output.contains("64 bytes from 198.51.100.1: icmp_seq=3"));
-        assert!(result.raw_output.contains("64 bytes from 198.51.100.1: icmp_seq=4"));
+        assert!(result
+            .raw_output
+            .contains("64 bytes from 198.51.100.1: icmp_seq=3"));
+        assert!(result
+            .raw_output
+            .contains("64 bytes from 198.51.100.1: icmp_seq=4"));
     }
 
     #[test]
