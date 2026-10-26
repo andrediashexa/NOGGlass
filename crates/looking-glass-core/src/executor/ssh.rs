@@ -560,9 +560,7 @@ fn resolve_terminal_line(line: &str) -> String {
     for ch in line.chars() {
         match ch {
             '\x08' => {
-                if cursor > 0 {
-                    cursor -= 1;
-                }
+                cursor = cursor.saturating_sub(1);
             }
             '\r' => {
                 cursor = 0;
