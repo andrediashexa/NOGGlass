@@ -532,7 +532,7 @@ impl Transport for SshTransport {
             .disconnect(Disconnect::ByApplication, "done", "en")
             .await;
 
-        let clean = strip_ansi(&output);
+        let clean = normalize_terminal_output(&output);
         Ok(strip_echo(&clean, command))
     }
 }
@@ -549,6 +549,64 @@ pub fn strip_ansi(s: &str) -> Cow<'_, str> {
     } else {
         Cow::Borrowed(s)
     }
+}
+
+/// Resolves interactive terminal cursor movements (such as backspaces `\x08`
+/// and carriage returns `\r`) on a single line of output.
+fn resolve_terminal_line(line: &str) -> String {
+    let mut chars: Vec<char> = Vec::with_capacity(line.len());
+    let mut cursor: usize = 0;
+
+    for ch in line.chars() {
+        match ch {
+            '\x08' => {
+                cursor = cursor.saturating_sub(1);
+            }
+            '\r' => {
+                cursor = 0;
+            }
+            c => {
+                if cursor < chars.len() {
+                    chars[cursor] = c;
+                } else {
+                    while chars.len() < cursor {
+                        chars.push(' ');
+                    }
+                    chars.push(c);
+                }
+                cursor += 1;
+            }
+        }
+    }
+
+    let s: String = chars.into_iter().collect();
+    s.trim_end().to_string()
+}
+
+/// Normalizes raw terminal output by stripping ANSI escape sequences and resolving
+/// interactive cursor movements (such as backspace progress overwrites and CR resets).
+pub fn normalize_terminal_output(s: &str) -> Cow<'_, str> {
+    let clean = strip_ansi(s);
+    if !clean.contains('\x08') && !clean.contains('\r') {
+        return clean;
+    }
+
+    let ends_with_newline = clean.ends_with('\n');
+    let mut lines = Vec::new();
+
+    for line in clean.lines() {
+        if line.contains('\x08') || line.contains('\r') {
+            lines.push(resolve_terminal_line(line));
+        } else {
+            lines.push(line.to_string());
+        }
+    }
+
+    let mut joined = lines.join("\n");
+    if ends_with_newline {
+        joined.push('\n');
+    }
+    Cow::Owned(joined)
 }
 
 /// How long to wait for a router's opening banner.
@@ -597,7 +655,7 @@ async fn read_until_close(
         }
     }
 
-    let clean = strip_ansi(&output);
+    let clean = normalize_terminal_output(&output);
     if clean.is_empty() {
         return Err(DriverError::EmptyResponse);
     }
@@ -638,13 +696,14 @@ async fn read_until_prompt(
                 }
                 // The prompt only counts at the end of what we have read; a
                 // prompt-shaped string inside the output is not the end.
-                // We strip ANSI escape sequences before testing to prevent trailing
-                // control codes (e.g. \x1b[0m or cursor placement) from breaking matching.
+                // We strip ANSI escape sequences and resolve terminal control before
+                // testing to prevent trailing codes (e.g. \x1b[0m, \r or cursor placement)
+                // from breaking matching.
                 let last = match output.rfind('\n') {
                     Some(pos) => &output[pos + 1..],
                     None => output.as_str(),
                 };
-                let clean_last = strip_ansi(last);
+                let clean_last = normalize_terminal_output(last);
                 let trimmed = clean_last.trim_end();
                 if prompt
                     .find_iter(trimmed)
@@ -997,5 +1056,47 @@ mod host_key_tests {
             }
             other => panic!("expected ConnectionFailed error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_normalize_terminal_resolves_backspace_overwrites() {
+        // TiMOS / Nokia SR OS MD-CLI ping probes emit a progress dot while waiting,
+        // followed by backspace-space-backspace (`.\x08 \x08`) to overwrite it with the ICMP reply.
+        let raw = "PING 198.51.100.1 56 data bytes\n\
+                   64 bytes from 198.51.100.1: icmp_seq=1 ttl=61 time=8.88ms.\n\
+                   .\x08 \x0864 bytes from 198.51.100.1: icmp_seq=2 ttl=61 time=8.80ms.\n\
+                   .\x08 \x0864 bytes from 198.51.100.1: icmp_seq=3 ttl=61 time=8.80ms.\n";
+
+        let normalized = normalize_terminal_output(raw);
+        let expected = "PING 198.51.100.1 56 data bytes\n\
+                        64 bytes from 198.51.100.1: icmp_seq=1 ttl=61 time=8.88ms.\n\
+                        64 bytes from 198.51.100.1: icmp_seq=2 ttl=61 time=8.80ms.\n\
+                        64 bytes from 198.51.100.1: icmp_seq=3 ttl=61 time=8.80ms.\n";
+
+        assert_eq!(normalized, expected);
+    }
+
+    #[test]
+    fn test_normalize_terminal_resolves_timeout_interactive_animation() {
+        // When probes time out on interactive terminals, TiMOS emits `...\b\b\b   \b\b\b`
+        // which should resolve to an empty line rather than leaving phantom dots.
+        let raw = "...\x08\x08\x08   \x08\x08\x08";
+        let normalized = normalize_terminal_output(raw);
+        assert_eq!(normalized, "");
+    }
+
+    #[test]
+    fn test_normalize_terminal_resolves_carriage_return_overwrites() {
+        let raw = "Status: sending\rStatus: received reply";
+        let normalized = normalize_terminal_output(raw);
+        assert_eq!(normalized, "Status: received reply");
+    }
+
+    #[test]
+    fn test_normalize_terminal_preserves_clean_text() {
+        let raw = "Line 1\nLine 2\nLine 3\n";
+        let normalized = normalize_terminal_output(raw);
+        assert!(matches!(normalized, Cow::Borrowed(_)));
+        assert_eq!(normalized, raw);
     }
 }

@@ -419,7 +419,9 @@ fn verify_bgp_summary_access(state: &AppState, auth_key: Option<&str>) -> Result
         return Err(ApiError {
             status: StatusCode::FORBIDDEN,
             code: "bgp_summary_disabled",
-            message: "BGP summary queries are disabled because no password is configured on this server.".to_string(),
+            message:
+                "BGP summary queries are disabled because no password is configured on this server."
+                    .to_string(),
         });
     };
 
@@ -543,14 +545,17 @@ async fn handle_stream_query(
             let err = ApiError {
                 status: StatusCode::METHOD_NOT_ALLOWED,
                 code: "bgp_summary_post_required",
-                message: "BGP summary queries with authentication are only allowed via POST.".to_string(),
+                message: "BGP summary queries with authentication are only allowed via POST."
+                    .to_string(),
             };
             let _ = sender
                 .send(
                     Event::default()
                         .event("error")
                         .json_data(err.body())
-                        .unwrap_or_else(|_| Event::default().event("error").data("method not allowed")),
+                        .unwrap_or_else(|_| {
+                            Event::default().event("error").data("method not allowed")
+                        }),
                 )
                 .await;
             return;
@@ -597,7 +602,9 @@ async fn handle_stream_query(
                         Event::default()
                             .event("error")
                             .json_data(e.body())
-                            .unwrap_or_else(|_| Event::default().event("error").data("unauthorized")),
+                            .unwrap_or_else(|_| {
+                                Event::default().event("error").data("unauthorized")
+                            }),
                     )
                     .await;
                 return;
@@ -860,7 +867,12 @@ queries = ["bgp_route"]
         assert!(body.contains("Edge 01"));
         assert!(body.contains("\"queries\""));
         assert!(body.contains("\"bgp_summary_configured\":true"));
-        for secret in ["192.0.2.10", "nogglass", "NOGGLASS_EDGE01_PASSWORD", "test_summary_secret"] {
+        for secret in [
+            "192.0.2.10",
+            "nogglass",
+            "NOGGLASS_EDGE01_PASSWORD",
+            "test_summary_secret",
+        ] {
             assert!(!body.contains(secret), "leaked {secret} in {body}");
         }
     }

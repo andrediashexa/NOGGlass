@@ -14,13 +14,15 @@ impl VendorDriver for NokiaSrosDriver {
     }
 
     fn parse_ping(&self, raw: &str) -> Result<PingResult, DriverError> {
-        crate::ping::parse(raw)
+        let clean = crate::executor::ssh::normalize_terminal_output(raw);
+        crate::ping::parse(&clean)
     }
 
     fn parse_traceroute(&self, raw: &str) -> Result<TracerouteResult, DriverError> {
         // The shared reader: vendors differ in decoration, not in substance,
         // and a silent hop has to survive in every one of them.
-        Ok(crate::traceroute::parse("", raw))
+        let clean = crate::executor::ssh::normalize_terminal_output(raw);
+        Ok(crate::traceroute::parse("", &clean))
     }
 
     fn parse_bgp_route(&self, raw: &str) -> Result<BgpRouteResult, DriverError> {
@@ -57,7 +59,11 @@ impl VendorDriver for NokiaSrosDriver {
                 || body.starts_with("BGP")
                 || body.starts_with("No Matching Entries")
             {
-                if in_legend && (body.starts_with('=') || body.starts_with("BGP") || body.starts_with("Flag")) {
+                if in_legend
+                    && (body.starts_with('=')
+                        || body.starts_with("BGP")
+                        || body.starts_with("Flag"))
+                {
                     in_legend = false;
                 }
                 continue;
@@ -92,10 +98,12 @@ impl VendorDriver for NokiaSrosDriver {
             let fields: Vec<&str> = body.split_whitespace().collect();
 
             // A flag line: flags (alphanumeric, *, >, ?, -), then the network.
-            let starts_record = fields
-                .first()
-                .is_some_and(|flag| !flag.is_empty() && flag.chars().all(|c| c.is_ascii_alphanumeric() || "*>?-".contains(c)))
-                && fields.len() >= 2
+            let starts_record = fields.first().is_some_and(|flag| {
+                !flag.is_empty()
+                    && flag
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "*>?-".contains(c))
+            }) && fields.len() >= 2
                 && parse_network(fields[1]).is_some();
 
             if starts_record {
@@ -182,7 +190,11 @@ fn looks_like_uptime(token: &str) -> bool {
 
 /// Parses Nokia SR OS prefix counters in format `<rcv>/<act>/<sent>` (e.g. `250511/47465/1081295`).
 fn parse_slash_counts(token: &str) -> Option<(u32, u32)> {
-    let clean = token.split('(').next().unwrap_or(token).trim_end_matches('*');
+    let clean = token
+        .split('(')
+        .next()
+        .unwrap_or(token)
+        .trim_end_matches('*');
     let parts: Vec<&str> = clean.split('/').collect();
     if parts.len() == 3 {
         let rcv = parts[0].trim_end_matches('*').parse::<u32>().ok()?;
@@ -494,6 +506,39 @@ round-trip min/avg/max = 0.412/0.501/0.688 ms
         let result = NokiaSrosDriver.parse_ping(raw).unwrap();
         assert_eq!(result.packets_received, 5);
         assert_eq!(result.avg_rtt_ms, Some(0.501));
+    }
+
+    #[test]
+    fn reads_sros_ping_with_interactive_terminal_progress_dots() {
+        // TiMOS 25.x MD-CLI interactive terminal output with progress dots and
+        // backspaces (`.\x08 \x08`), as reported in issue.
+        let raw = "\
+PING 198.51.100.1 56 data bytes
+64 bytes from 198.51.100.1: icmp_seq=1 ttl=61 time=8.88ms.
+64 bytes from 198.51.100.1: icmp_seq=2 ttl=61 time=8.80ms.
+.\x08 \x0864 bytes from 198.51.100.1: icmp_seq=3 ttl=61 time=8.80ms.
+.\x08 \x0864 bytes from 198.51.100.1: icmp_seq=4 ttl=61 time=8.85ms.
+64 bytes from 198.51.100.1: icmp_seq=5 ttl=61 time=8.88ms.
+
+---- 198.51.100.1 PING Statistics ----
+5 packets transmitted, 5 packets received, 0.00% packet loss
+round-trip min/avg/max = 8.80/8.84/8.88 ms
+";
+        let result = NokiaSrosDriver.parse_ping(raw).unwrap();
+        assert_eq!(result.packets_sent, 5);
+        assert_eq!(result.packets_received, 5);
+        assert_eq!(result.packet_loss_percent, 0.0);
+        assert_eq!(result.avg_rtt_ms, Some(8.84));
+
+        // Ensure the raw_output was properly sanitized and contains no residual dots or backspaces
+        assert!(!result.raw_output.contains('\x08'));
+        assert!(!result.raw_output.contains(". 64 bytes"));
+        assert!(result
+            .raw_output
+            .contains("64 bytes from 198.51.100.1: icmp_seq=3"));
+        assert!(result
+            .raw_output
+            .contains("64 bytes from 198.51.100.1: icmp_seq=4"));
     }
 
     #[test]
