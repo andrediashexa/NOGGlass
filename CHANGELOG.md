@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.3](https://github.com/andrediashexa/nogglass/compare/v1.3.2...v1.3.3) (2026-10-31)
+
+### Bug Fixes
+
+* **transport (ssh):** normalize interactive TTY control sequences and cursor positioning in `looking-glass-core::executor::ssh`:
+  - Implement line-buffer terminal resolution (`normalize_terminal_output` and `resolve_terminal_line`) supporting ASCII backspaces (`\x08`), carriage returns (`\r`), and ANSI VT100/VT220 cursor movement commands.
+  - Eliminate residual cursor repositioning artifacts and in-place overwrites across interactive command streams before parsing.
+* **nokia_sros:** eliminate phantom progress dots and timeout clearing animations in TiMOS 25.x MD-CLI ping and traceroute:
+  - In TiMOS 25.x, ping probes emit progress dots followed by backspaces (`.\b \b`) as replies arrive or timeouts occur (`...\b\b\b   \b\b\b`), previously leaving phantom dots (`. 64 bytes...`) in the raw output.
+  - Apply terminal line resolution as defense-in-depth across `parse_ping` and `parse_traceroute`, ensuring pristine diagnostics in the UI and streaming API ([#243](https://github.com/andrediashexa/nogglass/issues/243)).
+
 ## [1.3.2](https://github.com/andrediashexa/nogglass/compare/v1.3.1...v1.3.2) (2026-10-03)
 
 ### Bug Fixes
